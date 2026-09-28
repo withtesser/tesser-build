@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import campaign.client as campaign_client
-import linkpolicy.client as linkpolicy_client
-import reports.client as reports_client
 import tests.discovery as discovery
 import tests.support as support
 
@@ -14,9 +11,10 @@ def test_required_roles_present_per_context() -> None:
 
 
 def test_public_interface_is_client_plus_dtos_in_the_client_package() -> None:
-    assert hasattr(campaign_client, "CampaignClient")
-    assert hasattr(linkpolicy_client, "LinkPolicyClient")
-    assert hasattr(reports_client, "ReportsClient")
+    assert set(discovery.discovered_contexts()) == {"campaign", "linkpolicy", "reports"}
+    for ctx, name in (("campaign", "CampaignClient"), ("linkpolicy", "LinkPolicyClient"), ("reports", "ReportsClient")):
+        exported = (support.ROOT / ctx / "client" / "__init__.py").read_text(encoding="utf-8")
+        assert f"{name} as {name}" in exported, f"{ctx}/client does not export {name}"
 
 
 def test_config_lives_in_the_component_not_on_the_public_top_level() -> None:

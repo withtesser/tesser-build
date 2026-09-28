@@ -75,11 +75,38 @@ run_python_app() {
   PYTHONPATH=. lint-imports || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict protocol kernel campaign linkpolicy reports app srv tests conftest.py || return 1
-  step "pytest"
+  # The root tier plays the user: it reaches the app only through a running
+  # host, so the arm serves the HTTP host and puts its address in
+  # PYTHON_APP_ADDRESS. Locally the default port is 9240.
+  local port="${PYTHON_APP_PORT:-9240}"
+  local address="127.0.0.1:$port"
+  step "serve the HTTP host on $address"
+  (exec env CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" \
+    PYTHONPATH=.:../../tesser-py python3 -W ignore::RuntimeWarning -m srv.http.main >/dev/null) &
+  local host=$!
+  local serving=1
+  for _ in $(seq 1 50); do
+    if curl -sf "http://$address/reports/links-by-verdict" >/dev/null; then
+      serving=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$serving" -ne 0 ]; then
+    echo "python-app: the HTTP host did not answer on $address" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (root tier against the HTTP host at $address)"
   # The app reads its own environment through the config repository, so the
   # runner supplies one — the same job a deploy does. Tests never inject it.
   CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
-    pytest -q || return 1
+    PYTHON_APP_ADDRESS="$address" pytest -q
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  [ "$status" -eq 0 ] || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
 }
