@@ -75,9 +75,17 @@ run_python_app() {
   PYTHONPATH=. lint-imports || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict protocol kernel campaign linkpolicy reports app srv tests conftest.py || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  # The app reads its own environment through the config repository, so the
+  # runner supplies one — the same job a deploy does. Tests never inject it.
+  step "pytest (every tier but the root, no host served)"
+  CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
+    pytest -q --ignore=tests || return 1
   # The root tier plays the user: it reaches the app only through a running
-  # host, so the arm serves the HTTP host and puts its address in
-  # PYTHON_APP_ADDRESS. Locally the default port is 9240.
+  # host, so the arm serves the HTTP host and names its address in
+  # PYTHON_APP_ADDRESS, which the tier reads through ts.served. Locally the
+  # default port is 9240.
   local port="${PYTHON_APP_PORT:-9240}"
   local address="127.0.0.1:$port"
   step "serve the HTTP host on $address"
@@ -99,16 +107,11 @@ run_python_app() {
     return 1
   fi
   step "pytest (root tier against the HTTP host at $address)"
-  # The app reads its own environment through the config repository, so the
-  # runner supplies one — the same job a deploy does. Tests never inject it.
-  CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
-    PYTHON_APP_ADDRESS="$address" pytest -q
+  PYTHON_APP_ADDRESS="$address" pytest -q tests
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
   [ "$status" -eq 0 ] || return 1
-  step "tessercheck (zero findings over the whole tree)"
-  tessercheck_tree "$PWD" || return 1
 }
 
 # The canonical application-ports tree: one context, two ports, an enum outcome
