@@ -340,9 +340,12 @@ run_story_drafting() {
     step "mypy --strict"
     MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
   fi
+  # No test calls a real model: the acceptance run selects the deterministic
+  # drafting adapter through the environment.
   step "pytest (against Restate at ${RESTATE_INGRESS:-http://localhost:38080})"
   RESTATE_INGRESS="${RESTATE_INGRESS:-http://localhost:38080}" \
-    RESTATE_ADMIN="${RESTATE_ADMIN:-http://localhost:39070}" pytest -q || return 1
+    RESTATE_ADMIN="${RESTATE_ADMIN:-http://localhost:39070}" \
+    STORY_DRAFTING_DRAFTER="${STORY_DRAFTING_DRAFTER:-deterministic}" pytest -q || return 1
 }
 
 # The voice example: one context (calls) whose root-tier test places a call
