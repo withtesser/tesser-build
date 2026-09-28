@@ -134,9 +134,14 @@ run_ports() {
 # conformant way, with about one test per sibling test file and the least
 # business logic that shows how things work. Two contexts, a kernel, an
 # exported kernel, protocol, srv, and app; alpha's durable kinds run on
-# Restate. The arm serves srv/restate and registers it with the Restate admin
-# API for the root-tier test, and each activities, workflows, and dispatchers
-# test serves its own registrations under fresh names at MINIMAL_CALLBACK_HOST.
+# Restate. The arm runs the tiers in the runner's order
+# (docs/design-test-tiers.md): every test outside the root tier first, with no
+# host served — alpha's context test serves the component's containers from
+# its own process under their own names, and each activities, workflows, and
+# dispatchers test serves its own registrations under fresh names, all at
+# MINIMAL_CALLBACK_HOST — then it serves srv/restate, registers it with the
+# Restate admin API (forcing over what the context test left), and runs the
+# root tier against it.
 # CI provides a Restate service container; locally the defaults are a server
 # of its own on 58080/59070. alpha's widgets are in Postgres at ALPHA_STORAGE;
 # locally the default is a `minimal` database on the asyncpg arm's server
@@ -156,9 +161,9 @@ run_minimal() {
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests conftest.py || return 1
-  step "pytest every tier but the root (against Restate at $ingress, no host served)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
+  step "pytest, every tier but the root (no host served; Postgres at ALPHA_STORAGE, Restate at $ingress)"
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" \
+    MINIMAL_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
   step "serve the Restate endpoint on :$port and register it at $admin"
   (exec env ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" PYTHONPATH=.:../../tesser-py \
     python3 -m srv.restate.main "0.0.0.0:$port") &
@@ -178,9 +183,8 @@ run_minimal() {
     wait "$host" 2>/dev/null
     return 1
   fi
-  step "pytest (against Postgres at ALPHA_STORAGE and Restate at $ingress)"
-  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" \
-    MINIMAL_CALLBACK_HOST="$callback_host" pytest -q
+  step "pytest, the root tier (against the served host)"
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" pytest -q tests
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
