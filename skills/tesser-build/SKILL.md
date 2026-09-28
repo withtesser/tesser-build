@@ -1,0 +1,154 @@
+---
+name: tesser-build
+description: Application-construction entry point (DDD). Load whenever creating or modifying domain types OR the code around them — adding a field to a class, creating a new type, modeling a new concept, writing a constructor, adding validation, comparing domain objects in tests, deciding between a value object/entity/aggregate, AND whenever writing a handler/endpoint, a use-case or application/domain service, or persistence/repository code (where to put business logic, how to load or save an aggregate, keeping domain math out of controllers), AND whenever component an application together — writing an entry point / `main` / composition root / host, exposing a component behind a public interface (a `Client` + DTOs), connecting two bounded contexts (a cross-context call or read), or placing a web UI / frontend / SPA (where presentation code lives), AND whenever reasoning about strategic design — subdomains, bounded contexts, or ubiquitous language. Routes the task through the decomposition procedure to the right component doc.
+skill-version: 91
+source: https://github.com/verocorp/tesser-build (skills/tesser-build/)
+---
+
+# Application construction — entry point
+
+You are about to build or change a piece of an application. This skill routes
+you to the right concept and the right construction mechanics. **Read only what
+a route below points you to** — do not read all the files up front.
+
+**Reasoning about boundaries, not building a piece?** Deciding where a **bounded
+context** goes, whether two areas are one model or two, classifying a **subdomain**
+(Core / Supporting / Generic), or naming the **ubiquitous language** is *strategic
+design* — read `strategic-design.md`. The rest of this file routes the tactical
+work that fills a boundary once it is drawn.
+
+Language mechanics: **Python** (`python.md`).
+The anatomy — what the pieces of an application are and how they connect — is
+`map.md`; each piece has its own component doc (listed there). Some component
+docs are **stubs**: they carry a status note naming the verified implementation
+to imitate — follow the note, don't invent a convention.
+
+**Deliberately out of scope (static code only):** operational concerns — safe
+change/migration sequencing, deploys, runbooks, production observability — are
+deferred, not missing. **Named, thinner areas:** domain events (the event shape
+in `map.md#adapters` is a symmetry default, not settled doctrine) and the
+vendor/ACL gateway (no verified impl anywhere — note the gap, don't invent a
+convention).
+
+## The taxonomy in one pass
+
+| Concept | One-question test | Read |
+|---|---|---|
+| **Value object** | Could I swap this instance for another with the same attributes and nothing would change? | `value-objects.md` |
+| **Entity** | Does the system need to track *this specific one* by identity, even if another has identical attributes? | `entities.md` |
+| **Aggregate** | Does this type enforce invariants across a group of objects it owns, as their single entry point? | `aggregates.md` |
+
+Identity and consistency scope distinguish them — **not** mutability.
+
+## Mode 1 — Decompose: "which pieces does this job need?"
+
+Jobs are too many to catalog ("hook up my database", "add an endpoint", "make
+these two features talk") — decompose instead. The full procedure and the
+anatomy it walks are in `map.md`; the three steps:
+
+1. **Name the pieces the job touches.** Which context(s), and within them which
+   roles — domain, application, adapters (handlers/gateways), component, or the
+   app-level app/srv (`map.md#the-anatomy`). For the *domain* pieces,
+   work through the feature's nouns, rules, and use cases:
+   - For each **noun**, run the taxonomy tests above, in order (value object →
+     entity → aggregate). Most domain nouns are value objects; identity must be
+     earned, not assumed.
+   - For each **rule**, place it by what it's about: one value → the value
+     object's constructor; one tracked thing → the entity; several owned
+     objects → the aggregate root (constructor / guarded transition), never in
+     callers; a genuine domain operation owned by **no single object** → a
+     domain service (rare — `domain-services.md`; check for a missing type
+     first). A rule spanning objects *not* owned by one root is a
+     **cross-aggregate boundary** question — ask whether those objects even
+     belong in the same context (`strategic-design.md#bounded-contexts`); if
+     that isn't clear, flag it for a human.
+   - For each **use case**, you need an **application service** to coordinate
+     it (`application-services.md`), a **repository** for its load/save
+     (`repositories.md`), and — if it is reachable from outside — a **handler**
+     (`handlers.md`) behind the context's **`Client`** (`public-interface.md`).
+2. **Survey the codebase for which pieces already exist.** Find the context by
+   its `Client`; check each named piece against what is there. What exists is
+   the convention to follow — imitate before inventing — **unless it carries a
+   `tesser:debt` marker or lives in a directory the tree's `.tesser-root`
+   skips.** That code is registered non-conformance, not a convention; the
+   verified exemplar (`examples/minimal/`, named by each component doc's
+   status note) outranks it, and a neighbor that agrees with the exemplar is
+   the one to imitate.
+3. **Build only the gap**, each piece per its component doc (Mode 2).
+
+**Behavior placement — "where does this line go?"** Most agent spaghetti is a
+placement failure, not a mis-picked noun:
+- parse/authenticate the request → **handler** (`handlers.md` — the one handler rule)
+- orchestrate the use case → **application service**
+- a rule about one object, or a set it owns → that **object / aggregate root**
+- an operation owned by no single object → **domain service** (rare)
+- load or save an aggregate → **repository**
+- reach a peer context → **cross-context gateway** (`gateway-cross-context.md`)
+- a domain type two or more contexts must agree on → **kernel** (`kernels.md`)
+- choose a concrete impl / build the object graph → **component / app**
+- read the environment, exit the process → **host** (`srv.md`) — nowhere else
+- computing a domain result (sum/decision) in a handler or service → it's
+  misplaced; move it onto a domain type
+  (`application-services.md#domain-logic-leakage-checks`)
+
+## Mode 2 — Implement: "construct this piece per convention"
+
+Route on the task:
+
+| Your task | Do this |
+|---|---|
+| Understanding how the pieces of an app fit together, or where a new piece belongs | Read `map.md` — the anatomy, the adapter taxonomy, how contexts connect, app vs library |
+| Deciding where a context boundary goes, whether two areas are one model or two, classifying a subdomain, or naming the domain language | Read `strategic-design.md` — subdomains (Core/Supporting/Generic), bounded contexts (own model, `Client` interface, integration patterns), ubiquitous language (one term, one meaning) |
+| Modeling a brand-new concept | Run the taxonomy tests → read that concept file → then the `python.md` section it names |
+| Adding a primitive-typed field (string/int/time/...) to a domain type | Read `value-objects.md#is-this-what-im-building` and run the **primitive-obsession check**. Wrap only if the value is domain-meaningful; then follow the spec-leaf + constructor rules in `python.md` |
+| Adding a collection field (list/dict/set) to a domain type | Read `aggregates.md#is-this-what-im-building` — re-evaluate whether the parent just became an aggregate |
+| Adding a rule that spans two or more owned objects | Read `aggregates.md#rules` — the invariant lives in the root's constructor/transition, never in callers |
+| Writing or changing a constructor | Read `python.md#the-spec-pattern` |
+| Needing mutation / a state transition | Read `entities.md#decisions-you-must-make` (fact vs lifecycle) before writing a setter |
+| Comparing two domain objects in a test | Read `value-objects.md#tests-you-must-write` — never compare via `str()` |
+| Writing a use-case / orchestration / a service method | Read `application-services.md` — the four-step shape (convert → delegate → persist → respond), no business logic |
+| Writing a handler / endpoint / controller | Read `handlers.md` — the one handler rule: parse/auth → call the app service through the public `Client`, injected; no domain math, no repository |
+| Writing a workflow on a durable-execution engine (Restate, Temporal) — an orchestrator, an action / activity, or the engine's callback | Read `python.md#orchestrators-actions-relays` (worked example `examples/voice/`) — a relay (`ts.Relay`, `application/relays/`) is the protocol whose far side is this same context across the engine, declared with the messages it speaks and a snapshot for each, and a promise's name is a constant beside it; an orchestrator (`ts.Orchestrator`, `application/orchestrators/`) depends on relays and action ports; a class of actions (`ts.Actions`) has one port and one call per method, never holds a relay, and is reached through an application client; an activity (`ts.Activity`, `adapters/activities/`) registers one action's handler; a workflow (`ts.Workflow`, `adapters/workflows/`) registers `main` and builds the orchestrator per invocation; a signal (`ts.Signal`, `adapters/dispatchers/`) resolves the workflow's promise; a dispatcher (`ts.Dispatcher`) implements a relay by passing the callee's `.handler` to the SDK's typed call, so no call site writes a service or handler name; imports go dispatchers → workflows → activities; `ts.Runner`/`ts.Runtime` are deprecated and no tree uses them |
+| Loading or saving an aggregate, or writing a repository | Read `repositories.md` — whole aggregate in, reconstructed out, no business logic; query object ≠ spec |
+| Declaring an outbound port, or asking where a port goes — a repository, a peer-context, or a vendor interface | Read `python.md#ports` — a port lives in the context's `application/ports/` package, one port per module with the DTOs it speaks; one `ts.Request` in, one `ts.Response` out; no unions, no bare bools; multi-outcome answers are an enum read with `match` + `assert_never` |
+| Making one context call or read another | Read `gateway-cross-context.md` (the caller owns the port; fail-closed) and `map.md#how-contexts-connect` (a read composing two peers becomes its own context) |
+| Two contexts needing the same domain type (a shared Money/Quantity), or shipping domain-level code other apps import directly | Read `kernels.md` — the direct-import tier: app-scoped `kernel/` vs the one exported kernel; content follows the domain conventions; purity is the domain's bar, transitively |
+| Exposing a component/service behind a public interface (a `Client` + DTOs) | Read `public-interface.md` — a decoupling boundary, satisfied structurally by the service; speaks DTOs, never domain objects |
+| Constructing a context / its config | Read `component.md` — coordinate-driven impl selection, config in the component, cross-context deps injected |
+| Writing the app's composition root / `main` / app config / lifecycle | Read `app.md` — service-owned `new(cfg) → App`, builds the graph once, never reads the environment |
+| Writing an entry point / server / CLI host, or reading the environment | Read `srv.md` — one host per delivery mechanism; the host is the env edge; only the edge exits |
+| Placing a web UI / frontend / SPA / admin console — where presentation code lives | Read `map.md#presentation` — a driving actor at the edge; server-rendered HTML is an inbound handler, a client-side app is an app-level `web/<app>` deployable |
+| Business logic that "wants" to live in a service or handler | Read `application-services.md#domain-logic-leakage-checks` — move it onto the owning domain type |
+| Domain logic that fits no single object | Read `domain-services.md` — the rare case; confirm no missing type owns it first |
+| Adding a method to a value object, entity, or aggregate — especially one answering a question (`is_*`, `has_*`, `active`, a comparison), or deciding what a method may take | Read `domain-return.md` — a domain object's behavior hands back domain objects; the comparison dunders are the base's, not yours; an internal predicate is private; do not wrap a bool to satisfy the rule; a method takes one primitive, spec, or domain object; a closed set crosses a boundary as its canonical string |
+| A service needs to branch or loop on what the domain did (`while`, `match`, `if` on a domain call; "how do I get a bool out?"; a second decision in one method) | Read `domain-return.md` rule 6 and `python.md#outcomes` — the transition returns a `ts.Outcome` (a closed set, a value object, never stored), the service matches it exhaustively with `assert_never` — exactly one `match` per service method, on a call to a domain object; never a bool, never a status accessor, never `== Outcome.X` |
+| Serializing a domain object — a repo row, a wire payload, a workflow-engine payload, or "how do I get the value out of this VO?" | Read `serialization.md` — domain objects never serialize themselves; leaf VOs have one canonical conversion exit; compounds/entities/aggregates decompose through the application's mapping module into port DTOs declared in `application/ports/`; edges own their shape |
+| Writing or changing a test — how to write it, what to assert, what a test double may be | Read `testing.md` — hand-written doubles only (never a mocking library), one completeness test per spec-constructed type, assert only what you set or what was computed, trust your layers |
+| Writing a test double, or wanting to hand the thing under test a function that records what happened | Read `testing.md` — a fake mirrors its port: a `@ts.fake` names as a base the port, store, client, or config repository it doubles. If there is no port to mirror, the missing thing is the port, not a new kind of fake |
+| Importing across packages, or asking what a package exposes | Read `python.md#building-domain-code-in-python` — outside an exporting package (every role package plus `app`, `srv`, `srv/<host>`, `protocol`) you import the package (`import alpha.domain as domain`), aliased to its last segment from your own top and to its first and last segments from any other (`import beta.client as beta_client`, `import restate.client as restate_client`, `import urllib.parse as urllib_parse`); the `__init__` is the export list (`from x import Y as Y`); inside one, no module imports a module beside it — its sibling test included — and none imports its own package; no package exports a class of its own name; a kernel is the one package that is not an import unit |
+| Reaching a kernel type from a context | Read `python.md#building-domain-code-in-python` — a root kernel is imported only by `<context>/domain/kernel/__init__.py`, which re-exports what that context takes; a domain module writes `import alpha.domain.kernel as kernel`; application, client, adapters, component, app, srv, protocol and conftest never import a kernel |
+| Naming a local, a parameter, or the field an `__init__` sets | Read `python.md#building-domain-code-in-python` — the name is the class in snake_case (`add_request: client.AddRequest`, `widget = domain.Widget(spec)`, `add_response = self._alpha_client.add(...)`, `self._widget_repository = widget_repository`); a local from a call is read through the call's declared return, and a call the analyzer cannot read is a finding; a constructor's one spec is named `spec`, a spec or DTO `__init__` parameter is a field name, and two values of one class in one function keep their places |
+| Writing or changing any annotation — a parameter, a return, a field | Read `python.md#building-domain-code-in-python` — an annotation is written unquoted (`from __future__ import annotations` is the tool for a name the module has not defined yet), and a type names what the value is: no `Any`, `Callable`, or `Awaitable`, which name a mechanism instead. A behavior someone else supplies is a `ts.Port`, which names its request and its response |
+| Passing behavior as a value, or sorting a collection of domain objects | Read `python.md#building-domain-code-in-python` — a function is declared at module level or as a method: no `lambda` and no `def` inside another function, because every rule about a function keys on its placement. An ordering belongs on the object it orders; a deferred call belongs behind a port |
+| Tempted to write a comment or docstring | Read `comments.md` — v0 is zero (machine directives exempt); the explanation moves to a name, type, test, commit, or doc, never inline |
+| Adding logging, or wanting a domain object to "print nicely" in a log | Read `logging.md` — a stub: don't invent a convention; `repr` is the interim debug surface (domain types define no display dunders) |
+| Unsure after the tests | Read `value-objects.md` first — it defines the default; identity is the exception |
+
+## Non-negotiables (all concepts)
+
+1. **One validating constructor** is the only construction path.
+2. **Private/protected fields**; accessors, no setters unless the concept has
+   a declared lifecycle.
+3. **Validation lives in the constructor** of the type that owns the value —
+   parents never re-validate children.
+4. **Display is not equality** — never compare domain objects by their string
+   form.
+5. **Tests are part of the object**: constructor rejection, equality
+   semantics, and every invariant get tests when the type is born, not later.
+6. **Dependencies point inward and one way** — an adapter depends on the
+   ports its context's application owns (on `application/ports/` and nothing
+   else of the context), contexts talk only through `Client`s,
+   and the graph stays acyclic (`map.md#how-contexts-connect`).
+
+Humans learning the why: see `docs/start-here.md` and `docs/faq.md` in the
+source repo (or https://github.com/verocorp/tesser-build).

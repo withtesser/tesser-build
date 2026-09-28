@@ -1,0 +1,165 @@
+# examples/python-app — the composition-root / bounded-context wiring template (Python)
+
+<!-- tb-allow-missing: examples/app -->
+
+
+A runnable, CI-gated Python **application** that materializes the settled
+bounded-context anatomy and the `srv` / `config` / `bootstrap` model — a shape a
+real service can clone. It is a **production reference template**, not a
+teaching toy: a mistake here replicates
+into every service cloned from it, so the example **enforces itself** (see below).
+
+## The scenario — two contexts, two moments they touch
+
+- **`campaign`** — short links: create + resolve (owns the redirect).
+- **`linkpolicy`** — our OWN destination-policy context (allowed schemes, blocked
+  hosts). A peer context we own, reached by an ordinary cross-context port — *not*
+  a third-party feed (that would be a vendor ACL, a different shape).
+
+1. **Moment 1 — a cross-context CALL.** Creating a short link must vet its
+   destination: `campaign → linkpolicy`, **synchronous and fail-closed**. A policy
+   rejection *or* a linkpolicy outage makes `create_link` fail and create nothing
+   — the honest error propagates. campaign owns the `TargetChecker` port; the
+   adapter over `linkpolicy.Client` lives in `campaign/adapters/gateways`, so the
+   dependency runs one way and `linkpolicy` stays ignorant of `campaign`.
+<!-- Cross-context read placement was ratified as taught doctrine during
+     map.md drafting (Wave 2, 2026-07-18): see
+     skills/tesser-build/map.md#how-contexts-connect, incl. the guardrail that a
+     read belonging to ONE peer stays in that peer — the new-context move is
+     only for composition that belongs to neither. -->
+2. **Moment 2 — a cross-context READ.** "links by policy verdict" needs the link
+   (campaign) + the verdict (linkpolicy). It belongs to neither peer, so it is
+   **its own (small) bounded context** — `reports` — sitting ABOVE both and
+   composing their public `Client`s. There is no special "orchestrator role":
+   reports has the same anatomy as its siblings (its domain owns the
+   join/ordering semantics; it needs no gateways because it reaches peers only
+   through the injected `Client`s, and it owns a handler because the HTTP host
+   serves it). The cycle is avoided by **dependency direction** — reports reads both, nothing imports reports; putting the read
+   in `linkpolicy` would force `linkpolicy → campaign` and close a cycle.
+   Demonstrated **in-process** on one `App`.
+
+```
+campaign  ──▶ linkpolicy      (Moment 1, via campaign.TargetChecker)
+reports   ──▶ campaign  ┐
+reports   ──▶ linkpolicy┘     (Moment 2: its own context, reads both, above both)
+linkpolicy ──▶ (nobody)
+```
+
+## Anatomy
+
+Each context has the roles that define it — `domain`, `application`, `wiring`
+required; `adapters` (`handlers` inbound, `gateways` outbound) where the context
+touches the outside — with the public `Client` Protocol + primitive DTOs at its
+top level. `reports` shows the minimum: it reaches its peers only through
+injected `Client`s, so it needs **no gateways** — but the HTTP host serves it,
+so it owns a **handler** like any other exposed context. The two directions are
+independent: composing peers in-process says nothing about the inbound edge. A
+context's own config lives in its `wiring`, never on the public interface
+(`reports/wiring/config.py` is an empty spec today — the uniform shape a real
+coordinate would land in).
+
+**The host routes; the handler transforms.** `srv/http/main.py` holds the whole
+URL surface in one route table and does exactly five things per request: match
+`(method, path)`, read the declared body **bytes** off the socket into an
+`HttpRequest`, call the endpoint, map any escaping rejection or domain error to
+a problem response (`respond` — the host owns error policy, so handler bodies
+stay three jobs: map request, invoke the service, map response), and write back
+the `HttpResponse` bytes and headers.
+It never parses or serializes a body — `req.body` and `HttpResponse.body` are raw
+`bytes`, and the handler decodes (`req.json_body()`) and encodes
+(`HttpResponse.json(...)`), owning its `Content-Type`. That is why the host is
+content-type-agnostic: a `.png` in or out never touches it. Framing is the
+host's call from the headers — `buffered_length` and the size cap live in
+`srv/http/main.py`, not on the record, because how many bytes to trust off the
+socket is host policy: a body over the cap is a 413, a
+`Transfer-Encoding: chunked` body a 411 (streaming is a documented boundary,
+not built). Every endpoint has the same `(HttpRequest) -> HttpResponse` signature,
+so routing is a table rather than a branch per case, and no field name appears
+anywhere in the host. URL knowledge lives in `srv/http/router.py` alone; the
+protocol both sides abide by lives in `protocol/http.py`, app-owned — the
+handlers define it, the hosts conform to it: the records
+(`HttpRequest`/`HttpResponse`, every constructor field stated, no defaults),
+the readers, and the protocol's own rejection words (`BadRequest` and kin,
+`ts.Rejection` kinds) that the host maps to statuses —
+handlers never import from `srv/`, so a context stays constructible with no host
+in the process. The DTO names mirror FastAPI/Starlette (`path_params`,
+`query_params`, `status_code`) stripped to what a hand-written host needs.
+
+App-level: **the host is the env edge** — each `srv/*/main` populates the
+spec-shaped application `Config` (`bootstrap/config.py`: frozen dataclass,
+primitive leaves, no constructor logic, no methods) directly with `os.getenv`
+calls, including its own launch config (e.g. the HTTP addr), and hands it to
+`bootstrap.new`, which validates fail-fast. `bootstrap` is the service-owned
+composition root (`new(cfg) -> App`, builds the graph once with a cleanup stack,
+`App.close()`); `srv/{http,cli}` are the hosts, one per delivery mechanism, each
+calling `bootstrap.new` once.
+
+## Run it
+
+```
+CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory python -m srv.http.main
+CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory python -m srv.cli.main create-campaign 100.00 USD
+```
+
+Both hosts are the same env edge over one `bootstrap.new`. The **HTTP** host
+routes `(method, path)` to a handler and moves bytes; the **CLI** host routes a
+command name to a handler and moves argv/text — the *same* router/transform
+split, one `srv/cli/adapters`-side `(CliRequest) -> CliResponse` transform per
+command, with the domain `Kind` set mapped to an **exit code** (`errors.exit_code_for`)
+exactly as the HTTP host maps it to a status. A bad argument or a domain
+rejection is a clean message on stderr and a meaningful exit code, not a
+traceback.
+
+## Gate
+
+```
+pip install -r requirements-dev.txt
+ruff check .
+PYTHONPATH=. lint-imports
+MYPYPATH=.:../../tesser-py mypy --strict errors.py lifecycle.py serialization.py protocol campaign linkpolicy reports bootstrap srv tests conftest.py
+pytest -q
+```
+
+One more gate runs in CI and does **not** pass on a bare run yet. The tree
+declares itself with the `ts.*` shells, so `tesser-py` is on both paths and
+**tessercheck** (`tessercheck-py/`) audits it:
+
+```
+(cd ../../tessercheck-py && PYTHONPATH=.:../tesser-py python3 -m srv.cli.main ../examples/python-app)
+```
+
+That exits 0 — the conformance wave burned the import-totality bill down to
+fixes plus site-level `# tesser:debt` markers on the ruling-blocked
+sites (the homeless root modules, the host-machinery and bootstrap classes,
+the type aliases with no conformant spelling, and the pure-core allowlist
+candidates). A debt marker that stops suppressing
+anything is itself a finding, so the opt-outs cannot outlive their reasons.
+
+`mypy --strict` + `pytest` are the same bar the other examples meet. On top of
+them, the architecture rules are **executable spec** — they fail on the violations
+this anatomy exists to prevent, and a clone inherits them by copying the tree.
+They are split by who can decide them:
+
+| Rule | Enforced by |
+|---|---|
+| the environment is read only in `srv/*/main.py` | `ruff.toml` — `TID251` banned-api + `per-file-ignores` |
+| only the edge exits | `ruff.toml` — `TID251` on `sys.exit`/`os._exit`, `PLR1722` on bare `exit`/`quit` |
+| a host reaches a context only through its handlers | `.importlinter` — `forbidden` contract |
+| no peer imports between contexts | `.importlinter` — `forbidden` contracts |
+| every context is named by the import contracts | `tests/test_discovery.py` — totality guard over `.importlinter` |
+| no dead imports | `ruff.toml` — `F401` |
+| no import-time side effects | `tests/test_enforcement.py` (AST) |
+| a host routes and never translates | `tests/test_enforcement.py` (AST) |
+
+The three rules with no off-the-shelf enforcer are the ones encoding doctrine
+rather than generic import hygiene, so they stay hand-written. Both linter configs
+are themselves held to the repo's teeth standard by
+`tests/test_architecture_teeth.py`, which injects violations and asserts the
+configs still fail on them — a widened `per-file-ignores` or a flipped
+`allow_indirect_imports` would otherwise disable a rule with CI green. Contexts are
+**discovered, not enumerated** (`tests/discovery.py`: any root package exposing a
+`Client`), so a new context is checked by construction; the totality guard fails
+on any root package that classifies as neither an app-level piece nor a
+`Client`-bearing context, so a context that forgot its `Client` cannot hide. The general
+`tessercheck` analyzer that generalizes these checks across repos is a separate
+follow-on.
