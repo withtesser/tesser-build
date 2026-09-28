@@ -426,10 +426,10 @@ run_voice() {
   export LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-unused}"
   export LIVEKIT_AGENT_NAME="${LIVEKIT_AGENT_NAME:-caller}"
   export LIVEKIT_SIP_TRUNK_ID="${LIVEKIT_SIP_TRUNK_ID:-unused}"
-  step "pytest every tier but the root (against Restate at $ingress, no host served)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
-  step "serve the Restate endpoint on :$port and register it at $admin"
+  step "pytest every tier but the root (no host served)"
+  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
+    VOICE_CALLBACK_HOST="$callback_host" pytest -q --ignore-glob='tests/*' || return 1
+  step "serve the Restate endpoint on :$port and register it at $admin (forcing)"
   CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" PYTHONPATH=.:../../tesser-py \
     python3 -m srv.restate.main "0.0.0.0:$port" &
   local host=$!
@@ -455,9 +455,9 @@ run_voice() {
       python3 -m srv.livekit.agent_server &
     worker=$!
   fi
-  step "pytest (against Postgres at CALLS_STORAGE and Restate at RESTATE_URL)"
+  step "pytest the root tier (against the served hosts)"
   CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
-    VOICE_CALLBACK_HOST="$callback_host" pytest -q
+    VOICE_CALLBACK_HOST="$callback_host" pytest -q tests
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
