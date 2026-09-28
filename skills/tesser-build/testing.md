@@ -246,7 +246,7 @@ file says *how*, and it is the cross-cutting layer they assume.
   `application/ports` modules, declaration-only modules (every class is a
   declared DTO/Protocol block and methods stop at `__init__` — `client.py` is
   the canonical case), `__init__.py`, `conftest`, and everything in a `tests/`
-  package (the wired tier pairs with the app, not a module). There are no
+  package (a tests package pairs with its app or context, not a module). There are no
   temporary exemptions: a module that genuinely cannot be tested (one exists —
   an srv module bound to an uninstallable vendor SDK) carries a site-level
   `# tesser:debt TB074` where the finding lands, as visible debt.
@@ -347,8 +347,15 @@ is ruled.
   tier — a test lives beside its subject (sibling in a role or adapter kind
   package), in its context's `tests/` package, or in the root `tests/`
   package, and each location fixes what the test may import (TB070). The
-  root tests package reaches a context only through its wiring and client;
-  everything else it drives through bootstrap, protocol, and srv.
+  root tests package plays the user: it reaches the app only through a
+  running host, speaking `protocol` — a CLI host as a subprocess, an HTTP
+  host at an address the runner supplies — and imports nothing of the app,
+  `srv`, a context, or a kernel (a library tree with no host reaches its
+  exported kernel instead). A context's `tests/` package plays a caller: it
+  builds the component in-process, drives its client and handlers, fakes
+  neighbouring contexts at the port, and serves a durable workflow from the
+  test process under fresh names. A story's acceptance test is a root test;
+  its behaviour scenarios are context tests (`docs/design-test-tiers.md`).
 - **Test grouping / structure.** Partially ruled (2026-08-23): grouping
   scenarios under a `Test`-prefixed class is **allowed** — the analyzer
   admits test classes and requires that they hold only test methods

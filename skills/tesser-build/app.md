@@ -195,9 +195,10 @@ call inside the root/wiring is correct, the same call in a handler is the leak.
 
 ## Tests you must write
 
-- **The composition root wires end-to-end:** build the app through
-  `bootstrap.new(cfg)`, call a `Client` method, assert the result — the object
-  graph is connected and a real use case runs through it.
+- **The composition root wires end-to-end:** a root test starts the app's
+  host as a process, sends one request over the app's protocol, and asserts
+  the answer — the object graph is connected and a real use case runs through
+  it. The root test never builds the app itself (`testing.md`, TB070).
 - **A test substitutes its own repository:** the wiring (or the test) provides a
   fake repository that satisfies the repository interface, and the use case runs
   against it — framed as "a test provides its own repo impl", **not** as an

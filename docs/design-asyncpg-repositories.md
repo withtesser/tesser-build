@@ -13,7 +13,10 @@ after each increment's example is right, not before.
   `ALPHA_STORAGE`, `BETA_STORAGE`. Tests never write `os.environ`.
 - A root-tier e2e is host-shaped: one `loader.load()`, then the app is used
   through its clients only, then `close()`. It never reads the database
-  directly and never loads twice to prove persistence.
+  directly and never loads twice to prove persistence. *(Superseded
+  2026-09-28 by `design-test-tiers.md`: a root test reaches the app only
+  through a running host over protocol and never loads the app; the
+  client-level scenario moves to the context's `tests/`.)*
 - Consequence: a context's client must be observable — every write use case
   needs a read on the same client. `alpha` grew `find` for this reason.
 
