@@ -55,3 +55,48 @@ class RestateRecordRun(ts.Activity):
             return await run_application_client.record_run(record_run_request)
 
         self.handler = record_run
+
+
+class RestateWriteStoriesRequestSerde(ts.Serde, restate_serde.Serde[relays.WriteStoriesRequest]):
+
+    def serialize(self, write_stories_request: relays.WriteStoriesRequest | None) -> bytes:
+        if write_stories_request is None:
+            return b""
+        return relays.WriteStoriesRequestSnapshot().serialize(write_stories_request)
+
+    def deserialize(self, buf: bytes) -> relays.WriteStoriesRequest | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.WriteStoriesRequestSnapshot().deserialize(buf)
+
+
+class RestateWriteStoriesResponseSerde(ts.Serde, restate_serde.Serde[relays.WriteStoriesResponse]):
+
+    def serialize(self, write_stories_response: relays.WriteStoriesResponse | None) -> bytes:
+        if write_stories_response is None:
+            return b""
+        return relays.WriteStoriesResponseSnapshot().serialize(write_stories_response)
+
+    def deserialize(self, buf: bytes) -> relays.WriteStoriesResponse | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.WriteStoriesResponseSnapshot().deserialize(buf)
+
+
+class RestateWriteStories(ts.Activity):
+
+    def __init__(
+        self,
+        story_writing_actions_service: restate.Service,
+        story_writing_application_client: client.StoryWritingApplicationClient,
+    ) -> None:
+        @story_writing_actions_service.handler(
+            input_serde=RestateWriteStoriesRequestSerde(),
+            output_serde=RestateWriteStoriesResponseSerde(),
+        )
+        async def write_stories(
+            restate_context: restate.Context, write_stories_request: relays.WriteStoriesRequest
+        ) -> relays.WriteStoriesResponse:
+            return await story_writing_application_client.write_stories(write_stories_request)
+
+        self.handler = write_stories

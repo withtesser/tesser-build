@@ -11,20 +11,20 @@ class TestMemoryRunStore:
 
         async with memory_run_store.transaction() as run_repository:
             save_run_response = await run_repository.save_run(
-                ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="drafting")
+                ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=())
             )
         async with memory_run_store.transaction() as run_repository:
             load_run_response = await run_repository.load_run(ports.LoadRunRequest(run_id="run-1"))
 
         assert save_run_response.run_id == "run-1"
-        assert load_run_response.runs == (ports.Run(run_id="run-1", job="plan a migration", stage="drafting"),)
+        assert load_run_response.runs == (ports.Run(run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()),)
 
     async def test_saving_a_run_again_keeps_one_run_under_its_run_id(self) -> None:
         memory_run_store = repositories.MemoryRunStore()
 
         async with memory_run_store.transaction() as run_repository:
-            await run_repository.save_run(ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="drafting"))
-            await run_repository.save_run(ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="drafting"))
+            await run_repository.save_run(ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()))
+            await run_repository.save_run(ports.SaveRunRequest(run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()))
             load_run_response = await run_repository.load_run(ports.LoadRunRequest(run_id="run-1"))
 
         assert len(load_run_response.runs) == 1

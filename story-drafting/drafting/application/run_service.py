@@ -46,7 +46,13 @@ class MapToLoadRunRequest(ts.Mapper, ports.LoadRunRequest):
 class MapToRun(ts.Mapper, client.Run):
 
     def __init__(self, run: ports.Run) -> None:
-        super().__init__(run_id=run.run_id, job=run.job, stage=run.stage)
+        super().__init__(
+            run_id=run.run_id,
+            job=run.job,
+            stage=run.stage,
+            stories=run.stories,
+            accepted_stories=run.accepted_stories,
+        )
 
 
 class MapToGetRunResponse(ts.Mapper, client.GetRunResponse):

@@ -13,11 +13,11 @@ import urllib.request as urllib_request
 
 class TestHttpHost:
 
-    def test_the_mounted_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self) -> None:
+    def test_the_mounted_restate_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow(self) -> None:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        env = dict(os.environ, RESTATE_INGRESS="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
+        env = dict(os.environ, STORY_DRAFTING_WRITER="fixed", RESTATE_INGRESS="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         discover = urllib_request.Request(
             f"http://127.0.0.1:{port}/restate/discover",
@@ -44,6 +44,7 @@ class TestHttpHost:
         assert isinstance(services, list)
         assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == {
             "RunActions": ["record_run"],
+            "StoryWritingActions": ["write_stories"],
             "RunOrchestrator": ["draft_stories"],
         }
 
@@ -54,7 +55,7 @@ class TestHttpHost:
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
-        env = dict(os.environ, RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path))
+        env = dict(os.environ, STORY_DRAFTING_WRITER="fixed", RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
         try:

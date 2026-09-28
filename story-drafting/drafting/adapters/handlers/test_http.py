@@ -56,7 +56,15 @@ class TestHttpHandler:
 
     async def test_a_run_reads_back_as_its_fields(self) -> None:
         fake_drafting_client = FakeDraftingClient(
-            runs=(client.Run(run_id="run-1", job="plan a migration", stage="drafting"),)
+            runs=(
+                client.Run(
+                    run_id="run-1",
+                    job="plan a migration",
+                    stage="awaiting_pick",
+                    stories=("a story", "another story"),
+                    accepted_stories=(),
+                ),
+            )
         )
 
         http_response = await handlers.HttpHandler(fake_drafting_client).get_run(
@@ -64,7 +72,13 @@ class TestHttpHandler:
         )
 
         assert http_response.status_code == 200
-        assert json.loads(http_response.body) == {"run_id": "run-1", "job": "plan a migration", "stage": "drafting"}
+        assert json.loads(http_response.body) == {
+            "run_id": "run-1",
+            "job": "plan a migration",
+            "stage": "awaiting_pick",
+            "stories": ["a story", "another story"],
+            "accepted_stories": [],
+        }
         assert [got.run_id for got in fake_drafting_client.got] == ["run-1"]
 
     async def test_a_run_the_client_does_not_have_is_404(self) -> None:

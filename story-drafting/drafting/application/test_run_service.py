@@ -42,6 +42,8 @@ class FakeRunRepository(ports.RunRepository):
             run_id=save_run_request.run_id,
             job=save_run_request.job,
             stage=save_run_request.stage,
+            stories=save_run_request.stories,
+            accepted_stories=save_run_request.accepted_stories,
         )
         return ports.SaveRunResponse(run_id=save_run_request.run_id)
 
@@ -79,16 +81,18 @@ class TestRunService:
 
     async def test_a_saved_run_is_read_back_by_its_run_id(self) -> None:
         fake_run_store = FakeRunStore()
-        fake_run_store.runs["run-1"] = ports.Run(run_id="run-1", job="plan a migration", stage="drafting")
+        fake_run_store.runs["run-1"] = ports.Run(
+            run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
+        )
         run_service = application.RunService(
             FakeRunOrchestratorRelay(), FakeRunIdentityRepository(), fake_run_store
         )
 
         get_run_response = await run_service.get_run(client.GetRunRequest(run_id="run-1"))
 
-        assert [(run.run_id, run.job, run.stage) for run in get_run_response.runs] == [
-            ("run-1", "plan a migration", "drafting")
-        ]
+        assert [
+            (run.run_id, run.job, run.stage, run.stories, run.accepted_stories) for run in get_run_response.runs
+        ] == [("run-1", "plan a migration", "awaiting_pick", ("a story",), ())]
 
     async def test_a_run_never_saved_reads_back_as_no_run(self) -> None:
         run_service = application.RunService(

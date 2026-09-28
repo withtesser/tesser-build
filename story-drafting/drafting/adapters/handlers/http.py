@@ -33,6 +33,8 @@ class HttpHandler(ts.Handler):
                     "run_id": get_run_response.runs[0].run_id,
                     "job": get_run_response.runs[0].job,
                     "stage": get_run_response.runs[0].stage,
+                    "stories": list(get_run_response.runs[0].stories),
+                    "accepted_stories": list(get_run_response.runs[0].accepted_stories),
                 }
             ).encode(),
         )

@@ -9,15 +9,22 @@ import tesser.errors as errors
 class TestRecordRunRequestSnapshot:
 
     def test_a_request_is_its_fields(self) -> None:
-        record_run_request = relays.RecordRunRequest(run_id="run-1", job="plan a migration", stage="drafting")
+        record_run_request = relays.RecordRunRequest(
+            run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
+        )
 
         raw = relays.RecordRunRequestSnapshot().serialize(record_run_request)
 
-        assert raw == b'{"run_id": "run-1", "job": "plan a migration", "stage": "drafting"}'
+        assert raw == (
+            b'{"run_id": "run-1", "job": "plan a migration", "stage": "awaiting_pick", '
+            b'"stories": ["a story"], "accepted_stories": []}'
+        )
 
     def test_a_request_comes_back_equal(self) -> None:
         record_run_request_snapshot = relays.RecordRunRequestSnapshot()
-        record_run_request = relays.RecordRunRequest(run_id="run-1", job="plan a migration", stage="drafting")
+        record_run_request = relays.RecordRunRequest(
+            run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
+        )
 
         returned = record_run_request_snapshot.deserialize(record_run_request_snapshot.serialize(record_run_request))
 
@@ -28,6 +35,7 @@ class TestRecordRunRequestSnapshot:
             b"{}",
             b'{"run_id": 1, "job": "plan a migration", "stage": "drafting"}',
             b'{"run_id": "run-1", "job": "plan a migration"}',
+            b'{"run_id": "run-1", "job": "plan a migration", "stage": "drafting", "stories": [1], "accepted_stories": []}',
             b'["run-1"]',
         ):
             with pytest.raises(errors.DomainError):

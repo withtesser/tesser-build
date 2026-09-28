@@ -429,9 +429,9 @@ run_story_drafting() {
   local deployment="${STORY_DRAFTING_DEPLOYMENT:-http://$callback_host:$port}"
   step "pytest every tier but the root (no host served; Restate at $ingress)"
   RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
+    STORY_DRAFTING_WRITER=fixed pytest -q --ignore=tests || return 1
   step "serve the HTTP host on :$port and register its Restate endpoint at $admin (forcing)"
-  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+  (exec env RESTATE_INGRESS="$ingress" STORY_DRAFTING_WRITER=fixed PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
   local registered=1

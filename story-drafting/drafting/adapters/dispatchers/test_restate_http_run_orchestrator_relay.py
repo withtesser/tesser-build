@@ -31,16 +31,25 @@ class FakeRunApplicationClient(client.RunApplicationClient):
         return relays.RecordRunResponse(run_id=record_run_request.run_id)
 
 
+@ts.fake
+class FakeStoryWritingApplicationClient(client.StoryWritingApplicationClient):
+
+    async def write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        return relays.WriteStoriesResponse(stories=("As a developer, I want " + write_stories_request.job,))
+
+
 class TestRestateHttpRunOrchestratorRelay:
 
     async def test_start_draft_stories_sends_the_workflow_the_engine_keys_by_the_run_id(self) -> None:
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         run_actions_service = restate.Service(f"RunActions{suffix}")
+        story_writing_actions_service = restate.Service(f"StoryWritingActions{suffix}")
         run_orchestrator_workflow = restate.Workflow(f"RunOrchestrator{suffix}")
         restate_draft_stories = workflows.RestateDraftStories(
             run_orchestrator_workflow,
             activities.RestateRecordRun(run_actions_service, FakeRunApplicationClient()),
+            activities.RestateWriteStories(story_writing_actions_service, FakeStoryWritingApplicationClient()),
         )
         with socket.socket() as probe:
             probe.bind(("0.0.0.0", 0))
@@ -50,7 +59,7 @@ class TestRestateHttpRunOrchestratorRelay:
         shutdown = asyncio.Event()
         serving = asyncio.create_task(
             hypercorn_asyncio.serve(
-                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, run_orchestrator_workflow])),
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, story_writing_actions_service, run_orchestrator_workflow])),
                 hypercorn_config_config,
                 shutdown_trigger=shutdown.wait,
             )
@@ -77,18 +86,20 @@ class TestRestateHttpRunOrchestratorRelay:
                     "/query",
                     headers={"accept": "application/json"},
                     json={
-                        "query": "SELECT target_service_key, invoked_by, status, completion_result FROM sys_invocation "
+                        "query": "SELECT id, target_service_key, invoked_by FROM sys_invocation "
                         f"WHERE target_service_name = 'RunOrchestrator{suffix}'"
                     },
                 )
-                if [row["status"] for row in invoked.json()["rows"]] == ["completed"]:
+                if invoked.json()["rows"]:
                     break
                 await asyncio.sleep(0.05)
+            for row in invoked.json()["rows"]:
+                await admin.patch(f"/invocations/{row['id']}/kill")
 
             assert start_draft_stories_response == relays.StartDraftStoriesResponse(run_id=workflow_key)
             assert [
-                (row["target_service_key"], row["invoked_by"], row["completion_result"]) for row in invoked.json()["rows"]
-            ] == [(workflow_key, "ingress", "success")]
+                (row["target_service_key"], row["invoked_by"]) for row in invoked.json()["rows"]
+            ] == [(workflow_key, "ingress")]
         finally:
             if registered.is_success:
                 await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})

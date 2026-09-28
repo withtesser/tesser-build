@@ -1,0 +1,2 @@
+from drafting.adapters.gateways.anthropic_story_writing import AnthropicStoryWriting as AnthropicStoryWriting
+from drafting.adapters.gateways.fixed_story_writing import FixedStoryWriting as FixedStoryWriting

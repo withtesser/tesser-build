@@ -21,6 +21,8 @@ class FakeRunRepository(ports.RunRepository):
             run_id=save_run_request.run_id,
             job=save_run_request.job,
             stage=save_run_request.stage,
+            stories=save_run_request.stories,
+            accepted_stories=save_run_request.accepted_stories,
         )
         return ports.SaveRunResponse(run_id=save_run_request.run_id)
 
@@ -46,18 +48,22 @@ class TestRunActions:
         run_actions = application.RunActions(fake_run_store)
 
         await run_actions.record_run(
-            relays.RecordRunRequest(run_id="run-1", job="plan a migration", stage="drafting")
+            relays.RecordRunRequest(
+                run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
+            )
         )
 
         assert fake_run_store.runs["run-1"] == ports.Run(
-            run_id="run-1", job="plan a migration", stage="drafting"
+            run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
         )
 
     async def test_record_run_answers_the_run_id_it_saved(self) -> None:
         run_actions = application.RunActions(FakeRunStore())
 
         record_run_response = await run_actions.record_run(
-            relays.RecordRunRequest(run_id="run-1", job="plan a migration", stage="drafting")
+            relays.RecordRunRequest(
+                run_id="run-1", job="plan a migration", stage="awaiting_pick", stories=("a story",), accepted_stories=()
+            )
         )
 
         assert record_run_response.run_id == "run-1"

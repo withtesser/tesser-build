@@ -13,6 +13,8 @@ class MapToSaveRunRequest(ts.Mapper, ports.SaveRunRequest):
             run_id=record_run_request.run_id,
             job=record_run_request.job,
             stage=record_run_request.stage,
+            stories=record_run_request.stories,
+            accepted_stories=record_run_request.accepted_stories,
         )
 
 

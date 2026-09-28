@@ -19,10 +19,19 @@ class OpenRunResponse(ts.Response):
 
 class Run(ts.Response):
 
-    def __init__(self, run_id: str, job: str, stage: str) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        job: str,
+        stage: str,
+        stories: tuple[str, ...],
+        accepted_stories: tuple[str, ...],
+    ) -> None:
         self.run_id = run_id
         self.job = job
         self.stage = stage
+        self.stories = stories
+        self.accepted_stories = accepted_stories
 
 
 class GetRunRequest(ts.Request):

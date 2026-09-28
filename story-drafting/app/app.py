@@ -44,10 +44,18 @@ class EnvConfigRepository(AppConfigRepository):
         ingress = os.environ.get("RESTATE_INGRESS")
         if ingress is None:
             raise errors.invalid("missing_env", "RESTATE_INGRESS is required")
+        story_writing = os.environ.get("STORY_DRAFTING_WRITER")
+        if story_writing is None:
+            raise errors.invalid("missing_env", "STORY_DRAFTING_WRITER is required")
         return AppConfig(
             Spec(
                 drafting=drafting_component.Config(
-                    drafting_component.Spec(ingress=ingress, identity_seed=secrets.randbits(_IDENTITY_SEED_BITS))
+                    drafting_component.Spec(
+                        ingress=ingress,
+                        identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
+                        story_writing=story_writing,
+                        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                    )
                 )
             )
         )

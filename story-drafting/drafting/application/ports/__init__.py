@@ -8,3 +8,6 @@ from drafting.application.ports.run_repository import LoadRunRequest as LoadRunR
 from drafting.application.ports.run_repository import LoadRunResponse as LoadRunResponse
 from drafting.application.ports.run_repository import SaveRunRequest as SaveRunRequest
 from drafting.application.ports.run_repository import SaveRunResponse as SaveRunResponse
+from drafting.application.ports.story_writing import StoryWriting as StoryWriting
+from drafting.application.ports.story_writing import WriteStoriesRequest as WriteStoriesRequest
+from drafting.application.ports.story_writing import WriteStoriesResponse as WriteStoriesResponse

@@ -61,6 +61,7 @@ class HttpHost(ts.Host):
             restate.app(
                 [
                     story_drafting_app.drafting.run_actions_service,
+                    story_drafting_app.drafting.story_writing_actions_service,
                     story_drafting_app.drafting.run_orchestrator_workflow,
                 ]
             ),

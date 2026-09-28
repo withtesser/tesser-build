@@ -18,6 +18,8 @@ class MemoryRunRepository(ts.Repository):
             run_id=save_run_request.run_id,
             job=save_run_request.job,
             stage=save_run_request.stage,
+            stories=save_run_request.stories,
+            accepted_stories=save_run_request.accepted_stories,
         )
         return ports.SaveRunResponse(run_id=save_run_request.run_id)
 
