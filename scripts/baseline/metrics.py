@@ -17,10 +17,10 @@ import os
 import pathlib
 import re
 import subprocess
-import xml.etree.ElementTree as ET
 
 TREE = "story-drafting"
 FINDING = re.compile(r":\d+: (TB\d{3}) ")
+SUMMARY = re.compile(r"^(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS) (\S+)(?: - (.*))?$")
 TESSERCHECK_COMMAND = re.compile(r"scripts/verify\s+[\w-]|scripts/verify\s*($|[;&|])|-m srv\.cli\.main|tessercheck-check|tessercheck_tree")
 SKILL_DOC = re.compile(r"skills/tesser-build/([\w.-]+\.md)")
 
@@ -172,10 +172,14 @@ def diff_metrics(worktree: pathlib.Path, base: str) -> dict:
 
 def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
-    junit = out / "junit.xml"
     env = dict(os.environ)
+    run = json.loads((out / "run.json").read_text())
+    if "restate_ingress" in run:
+        env["RESTATE_INGRESS"] = run["restate_ingress"]
+        env["RESTATE_ADMIN"] = run["restate_admin"]
+        env["STORY_DRAFTING_PORT"] = str(run["host_port"])
     env["COVERAGE_FILE"] = str(out / ".coverage")
-    env["PYTEST_ADDOPTS"] = f"--cov=. --cov-report=json:{coverage} --junitxml={junit} -p no:cacheprovider"
+    env["PYTEST_ADDOPTS"] = f"--cov=. --cov-append --cov-report=json:{coverage} -rA -p no:cacheprovider"
     proc = subprocess.run(["scripts/verify", TREE], cwd=worktree, env=env, capture_output=True, text=True)
     (out / "verify.log").write_text(proc.stdout + proc.stderr)
     log = proc.stdout
@@ -183,16 +187,14 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     tessercheck_findings = len(FINDING.findall(log))
 
     tests = []
-    if junit.exists():
-        for case in ET.parse(junit).getroot().iter("testcase"):
-            outcome, message = "passed", ""
-            for tag in ("failure", "error", "skipped"):
-                node = case.find(tag)
-                if node is not None:
-                    outcome = {"failure": "failed", "error": "error", "skipped": "skipped"}[tag]
-                    message = (node.get("message") or node.text or "")[:500]
-                    break
-            tests.append({"id": f"{case.get('classname')}::{case.get('name')}", "outcome": outcome, "message": message})
+    for line in log.splitlines():
+        outcome = SUMMARY.match(line)
+        if outcome:
+            tests.append({
+                "id": outcome.group(2),
+                "outcome": outcome.group(1).lower(),
+                "message": (outcome.group(3) or "")[:500],
+            })
 
     covered = total = 0
     if coverage.exists():

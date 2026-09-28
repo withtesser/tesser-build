@@ -1,32 +1,38 @@
 #!/usr/bin/env bash
 #
-# Prepare one baseline run: a fresh worktree for a subagent to work one phase
-# of the story-drafting build in.
+# Prepare one baseline run: a fresh worktree and a fresh Restate server for a
+# subagent to work one phase of the story-drafting build in.
 #
-#   scripts/baseline/prepare red   <base-ref>        <run-name>
-#   scripts/baseline/prepare green <red-run-branch>  <run-name>
+#   scripts/baseline/prepare red   <base-ref>        <run-name> <slot>
+#   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
 #
 # The worktree is .claude/worktrees/run-<run-name> on branch
 # baseline/runs/<run-name>, cut from <base-ref>, so every run of a phase
-# starts from the same commit. The orchestrating session then spawns a
-# subagent with scripts/baseline/prompts/<phase>.md and the worktree path, and
-# afterwards runs scripts/baseline/measure on the subagent's transcript.
-# It also replaces the tree's Restate container with a fresh one. Outputs land
-# in .baseline-runs/<run-name>/ in the main checkout (gitignored: transcripts
-# carry machine-local paths); scripts/baseline/record commits the numbers.
+# starts from the same commit. The slot (0-9) gives the run its own Restate
+# container (tesser-story-drafting-restate-<slot>, ingress 38080+100*slot,
+# admin 39070+100*slot) and ten host ports from 9300+10*slot, so runs in
+# different slots go side by side; the container is replaced, so a run never
+# inherits another's registrations. The filled prompt lands in
+# .baseline-runs/<run-name>/prompt.md for the orchestrating session to hand to
+# a subagent; afterwards scripts/baseline/measure reads the transcript, and
+# scripts/baseline/record commits the numbers (.baseline-runs/ is gitignored:
+# transcripts carry machine-local paths).
 #
 set -euo pipefail
 
-if [ $# -ne 3 ]; then
-  echo "usage: scripts/baseline/prepare red|green <base-ref> <run-name>" >&2
+if [ $# -ne 4 ]; then
+  echo "usage: scripts/baseline/prepare red|green <base-ref> <run-name> <slot>" >&2
   exit 2
 fi
 phase=$1
 base=$2
 name=$3
+slot=$4
+case "$slot" in [0-9]) ;; *) echo "baseline: slot is 0-9" >&2; exit 2 ;; esac
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-[ -f "$HERE/prompts/$phase.md" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
+prompt="$HERE/prompts/$phase.md"
+[ -f "$prompt" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
 
 MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 wt="$MAIN/.claude/worktrees/run-$name"
@@ -34,22 +40,33 @@ branch="baseline/runs/$name"
 out="$MAIN/.baseline-runs/$name"
 [ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
 [ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
-mkdir -p "$out"
 
-# A fresh Restate server per run: a run's registrations (and a stray host's)
-# otherwise stay on the server and shape the next run's design.
-docker rm -f tesser-story-drafting-restate >/dev/null 2>&1 || true
-docker run -d --name tesser-story-drafting-restate -p 38080:8080 -p 39070:9070 \
+ingress_port=$((38080 + 100 * slot))
+admin_port=$((39070 + 100 * slot))
+host_port=$((9300 + 10 * slot))
+container="tesser-story-drafting-restate-$slot"
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker run -d --name "$container" -p "$ingress_port:8080" -p "$admin_port:9070" \
   --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
 for _ in $(seq 1 50); do
-  if curl -sf http://localhost:39070/health >/dev/null; then break; fi
+  if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
   sleep 0.2
 done
 
+mkdir -p "$out"
 base_sha=$(git rev-parse "$base^{commit}")
 git worktree add -q -b "$branch" "$wt" "$base_sha"
 
 cat >"$out/run.json" <<JSON
-{"phase": "$phase", "name": "$name", "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
-echo "$wt"
+
+WT="$wt" VENV="$MAIN/.venv" INGRESS="http://localhost:$ingress_port" ADMIN="http://localhost:$admin_port" \
+  PORT="$host_port" PORT_LAST="$((host_port + 9))" python3 - "$prompt" "$out/prompt.md" <<'PY'
+import os, sys
+text = open(sys.argv[1]).read()
+for key, var in (("worktree", "WT"), ("venv", "VENV"), ("ingress", "INGRESS"), ("admin", "ADMIN"), ("port_last", "PORT_LAST"), ("port", "PORT")):
+    text = text.replace("{" + key + "}", os.environ[var])
+open(sys.argv[2], "w").write(text)
+PY
+echo "$out/prompt.md"

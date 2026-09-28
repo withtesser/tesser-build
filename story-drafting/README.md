@@ -36,6 +36,9 @@ cannot skip my checkpoint.
 - Drafting is done by a language model behind a port. No test calls a real
   model: the acceptance run selects a deterministic drafting adapter through
   the environment.
-- The acceptance test drives the app only through its public client.
+- The acceptance test is a root test (`docs/design-test-tiers.md`): it drives
+  the app only through a running host the developer or an agent would use,
+  speaking the app's protocol, and reads the result back through that host.
+  The story's behaviour scenarios are context tests.
 - Out of scope for this story: making the pick, revising a draft, and the
   agent-facing skill document (`SKILL.md`).
