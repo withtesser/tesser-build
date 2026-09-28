@@ -2,7 +2,7 @@
 name: tesser-build
 description: Application-construction entry point (DDD). Load whenever creating or modifying domain types OR the code around them — adding a field to a class, creating a new type, modeling a new concept, writing a constructor, adding validation, comparing domain objects in tests, deciding between a value object/entity/aggregate, AND whenever writing a handler/endpoint, a use-case or application/domain service, or persistence/repository code (where to put business logic, how to load or save an aggregate, keeping domain math out of controllers), AND whenever component an application together — writing an entry point / `main` / composition root / host, exposing a component behind a public interface (a `Client` + DTOs), connecting two bounded contexts (a cross-context call or read), or placing a web UI / frontend / SPA (where presentation code lives), AND whenever reasoning about strategic design — subdomains, bounded contexts, or ubiquitous language. Routes the task through the decomposition procedure to the right component doc.
 skill-version: 91
-source: https://github.com/verocorp/tesser-build (skills/tesser-build/)
+source: https://github.com/withtesser/tesser-build (skills/tesser-build/)
 ---
 
 # Application construction — entry point
@@ -151,4 +151,4 @@ Route on the task:
    and the graph stays acyclic (`map.md#how-contexts-connect`).
 
 Humans learning the why: see `docs/start-here.md` and `docs/faq.md` in the
-source repo (or https://github.com/verocorp/tesser-build).
+source repo (or https://github.com/withtesser/tesser-build).
