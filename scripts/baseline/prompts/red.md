@@ -15,16 +15,21 @@ Done means all of these hold:
    client, as the README's constraints say.
 2. `scripts/verify story-drafting` gets past tessercheck with zero findings and
    past `mypy --strict`. Its pytest step fails.
-3. The acceptance test fails **because the story's behavior is not built** — an
-   assertion failure, or the app answering that the operation is not
-   implemented. It must not fail from an import error, a collection error, a
-   missing module, or a service that is not running.
-4. You have not built the story's behavior. Build only the structure the test
-   needs to import, run, and reach the missing behavior.
+3. The acceptance test fails **past the wiring, at the behavior the story
+   adds.** Starting a run succeeds: it goes through the app's durable workflow
+   on Restate and returns a run the client can read back. The test then fails
+   on an assertion about what the story adds — the run is not waiting for a
+   pick, or it has no drafted stories. It must not fail from an operation that
+   is not implemented at the entry point, an import error, a collection error,
+   a missing module, or a service that is not running.
+4. You have built the structure the story's run goes through — the client, the
+   service, the durable workflow on Restate, and what the component wires for
+   them — but not the story's behavior: no drafting, and no waiting for the
+   pick.
 
 Follow the repo's `CLAUDE.md` and the `tesser-build` skill. You may extend the
-tree's `run_story_drafting` arm in `scripts/verify` (for example to serve and
-register the Restate endpoint, as `run_durable_execution` does). A Restate
+tree's `run_story_drafting` arm in `scripts/verify` (to serve and register the
+Restate endpoint, as `run_durable_execution` does). A Restate
 server for this tree is running at ingress http://localhost:38080 and admin
 http://localhost:39070. Work only inside the worktree.
 
