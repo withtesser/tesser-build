@@ -51,6 +51,24 @@ class GetDraftingResponse(ts.Response):
         self.drafting = drafting
 
 
+class DraftingRejected(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class DraftingNotFound(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+ERRORS: typing.Final[tuple[type[DraftingRejected], type[DraftingNotFound]]] = (DraftingRejected, DraftingNotFound)
+
+
 class DraftingClient(ts.Client, typing.Protocol):
 
     async def draft_stories(self, draft_stories_request: DraftStoriesRequest) -> DraftStoriesResponse: ...

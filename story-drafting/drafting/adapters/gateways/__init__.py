@@ -1,0 +1,1 @@
+from drafting.adapters.gateways.deterministic_story_writer import DeterministicStoryWriter as DeterministicStoryWriter

@@ -8,7 +8,7 @@ import tesser.app as ts
 import drafting.component as drafting_component
 import tesser.errors as errors
 
-_REQUIRED: typing.Final[tuple[str, ...]] = ("RESTATE_INGRESS", "STORY_DRAFTING_DRAFTER")
+_REQUIRED: typing.Final[tuple[str, ...]] = ("RESTATE_INGRESS", "STORY_DRAFTING_DRAFTER", "STORY_DRAFTING_STORAGE")
 
 
 class Spec(ts.Spec):
@@ -50,7 +50,9 @@ class EnvConfigRepository(AppConfigRepository):
             Spec(
                 drafting=drafting_component.Config(
                     drafting_component.Spec(
-                        ingress=settings["RESTATE_INGRESS"], drafter=settings["STORY_DRAFTING_DRAFTER"]
+                        ingress=settings["RESTATE_INGRESS"],
+                        drafter=settings["STORY_DRAFTING_DRAFTER"],
+                        storage=settings["STORY_DRAFTING_STORAGE"],
                     )
                 )
             )

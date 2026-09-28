@@ -9,8 +9,10 @@ import drafting.component as drafting_component
 
 
 @ts.helper
-def drafting_spec(ingress: str = "http://localhost:8080", drafter: str = "deterministic") -> drafting_component.Spec:
-    return drafting_component.Spec(ingress=ingress, drafter=drafter)
+def drafting_spec(
+    ingress: str = "http://localhost:8080", drafter: str = "deterministic", storage: str = "/tmp/story-drafting"
+) -> drafting_component.Spec:
+    return drafting_component.Spec(ingress=ingress, drafter=drafter, storage=storage)
 
 
 @ts.fake
@@ -37,6 +39,7 @@ class TestEnvConfigRepository:
 
         assert app_config.drafting.ingress == os.environ["RESTATE_INGRESS"]
         assert app_config.drafting.drafter == os.environ["STORY_DRAFTING_DRAFTER"]
+        assert app_config.drafting.storage == os.environ["STORY_DRAFTING_STORAGE"]
 
 
 class TestAppLoader:

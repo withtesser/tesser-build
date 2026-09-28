@@ -1,1 +1,3 @@
+from drafting.application.drafting_actions import DraftingActions as DraftingActions
 from drafting.application.drafting_service import DraftingService as DraftingService
+from drafting.application.writing_actions import WritingActions as WritingActions

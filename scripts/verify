@@ -328,6 +328,13 @@ run_specs_app() {
 #     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
 run_story_drafting() {
   cd "$ROOT/story-drafting" || return 1
+  local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:39070}"
+  local port="${STORY_DRAFTING_DEPLOYMENT_PORT:-9087}"
+  local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  local deployment="${STORY_DRAFTING_DEPLOYMENT:-http://$callback_host:$port}"
+  local drafter="${STORY_DRAFTING_DRAFTER:-deterministic}"
+  local storage="${STORY_DRAFTING_STORAGE:-$(mktemp -d)}"
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   local targets=()
@@ -340,12 +347,35 @@ run_story_drafting() {
     step "mypy --strict"
     MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
   fi
-  # No test calls a real model: the acceptance run selects the deterministic
-  # drafting adapter through the environment.
-  step "pytest (against Restate at ${RESTATE_INGRESS:-http://localhost:38080})"
-  RESTATE_INGRESS="${RESTATE_INGRESS:-http://localhost:38080}" \
-    RESTATE_ADMIN="${RESTATE_ADMIN:-http://localhost:39070}" \
-    STORY_DRAFTING_DRAFTER="${STORY_DRAFTING_DRAFTER:-deterministic}" pytest -q || return 1
+  # No test calls a real model: the served endpoint and the acceptance run
+  # both select the deterministic drafting adapter through the environment,
+  # and both read and write the drafting records in the same directory.
+  step "serve the Restate endpoint on :$port and register it at $admin"
+  (exec env RESTATE_INGRESS="$ingress" STORY_DRAFTING_DRAFTER="$drafter" STORY_DRAFTING_STORAGE="$storage" \
+    PYTHONPATH=.:../tesser-py python3 -m srv.restate.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ] || ! kill -0 "$host" 2>/dev/null; then
+    echo "story-drafting: could not serve and register $deployment with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (against Restate at $ingress)"
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" STORY_DRAFTING_CALLBACK_HOST="$callback_host" \
+    STORY_DRAFTING_DRAFTER="$drafter" STORY_DRAFTING_STORAGE="$storage" pytest -q
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
 }
 
 # The voice example: one context (calls) whose root-tier test places a call

@@ -1,6 +1,9 @@
+from drafting.client.client import ERRORS as ERRORS
 from drafting.client.client import Drafting as Drafting
 from drafting.client.client import DraftingClient as DraftingClient
 from drafting.client.client import DraftedStory as DraftedStory
+from drafting.client.client import DraftingNotFound as DraftingNotFound
+from drafting.client.client import DraftingRejected as DraftingRejected
 from drafting.client.client import GetDraftingRequest as GetDraftingRequest
 from drafting.client.client import GetDraftingResponse as GetDraftingResponse
 from drafting.client.client import DraftStoriesRequest as DraftStoriesRequest
