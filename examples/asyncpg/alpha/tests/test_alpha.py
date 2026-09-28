@@ -69,6 +69,24 @@ class TestAlphaContext:
         assert taken.part == "q"
         assert retaken.part == "q"
 
+    async def test_a_held_part_beta_clears_is_kept_and_the_widget_is_stored(self) -> None:
+        config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
+        database = pgdatabase_database.Database(config.database)
+        await database.open()
+        async with database.acquire() as connection:
+            await connection.execute("DROP TABLE IF EXISTS widgets")
+        alpha = component.Alpha(config, database, FakeBetaCheck())
+        add_part_response = await alpha.client.add_part(
+            client.AddPartRequest(name="ctx-alpha-cleared", part="ctx-alpha-cleared")
+        )
+        find_widget_response = await alpha.client.find_widget(
+            client.FindWidgetRequest(name="ctx-alpha-cleared")
+        )
+        await alpha.close()
+        await database.close()
+        assert add_part_response.standing == "kept"
+        assert find_widget_response.found == "yes"
+
     async def test_adding_a_stored_name_is_widget_exists_and_the_stored_standing_survives(self) -> None:
         config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
         database = pgdatabase_database.Database(config.database)

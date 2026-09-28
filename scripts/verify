@@ -211,10 +211,11 @@ run_durable_execution() {
 # The minimal tree with a real database behind it: the same two contexts, each
 # with an asyncpg repository behind a store that owns the transaction — it is
 # Postgres-only, there is no memory backend to fall back to — an async
-# client/service/port chain, and an e2e that bootstraps
-# through the app loader alone. The app reads its own environment through
-# the config repository, so the runner supplies it — the same job a deploy
-# does. Tests never inject it. The gate needs a reachable Postgres at that
+# client/service/port chain, and an e2e that runs the CLI host as a
+# subprocess and speaks only protocol to it. The app reads its own
+# environment through the config repository, so the runner supplies it — the
+# same job a deploy does, and the e2e passes it on to the host. Tests never
+# inject it. The gate needs a reachable Postgres at that
 # coordinate — there is no skip, because a skipped e2e is a gate that passes
 # without checking anything. CI provides a service container; locally:
 #
