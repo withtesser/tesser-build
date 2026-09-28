@@ -26,9 +26,9 @@ IDENTITY_TYPE: typing.Final[str] = "str"
 
 SAMPLE_COUNT: typing.Final[int] = 2
 
-TYPES: typing.Final[dict[str, tuple[str, str, str]]] = {
-    "str": ("text", "canonical_str", "__str__"),
-    "int": ("bigint", "canonical_int", "__int__"),
+TYPES: typing.Final[dict[str, tuple[str, str, str, str]]] = {
+    "str": ("text", "canonical_str", "__str__", "arg"),
+    "int": ("bigint", "canonical_int", "__int__", "int_arg"),
 }
 
 RESERVED: typing.Final[frozenset[str]] = frozenset(
@@ -521,7 +521,7 @@ class Tree(ts.AggregateRoot):
         }
         items: dict[str, tuple[tuple[str, str], ...]] = {}
         for name, kind in kinds.items():
-            sql_type, canonical, dunder = TYPES[kind]
+            sql_type, canonical, dunder, cli_arg = TYPES[kind]
             items[name] = (
                 ("field", name),
                 ("Field", classes[name]),
@@ -529,11 +529,14 @@ class Tree(ts.AggregateRoot):
                 ("sql_type", sql_type),
                 ("canonical", canonical),
                 ("dunder", dunder),
+                ("cli_arg", cli_arg),
                 ("sample", literals[name][0]),
                 ("sample2", literals[name][1]),
+                ("sample_arg", f'"{sampled[name][0][1]}"'),
                 ("wrong", "1" if kind == "str" else '"1"'),
                 ("accessor", "identity" if name == identity else name),
                 ("is_identity", "true" if name == identity else ""),
+                ("is_asserted", "true" if name == spec.asserted_field else ""),
             )
         listed = (
             ("fields", field_names),
@@ -554,6 +557,7 @@ class Tree(ts.AggregateRoot):
                             else (" and " if len(names) == 2 else (", and " if index == len(names) - 1 else ", ")),
                         ),
                         ("position", str(index + 1)),
+                        ("index", str(index)),
                     )
                     for index, name in enumerate(names)
                 ),
@@ -593,6 +597,7 @@ class Tree(ts.AggregateRoot):
             ("storage_env", spec.storage_url_variable),
             ("ingress_env", spec.restate_ingress_url_variable),
             ("asserts", spec.asserted_field),
+            ("field_count", str(len(field_names))),
             ("random_choices", "(" + ", ".join(choices) + ("," if len(choices) == 1 else "") + ")"),
             ("test_class", spec.test_class_name),
             ("test_method", spec.test_method_name),

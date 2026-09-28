@@ -502,7 +502,7 @@ run_generated_tree() {
   step "$spec: tessercheck (zero findings over the generated tree)"
   tessercheck_tree "$out" || return 1
   step "$spec: mypy --strict"
-  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase srv tests conftest.py) || return 1
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase protocol srv tests conftest.py) || return 1
   step "$spec: serve the generated Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "$storage_env=$storage" "$ingress_env=$ingress" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m srv.restate.main "0.0.0.0:$port") &
