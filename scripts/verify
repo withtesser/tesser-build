@@ -335,15 +335,17 @@ EOF
 # POST /jtbd/{id}/stories, and root-tier tests that play the user: one posts
 # a story over HTTP, one drives the page through Playwright — so this tree
 # needs a browser (python -m playwright install chromium) as well as the
-# Python tooling. The arm serves the HTTP host as a process on
-# SPECS_APP_PORT, puts its address in SPECS_APP_URL, and stops it after
-# pytest.
+# Python tooling. The arm runs every tier but the root with no host served,
+# then serves the HTTP host as a process on SPECS_APP_PORT, puts its address
+# in SPECS_APP_URL, runs the root tier (pytest tests) against it, and stops it.
 run_specs_app() {
   cd "$ROOT/specs-app" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../tesser-py mypy --strict protocol specification app srv tests conftest.py || return 1
+  step "pytest (every tier but the root, no host served)"
+  pytest -q --ignore=tests || return 1
   local port="${SPECS_APP_PORT:-9283}"
   local url="http://127.0.0.1:$port"
   if curl -s -o /dev/null "$url/"; then
@@ -368,8 +370,8 @@ run_specs_app() {
     wait "$host" 2>/dev/null
     return 1
   fi
-  step "pytest (root tests against the host at SPECS_APP_URL)"
-  SPECS_APP_URL="$url" pytest -q
+  step "pytest tests (root tests against the host at SPECS_APP_URL)"
+  SPECS_APP_URL="$url" pytest -q tests
   local status=$?
   kill -TERM "$host" 2>/dev/null
   wait "$host" 2>/dev/null
