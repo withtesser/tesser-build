@@ -6,3 +6,6 @@ from drafting.application.ports.run_repository import RunRepository as RunReposi
 from drafting.application.ports.run_repository import RunStore as RunStore
 from drafting.application.ports.run_repository import SaveRunRequest as SaveRunRequest
 from drafting.application.ports.run_repository import SaveRunResponse as SaveRunResponse
+from drafting.application.ports.story_writer import StoryWriter as StoryWriter
+from drafting.application.ports.story_writer import WriteStoriesRequest as WriteStoriesRequest
+from drafting.application.ports.story_writer import WriteStoriesResponse as WriteStoriesResponse

@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import tesser.domain as ts
 
+import typing
+
 import tesser.errors as errors
 import tesser.serialization as serialization
+
+_DRAFTING: typing.Final[str] = "drafting"
+_AWAITING_PICK: typing.Final[str] = "awaiting_pick"
 
 
 class RunId(ts.ValueObject):
@@ -39,7 +44,7 @@ class Stage(ts.ValueObject):
     _value: str
 
     def __init__(self, value: str) -> None:
-        if value not in ("drafting", "awaiting_pick"):
+        if value not in (_DRAFTING, _AWAITING_PICK):
             raise errors.invalid("invalid_stage", f"stage {value!r} is not a stage of a run")
         object.__setattr__(self, "_value", value)
 
@@ -64,6 +69,26 @@ class Story(ts.ValueObject):
 
     def __str__(self) -> str:
         return serialization.canonical_str(self._value)
+
+
+class DraftSpec(ts.Spec):
+
+    def __init__(self, stories: tuple[StorySpec, ...]) -> None:
+        self.stories = stories
+
+
+class Draft(ts.ValueObject):
+
+    _stories: tuple[Story, ...]
+
+    def __init__(self, spec: DraftSpec) -> None:
+        if not spec.stories:
+            raise errors.invalid("empty_draft", "a draft holds at least one story")
+        object.__setattr__(self, "_stories", tuple(Story(story_spec) for story_spec in spec.stories))
+
+    @property
+    def stories(self) -> tuple[Story, ...]:
+        return self._stories
 
 
 class RunSpec(ts.Spec):
@@ -111,3 +136,9 @@ class Run(ts.AggregateRoot):
     @property
     def accepted_stories(self) -> tuple[Story, ...]:
         return self._accepted_stories
+
+    def drafted(self, draft: Draft) -> None:
+        if self._stage != Stage(_DRAFTING):
+            raise errors.invalid("not_drafting", "only a run that is drafting takes a draft")
+        self._stories = draft.stories
+        self._stage = Stage(_AWAITING_PICK)

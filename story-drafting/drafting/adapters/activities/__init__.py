@@ -1,1 +1,2 @@
 from drafting.adapters.activities.restate_activities import RestateRecordRun as RestateRecordRun
+from drafting.adapters.activities.restate_activities import RestateWriteStories as RestateWriteStories

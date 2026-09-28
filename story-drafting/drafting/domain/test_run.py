@@ -79,3 +79,50 @@ class TestRun:
         assert drafting.stage == again.stage
         assert drafting.stage != awaiting.stage
         assert drafting.job == again.job
+
+
+class TestDraft:
+
+    def test_draft_equality(self) -> None:
+        assert domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text="a"),))) == domain.Draft(
+            domain.DraftSpec(stories=(domain.StorySpec(text="a"),))
+        )
+        assert domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text="a"),))) != domain.Draft(
+            domain.DraftSpec(stories=(domain.StorySpec(text="b"),))
+        )
+
+    def test_a_draft_constructs_its_stories_from_its_spec(self) -> None:
+        draft = domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text="a"), domain.StorySpec(text="b"))))
+        assert draft.stories == (domain.Story(domain.StorySpec(text="a")), domain.Story(domain.StorySpec(text="b")))
+
+    def test_an_empty_draft_is_refused(self) -> None:
+        with pytest.raises(errors.DomainError) as excinfo:
+            domain.Draft(domain.DraftSpec(stories=()))
+        assert excinfo.value.code == "empty_draft"
+
+    def test_a_blank_story_refuses_the_draft(self) -> None:
+        with pytest.raises(errors.DomainError) as excinfo:
+            domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text=" "),)))
+        assert excinfo.value.code == "empty_story"
+
+
+class TestDraftingARun:
+
+    def test_a_drafting_run_takes_its_draft_and_awaits_the_pick_with_none_accepted(self) -> None:
+        run = domain.Run(domain.RunSpec(run_id="r1", job="ship", stage="drafting", stories=(), accepted_stories=()))
+        run.drafted(domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text="a"),))))
+        awaiting = domain.Run(domain.RunSpec(run_id="r2", job="ship", stage="awaiting_pick", stories=(), accepted_stories=()))
+        assert run.stage == awaiting.stage
+        assert run.stories == (domain.Story(domain.StorySpec(text="a")),)
+        assert run.accepted_stories == ()
+
+    def test_a_run_already_awaiting_the_pick_refuses_another_draft(self) -> None:
+        run = domain.Run(
+            domain.RunSpec(
+                run_id="r1", job="ship", stage="awaiting_pick", stories=(domain.StorySpec(text="a"),), accepted_stories=()
+            )
+        )
+        with pytest.raises(errors.DomainError) as excinfo:
+            run.drafted(domain.Draft(domain.DraftSpec(stories=(domain.StorySpec(text="b"),))))
+        assert excinfo.value.code == "not_drafting"
+        assert run.stories == (domain.Story(domain.StorySpec(text="a")),)

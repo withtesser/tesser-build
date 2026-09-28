@@ -52,9 +52,41 @@ class RestateInvocationRunActionsRelay(ts.Dispatcher):
         return await self._restate_workflow_context.service_call(self._restate_record_run.handler, record_run_request)
 
 
+class RestateInvocationStoryActionsRelay(ts.Dispatcher):
+
+    def __init__(
+        self, restate_workflow_context: restate.WorkflowContext, restate_write_stories: activities.RestateWriteStories
+    ) -> None:
+        self._restate_workflow_context = restate_workflow_context
+        self._restate_write_stories = restate_write_stories
+
+    async def run_write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        return await self._restate_workflow_context.service_call(self._restate_write_stories.handler, write_stories_request)
+
+
+class RestateInvocationRunOrchestratorSignalRelay(ts.Dispatcher):
+
+    def __init__(self, restate_workflow_context: restate.WorkflowContext) -> None:
+        self._restate_workflow_context = restate_workflow_context
+
+    async def await_pick_story(
+        self, await_pick_story_request: relays.AwaitPickStoryRequest
+    ) -> relays.AwaitPickStoryResponse:
+        return relays.AwaitPickStoryResponseSnapshot().deserialize(
+            await self._restate_workflow_context.promise(
+                relays.PICK_STORY_PROMISE, serde=restate_serde.BytesSerde()
+            ).value()
+        )
+
+
 class RestateDraftStories(ts.Workflow):
 
-    def __init__(self, run_orchestrator_workflow: restate.Workflow, restate_record_run: activities.RestateRecordRun) -> None:
+    def __init__(
+        self,
+        run_orchestrator_workflow: restate.Workflow,
+        restate_record_run: activities.RestateRecordRun,
+        restate_write_stories: activities.RestateWriteStories,
+    ) -> None:
         @run_orchestrator_workflow.main(
             input_serde=RestateDraftStoriesRequestSerde(),
             output_serde=RestateDraftStoriesResponseSerde(),
@@ -66,6 +98,8 @@ class RestateDraftStories(ts.Workflow):
                 raise restate.TerminalError(_FOREIGN_RUN_ID, status_code=400)
             return await orchestrators.RunOrchestrator(
                 RestateInvocationRunActionsRelay(restate_workflow_context, restate_record_run),
+                RestateInvocationStoryActionsRelay(restate_workflow_context, restate_write_stories),
+                RestateInvocationRunOrchestratorSignalRelay(restate_workflow_context),
             ).draft_stories(draft_stories_request)
 
         self.handler = draft_stories

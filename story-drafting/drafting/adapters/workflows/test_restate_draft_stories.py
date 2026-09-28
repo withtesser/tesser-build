@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
 import typing
@@ -26,24 +27,38 @@ import drafting.domain as domain
 class FakeRunApplicationClient(client.RunApplicationClient):
 
     def __init__(self) -> None:
-        self.recorded: list[str] = []
+        self.recorded: list[tuple[str, str]] = []
 
     async def record_run(self, record_run_request: relays.RecordRunRequest) -> relays.RecordRunResponse:
-        self.recorded.append(str(record_run_request.run.identity))
+        self.recorded.append((str(record_run_request.run.identity), str(record_run_request.run.stage)))
         return relays.RecordRunResponse(run_id=str(record_run_request.run.identity))
+
+
+@ts.fake
+class FakeStoryApplicationClient(client.StoryApplicationClient):
+
+    def __init__(self) -> None:
+        self.jobs: list[str] = []
+
+    async def write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        self.jobs.append(write_stories_request.job)
+        return relays.WriteStoriesResponse(stories=("a story",))
 
 
 class TestRestateDraftStories:
 
-    async def test_draft_stories_runs_the_orchestrator_through_the_engine_and_refuses_a_foreign_key(self) -> None:
+    async def test_draft_stories_records_the_drafted_run_then_waits_on_the_promise_the_relays_name_and_refuses_a_foreign_key(self) -> None:
         run_id = str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         run_actions_service = restate.Service(f"RunActions{suffix}")
         run_orchestrator_workflow = restate.Workflow(f"RunOrchestrator{suffix}")
+        story_actions_service = restate.Service(f"StoryActions{suffix}")
         fake_run_application_client = FakeRunApplicationClient()
+        fake_story_application_client = FakeStoryApplicationClient()
         restate_draft_stories = workflows.RestateDraftStories(
             run_orchestrator_workflow,
             activities.RestateRecordRun(run_actions_service, fake_run_application_client),
+            activities.RestateWriteStories(story_actions_service, fake_story_application_client),
         )
         first = int(os.environ["STORY_DRAFTING_PORT"])
         port = 0
@@ -62,7 +77,7 @@ class TestRestateDraftStories:
         shutdown = asyncio.Event()
         serving = asyncio.create_task(
             hypercorn_asyncio.serve(
-                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, run_orchestrator_workflow])),
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, story_actions_service, run_orchestrator_workflow])),
                 hypercorn_config_config,
                 shutdown_trigger=shutdown.wait,
             )
@@ -82,7 +97,7 @@ class TestRestateDraftStories:
 
             run = domain.Run(domain.RunSpec(run_id=run_id, job="ship", stage="drafting", stories=(), accepted_stories=()))
             async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
-                draft_stories_response = await restate_client.Client(async_client).workflow_call(
+                sent = await restate_client.Client(async_client).workflow_send(
                     restate_draft_stories.handler, key=run_id, arg=relays.DraftStoriesRequest(run=run)
                 )
                 with pytest.raises(restate.HttpError) as foreign:
@@ -90,8 +105,27 @@ class TestRestateDraftStories:
                         restate_draft_stories.handler, key="other-" + run_id, arg=relays.DraftStoriesRequest(run=run)
                     )
 
-            assert draft_stories_response == relays.DraftStoriesResponse(run_id=run_id)
-            assert fake_run_application_client.recorded == [run_id]
+            awaited: list[str] = []
+            for _ in range(100):
+                journaled = await admin.post(
+                    "/query",
+                    headers={"accept": "application/json"},
+                    json={
+                        "query": "SELECT entry_lite_json FROM sys_journal "
+                        f"WHERE id = '{sent.invocation_id}' AND entry_type = 'Command: GetPromise'"
+                    },
+                )
+                awaited = [
+                    json.loads(row["entry_lite_json"])["Command"]["GetPromise"]["key"] for row in journaled.json()["rows"]
+                ]
+                if awaited:
+                    break
+                await asyncio.sleep(0.05)
+            await admin.patch(f"/invocations/{sent.invocation_id}/kill")
+
+            assert awaited == [relays.PICK_STORY_PROMISE]
+            assert fake_run_application_client.recorded == [(run_id, "drafting"), (run_id, "awaiting_pick")]
+            assert fake_story_application_client.jobs == ["ship"]
             assert foreign.value.status_code == 400
         finally:
             if registered.is_success:

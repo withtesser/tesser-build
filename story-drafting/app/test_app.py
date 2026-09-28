@@ -12,14 +12,14 @@ import drafting.component as drafting_component
 class FakeConfigRepository(app.AppConfigRepository):
 
     def get(self) -> app.AppConfig:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080")))
+        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
         return app.AppConfig(spec)
 
 
 class TestAppConfig:
 
     def test_a_config_carries_the_component_config(self) -> None:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080")))
+        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
         app_config = app.AppConfig(spec)
         assert app_config.drafting is spec.drafting
 
@@ -28,22 +28,26 @@ class TestEnvConfigRepository:
 
     def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
-        assert app_config.drafting.ingress == os.environ["RESTATE_INGRESS"]
+        assert (app_config.drafting.ingress, app_config.drafting.story_writer) == (
+            os.environ["RESTATE_INGRESS"],
+            os.environ["STORY_WRITER"],
+        )
 
 
 class TestStoryDraftingApp:
 
     def test_the_app_wires_drafting(self) -> None:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080")))
+        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
         story_drafting_app = app.StoryDraftingApp(app.AppConfig(spec))
         try:
             declared = [
                 story_drafting_app.drafting.run_actions_service.name,
+                story_drafting_app.drafting.story_actions_service.name,
                 story_drafting_app.drafting.run_orchestrator_workflow.name,
             ]
         finally:
             story_drafting_app.close()
-        assert declared == ["RunActions", "RunOrchestrator"]
+        assert declared == ["RunActions", "StoryActions", "RunOrchestrator"]
 
 
 class TestAppLoader:
@@ -53,8 +57,9 @@ class TestAppLoader:
         try:
             declared = [
                 sorted(story_drafting_app.drafting.run_actions_service.handlers),
+                sorted(story_drafting_app.drafting.story_actions_service.handlers),
                 sorted(story_drafting_app.drafting.run_orchestrator_workflow.handlers),
             ]
         finally:
             story_drafting_app.close()
-        assert declared == [["record_run"], ["draft_stories"]]
+        assert declared == [["record_run"], ["write_stories"], ["draft_stories"]]

@@ -25,19 +25,27 @@ import drafting.domain as domain
 class FakeRunApplicationClient(client.RunApplicationClient):
 
     def __init__(self) -> None:
-        self.recorded: list[str] = []
+        self.recorded: list[tuple[str, str]] = []
 
     async def record_run(self, record_run_request: relays.RecordRunRequest) -> relays.RecordRunResponse:
-        self.recorded.append(str(record_run_request.run.identity))
+        self.recorded.append((str(record_run_request.run.identity), str(record_run_request.run.stage)))
         return relays.RecordRunResponse(run_id=str(record_run_request.run.identity))
+
+
+@ts.fake
+class FakeStoryApplicationClient(client.StoryApplicationClient):
+
+    async def write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        return relays.WriteStoriesResponse(stories=("a story",))
 
 
 class TestRestateHttpRunOrchestratorRelay:
 
-    async def test_starting_draft_stories_answers_at_once_and_the_workflow_goes_on_to_record_the_run(self) -> None:
+    async def test_starting_draft_stories_answers_at_once_and_the_workflow_goes_on_to_record_the_drafted_run(self) -> None:
         run_id = "run/" + uuid.uuid4().hex
         suffix = uuid.uuid4().hex
         run_actions_service = restate.Service(f"RunActions{suffix}")
+        story_actions_service = restate.Service(f"StoryActions{suffix}")
         run_orchestrator_workflow = restate.Workflow(f"RunOrchestrator{suffix}")
         fake_run_application_client = FakeRunApplicationClient()
         restate_http_run_orchestrator_relay = dispatchers.RestateHttpRunOrchestratorRelay(
@@ -45,6 +53,7 @@ class TestRestateHttpRunOrchestratorRelay:
             workflows.RestateDraftStories(
                 run_orchestrator_workflow,
                 activities.RestateRecordRun(run_actions_service, fake_run_application_client),
+                activities.RestateWriteStories(story_actions_service, FakeStoryApplicationClient()),
             ),
         )
         first = int(os.environ["STORY_DRAFTING_PORT"])
@@ -64,7 +73,7 @@ class TestRestateHttpRunOrchestratorRelay:
         shutdown = asyncio.Event()
         serving = asyncio.create_task(
             hypercorn_asyncio.serve(
-                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, run_orchestrator_workflow])),
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, story_actions_service, run_orchestrator_workflow])),
                 hypercorn_config_config,
                 shutdown_trigger=shutdown.wait,
             )
@@ -87,12 +96,23 @@ class TestRestateHttpRunOrchestratorRelay:
                 relays.DraftStoriesRequest(run=run)
             )
             for _ in range(100):
-                if fake_run_application_client.recorded:
+                if len(fake_run_application_client.recorded) == 2:
                     break
                 await asyncio.sleep(0.05)
+            running = await admin.post(
+                "/query",
+                headers={"accept": "application/json"},
+                json={
+                    "query": "SELECT id FROM sys_invocation "
+                    f"WHERE target_service_name = '{run_orchestrator_workflow.name}' "
+                    f"AND target_service_key = '{run_id}'"
+                },
+            )
+            for row in running.json()["rows"]:
+                await admin.patch(f"/invocations/{row['id']}/kill")
 
             assert start_draft_stories_response == relays.StartDraftStoriesResponse(run_id=run_id)
-            assert fake_run_application_client.recorded == [run_id]
+            assert fake_run_application_client.recorded == [(run_id, "drafting"), (run_id, "awaiting_pick")]
         finally:
             if registered.is_success:
                 await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
