@@ -483,10 +483,12 @@ run_layout() {
 # action, and whose action writes to Postgres. Its own gates run first. Then
 # every spec in generator/specs/ is generated into a scratch directory and the
 # generated tree is gated at the bar of an example: tessercheck zero findings,
-# mypy --strict, and pytest against Postgres and Restate, with the generated
-# Restate endpoint served here and registered with the Restate admin API. The
-# local defaults are a `generator` database and a Restate server of its own on
-# 48080/49070, so a local run never re-registers another tree's services.
+# mypy --strict, and pytest against Postgres and Restate in the runner's order:
+# every tier but the root with no host served, then the generated Restate
+# endpoint served here and registered (forcing) with the Restate admin API, then
+# the root tier against it. The local defaults are a `generator` database and a
+# Restate server of its own on 48080/49070, so a local run never re-registers
+# another tree's services.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -522,6 +524,12 @@ run_generated_tree() {
   tessercheck_tree "$out" || return 1
   step "$spec: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase protocol srv tests conftest.py) || return 1
+  # The generated testpaths name tests/, and pytest never ignores a testpaths
+  # entry through --ignore, so the root tier is left out by glob.
+  step "$spec: pytest every tier but the root, with no host served"
+  (cd "$out" && env "$storage_env=$storage" "$ingress_env=$ingress" "RESTATE_ADMIN=$admin" \
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" \
+    pytest -q -p no:cacheprovider --ignore-glob='tests/*') || return 1
   step "$spec: serve the generated Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "$storage_env=$storage" "$ingress_env=$ingress" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m srv.restate.main "0.0.0.0:$port") &
@@ -541,9 +549,9 @@ run_generated_tree() {
     wait "$host" 2>/dev/null
     return 1
   fi
-  step "$spec: pytest (against Postgres at $storage_env and Restate at $ingress_env)"
+  step "$spec: pytest the root tier against the served host"
   (cd "$out" && env "$storage_env=$storage" "$ingress_env=$ingress" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider)
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests)
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
