@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import datetime
 import json
 import os
 import pathlib
@@ -45,37 +46,44 @@ def result_text(content: object) -> str:
     return ""
 
 
-def transcript_metrics(events: list[dict]) -> dict:
+def transcript_metrics(rows: list[dict]) -> dict:
+    """A subagent transcript (session-log format): one row per content block,
+    rows of one API request sharing a requestId and repeating its usage."""
     tool_calls: collections.Counter[str] = collections.Counter()
     uses: dict[str, dict] = {}
     results: dict[str, str] = {}
     guidance: list[str] = []
     models: set[str] = set()
-    final: dict = {}
-    for event in events:
-        kind = event.get("type")
-        if kind == "system" and event.get("subtype") == "init":
-            if event.get("model"):
-                models.add(event["model"])
-        elif kind == "assistant":
-            message = event.get("message", {})
+    usage_by_request: dict[str, dict] = {}
+    stamps: list[datetime.datetime] = []
+    final_text = ""
+    for row in rows:
+        if row.get("timestamp"):
+            stamps.append(datetime.datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")))
+        message = row.get("message")
+        if not isinstance(message, dict):
+            continue
+        if row.get("type") == "assistant":
             if message.get("model"):
                 models.add(message["model"])
+            if row.get("requestId") and message.get("usage"):
+                usage_by_request[row["requestId"]] = message["usage"]
             for part in message.get("content", []):
-                if part.get("type") == "tool_use":
-                    tool_calls[part["name"]] += 1
-                    uses[part["id"]] = part
-                    tool_input = part.get("input", {})
-                    if part["name"] == "Skill":
-                        guidance.append(f"skill:{tool_input.get('skill')}")
-                    elif part["name"] == "Read" and "skills/tesser-build/" in str(tool_input.get("file_path", "")):
-                        guidance.append(f"read:{pathlib.Path(tool_input['file_path']).name}")
-        elif kind == "user":
-            for part in event.get("message", {}).get("content", []):
+                if part.get("type") == "text" and part.get("text", "").strip():
+                    final_text = part["text"]
+                if part.get("type") != "tool_use":
+                    continue
+                tool_calls[part["name"]] += 1
+                uses[part["id"]] = part
+                tool_input = part.get("input", {})
+                if part["name"] == "Skill":
+                    guidance.append(f"skill:{tool_input.get('skill')}")
+                elif part["name"] == "Read" and "skills/tesser-build/" in str(tool_input.get("file_path", "")):
+                    guidance.append(f"read:{pathlib.Path(tool_input['file_path']).name}")
+        elif row.get("type") == "user" and isinstance(message.get("content"), list):
+            for part in message["content"]:
                 if isinstance(part, dict) and part.get("type") == "tool_result":
                     results[part["tool_use_id"]] = result_text(part.get("content"))
-        elif kind == "result":
-            final = event
 
     runs = []
     for use_id, use in uses.items():
@@ -87,27 +95,25 @@ def transcript_metrics(events: list[dict]) -> dict:
         codes = collections.Counter(FINDING.findall(results.get(use_id, "")))
         runs.append({"command": command[:200], "findings": sum(codes.values()), "by_code": dict(codes)})
 
-    usage = final.get("usage", {})
+    def total(key: str) -> int:
+        return sum(u.get(key) or 0 for u in usage_by_request.values())
+
     return {
         "models": sorted(models),
-        "result_subtype": final.get("subtype"),
-        "is_error": final.get("is_error"),
-        "duration_s": round(final.get("duration_ms", 0) / 1000, 1),
-        "duration_api_s": round(final.get("duration_api_ms", 0) / 1000, 1),
-        "num_turns": final.get("num_turns"),
-        "cost_usd": final.get("total_cost_usd"),
+        "duration_s": round((max(stamps) - min(stamps)).total_seconds(), 1) if stamps else None,
+        "api_requests": len(usage_by_request),
         "tokens": {
-            "input": usage.get("input_tokens"),
-            "output": usage.get("output_tokens"),
-            "cache_read": usage.get("cache_read_input_tokens"),
-            "cache_write": usage.get("cache_creation_input_tokens"),
+            "input": total("input_tokens"),
+            "output": total("output_tokens"),
+            "cache_read": total("cache_read_input_tokens"),
+            "cache_write": total("cache_creation_input_tokens"),
         },
         "tool_calls_total": sum(tool_calls.values()),
         "tool_calls": dict(tool_calls.most_common()),
         "guidance": guidance,
         "tessercheck_runs": runs,
         "tessercheck_runs_count": len(runs),
-        "final_message": str(final.get("result", ""))[:2000],
+        "final_message": final_text[:2000],
     }
 
 
@@ -205,13 +211,11 @@ def main() -> None:
     parser.add_argument("--worktree", required=True, type=pathlib.Path)
     parser.add_argument("--base", required=True)
     parser.add_argument("--out", required=True, type=pathlib.Path)
-    parser.add_argument("--agent-exit", type=int, default=None)
     args = parser.parse_args()
 
     run = json.loads((args.out / "run.json").read_text())
     metrics = {
         "run": run,
-        "agent_exit": args.agent_exit,
         "agent": transcript_metrics(read_jsonl(args.out / "transcript.jsonl")),
         "hook": hook_metrics(read_jsonl(args.out / "hook-changes.jsonl")),
         "diff": diff_metrics(args.worktree, args.base),
@@ -220,8 +224,8 @@ def main() -> None:
     (args.out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
 
     agent, hook, diff, gate = metrics["agent"], metrics["hook"], metrics["diff"], metrics["gate"]
-    print(f"phase {args.phase}: agent exit {args.agent_exit}, {agent['duration_s']}s, {agent['num_turns']} turns, "
-          f"{agent['tool_calls_total']} tool calls, ${agent['cost_usd']}")
+    print(f"phase {args.phase}: {agent['duration_s']}s, {agent['api_requests']} API requests, "
+          f"{agent['tool_calls_total']} tool calls, tokens {agent['tokens']}, models {agent['models']}")
     print(f"  tessercheck runs by agent: {agent['tessercheck_runs_count']}, findings per run: "
           f"{[r['findings'] for r in agent['tessercheck_runs']]}")
     print(f"  hook: {hook['analyzed_writes']} analyzed writes, {hook['writes_with_findings']} with findings, "

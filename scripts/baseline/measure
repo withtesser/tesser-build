@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Measure one baseline run after its subagent finishes.
+#
+#   scripts/baseline/measure <run-name> <subagent-transcript.jsonl>
+#
+# Copies the transcript into .baseline-runs/<run-name>/ and runs metrics.py
+# over it, the worktree the subagent left, and scripts/verify story-drafting.
+#
+set -euo pipefail
+
+if [ $# -ne 2 ]; then
+  echo "usage: scripts/baseline/measure <run-name> <transcript.jsonl>" >&2
+  exit 2
+fi
+name=$1
+transcript=$2
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+out="$MAIN/.baseline-runs/$name"
+[ -f "$out/run.json" ] || { echo "baseline: no prepared run '$name'" >&2; exit 1; }
+cp "$transcript" "$out/transcript.jsonl"
+
+wt=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["worktree"])' "$out/run.json")
+base=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["base_sha"])' "$out/run.json")
+phase=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["phase"])' "$out/run.json")
+if [ -f "$wt/.tesser/changes.jsonl" ]; then cp "$wt/.tesser/changes.jsonl" "$out/hook-changes.jsonl"; fi
+
+PATH="$MAIN/.venv/bin:$PATH" python3 "$HERE/metrics.py" --phase "$phase" --worktree "$wt" --base "$base" --out "$out"
