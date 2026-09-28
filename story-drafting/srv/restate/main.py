@@ -23,7 +23,13 @@ class RestateHost(ts.Host):
             config.bind = [argv[0] if argv else _BIND]
             served = typing.cast(
                 hypercorn_typing.ASGIFramework,
-                restate.app([story_drafting_app.drafting.run_orchestrator_workflow]),
+                restate.app(
+                    [
+                        story_drafting_app.drafting.run_orchestrator_workflow,
+                        story_drafting_app.drafting.drafting_actions_service,
+                        story_drafting_app.drafting.run_actions_service,
+                    ]
+                ),
             )
             asyncio.run(hypercorn_asyncio.serve(served, config))
             return 0

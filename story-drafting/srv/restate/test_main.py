@@ -13,7 +13,7 @@ import urllib.request as urllib_request
 
 class TestRestateHost:
 
-    def test_the_served_endpoint_discovers_the_run_orchestrator_workflow(self) -> None:
+    def test_the_served_endpoint_discovers_the_workflow_and_its_actions(self) -> None:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
@@ -22,6 +22,7 @@ class TestRestateHost:
                 os.environ,
                 STORY_DRAFTING_STORAGE=storage,
                 RESTATE_INGRESS="http://ingress.invalid:8080",
+                STORY_DRAFTING_DRAFTER="deterministic",
                 PYTHONPATH=os.pathsep.join(sys.path),
             )
             host = subprocess.Popen([sys.executable, "-m", "srv.restate.main", f"127.0.0.1:{port}"], env=env)
@@ -47,4 +48,6 @@ class TestRestateHost:
         assert isinstance(services, list)
         assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == {
             "RunOrchestrator": ["conduct_run"],
+            "DraftingActions": ["draft_stories"],
+            "RunActions": ["record_run"],
         }

@@ -323,8 +323,10 @@ run_specs_app() {
 # STORY_DRAFTING_DEPLOYMENT_PORT, registers it with the server at
 # STORY_DRAFTING_DEPLOYMENT (the address the server dials back), and stops it
 # after pytest. The endpoint and the tests share one run store, a fresh
-# directory at STORY_DRAFTING_STORAGE; the adapter tests serve endpoints of
-# their own under fresh service names, registered at
+# directory at STORY_DRAFTING_STORAGE, and both select the deterministic
+# story drafter (STORY_DRAFTING_DRAFTER), so no test calls a real model; the
+# adapter tests serve endpoints of their own under fresh service names,
+# registered at
 # STORY_DRAFTING_CALLBACK_HOST. Locally, a Restate server of its own on
 # 38080/39070:
 #
@@ -344,7 +346,8 @@ run_story_drafting() {
   local storage
   storage=$(mktemp -d) || return 1
   step "serve the Restate endpoint on :$port and register it at $admin"
-  (exec env STORY_DRAFTING_STORAGE="$storage" RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+  (exec env STORY_DRAFTING_STORAGE="$storage" RESTATE_INGRESS="$ingress" STORY_DRAFTING_DRAFTER=deterministic \
+    PYTHONPATH=.:../tesser-py \
     python3 -m srv.restate.main "0.0.0.0:$port") &
   local host=$!
   local registered=1
@@ -365,7 +368,7 @@ run_story_drafting() {
   fi
   step "pytest (against Restate at $ingress)"
   STORY_DRAFTING_STORAGE="$storage" RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" \
-    STORY_DRAFTING_CALLBACK_HOST="$callback_host" pytest -q
+    STORY_DRAFTING_DRAFTER=deterministic STORY_DRAFTING_CALLBACK_HOST="$callback_host" pytest -q
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null

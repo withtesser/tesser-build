@@ -9,7 +9,8 @@ import tesser.errors as errors
 import tesser.serialization as serialization
 
 DRAFTING: typing.Final[str] = "drafting"
-_STEPS: typing.Final[tuple[str, ...]] = (DRAFTING,)
+AWAITING_PICK: typing.Final[str] = "awaiting_pick"
+_STEPS: typing.Final[tuple[str, ...]] = (DRAFTING, AWAITING_PICK)
 
 
 class RunId(ts.ValueObject):
@@ -62,6 +63,27 @@ class Step(ts.ValueObject):
 
     def __str__(self) -> str:
         return serialization.canonical_str(self._value)
+
+
+class DraftedStoriesSpec(ts.Spec):
+
+    def __init__(self, stories: tuple[str, ...]) -> None:
+        self.stories = stories
+
+
+class DraftedStories(ts.ValueObject):
+
+    _stories: tuple[Story, ...]
+
+    def __init__(self, spec: DraftedStoriesSpec) -> None:
+        stories = tuple(Story(story) for story in spec.stories)
+        if not stories:
+            raise errors.invalid("no_drafted_stories", "a draft offers at least one story to pick from")
+        object.__setattr__(self, "_stories", stories)
+
+    @property
+    def stories(self) -> tuple[Story, ...]:
+        return self._stories
 
 
 class RunLookup(ts.Outcome):
@@ -135,3 +157,9 @@ class Run(ts.AggregateRoot):
     @property
     def accepted_stories(self) -> tuple[Story, ...]:
         return self._accepted_stories
+
+    def stories_drafted(self, drafted_stories: DraftedStories) -> None:
+        if self._step != Step(DRAFTING):
+            raise errors.invalid("not_drafting", f"run {self._run_id} is past drafting")
+        self._drafted_stories = drafted_stories.stories
+        self._step = Step(AWAITING_PICK)

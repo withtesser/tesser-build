@@ -111,3 +111,48 @@ class TestRunPresence:
     def test_a_presence_outside_the_set_is_refused(self) -> None:
         with pytest.raises(errors.DomainError):
             domain.RunPresence(domain.RunPresenceSpec(presence="maybe"))
+
+
+class TestDraftedStories:
+
+    def test_drafted_stories_equality(self) -> None:
+        assert domain.DraftedStories(domain.DraftedStoriesSpec(stories=(" a story ",))) == domain.DraftedStories(
+            domain.DraftedStoriesSpec(stories=("a story",))
+        )
+        assert domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story",))) != domain.DraftedStories(
+            domain.DraftedStoriesSpec(stories=("a story", "another story"))
+        )
+
+    def test_drafted_stories_carry_their_stories_in_order(self) -> None:
+        drafted_stories = domain.DraftedStories(domain.DraftedStoriesSpec(stories=("first", "second")))
+
+        assert drafted_stories.stories == (domain.Story("first"), domain.Story("second"))
+
+    def test_a_draft_offers_at_least_one_story(self) -> None:
+        with pytest.raises(errors.DomainError):
+            domain.DraftedStories(domain.DraftedStoriesSpec(stories=()))
+
+    def test_a_draft_refuses_a_story_that_says_nothing(self) -> None:
+        with pytest.raises(errors.DomainError):
+            domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story", " ")))
+
+
+class TestStoriesDrafted:
+
+    def test_a_drafting_run_given_its_stories_waits_for_the_pick_with_none_accepted(self) -> None:
+        run = domain.Run(run_spec())
+
+        run.stories_drafted(domain.DraftedStories(domain.DraftedStoriesSpec(stories=("first", "second"))))
+
+        assert run.step == domain.Step(domain.AWAITING_PICK)
+        assert run.drafted_stories == (domain.Story("first"), domain.Story("second"))
+        assert run.accepted_stories == ()
+
+    def test_a_run_past_drafting_refuses_a_second_draft_and_keeps_the_first(self) -> None:
+        run = domain.Run(run_spec(step="awaiting_pick", drafted_stories=("first",)))
+
+        with pytest.raises(errors.DomainError):
+            run.stories_drafted(domain.DraftedStories(domain.DraftedStoriesSpec(stories=("second",))))
+
+        assert run.step == domain.Step(domain.AWAITING_PICK)
+        assert run.drafted_stories == (domain.Story("first"),)
