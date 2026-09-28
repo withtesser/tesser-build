@@ -1,1 +1,3 @@
 from drafting.adapters.activities.restate_activities import RestateKeepRun as RestateKeepRun
+from drafting.adapters.activities.restate_activities import RestateOfferStories as RestateOfferStories
+from drafting.adapters.activities.restate_activities import RestateWriteStories as RestateWriteStories

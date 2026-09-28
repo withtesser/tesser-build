@@ -12,7 +12,7 @@ class MapToRunRecord(ts.Mapper, ports.RunRecord):
             run_id=save_run_request.run_id,
             job=save_run_request.job,
             stage=save_run_request.stage,
-            stories=(),
+            stories=tuple(ports.DraftedStory(text=story) for story in save_run_request.stories),
             accepted_stories=(),
         )
 
@@ -41,7 +41,8 @@ class MemoryRunRepository(ts.Repository):
         self._runs: dict[str, ports.RunRecord] = {}
 
     async def save_run(self, save_run_request: ports.SaveRunRequest) -> ports.SaveRunResponse:
-        run_record = self._runs.setdefault(save_run_request.run_id, MapToRunRecord(save_run_request))
+        run_record = MapToRunRecord(save_run_request)
+        self._runs[save_run_request.run_id] = run_record
         return MapToSaveRunResponse(run_record)
 
     async def get_run(self, get_run_request: ports.GetRunRequest) -> ports.GetRunResponse:

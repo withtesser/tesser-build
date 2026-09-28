@@ -20,7 +20,7 @@ import drafting.component as component
 class TestDraftingContext:
 
     async def test_a_run_the_domain_refuses_is_the_situation_of_that_name(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9", drafter="canned", anthropic_api_key="")))
         try:
             with pytest.raises(client.RunRejected):
                 await drafting.client.begin_run(client.BeginRunRequest(run_id="r1", job=""))
@@ -28,7 +28,7 @@ class TestDraftingContext:
             drafting.close()
 
     async def test_a_run_never_begun_is_not_found(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9", drafter="canned", anthropic_api_key="")))
         try:
             with pytest.raises(client.RunNotFound):
                 await drafting.client.get_run(client.GetRunRequest(run_id=str(uuid.uuid4())))
@@ -38,10 +38,11 @@ class TestDraftingContext:
 
 class TestDraftingThroughTheEngine:
 
-    async def test_a_begun_run_is_read_back_with_its_job(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress=os.environ["RESTATE_INGRESS"])))
+    async def test_a_begun_run_waits_for_the_pick_with_drafted_stories_and_none_accepted(self) -> None:
+        drafting = component.Drafting(component.Config(component.Spec(ingress=os.environ["RESTATE_INGRESS"], drafter="canned", anthropic_api_key="")))
         containers: list[restate.Service | restate.Workflow] = [
             drafting.run_actions_service,
+            drafting.drafter_actions_service,
             drafting.run_orchestrator_workflow,
         ]
         with socket.socket() as probe:
@@ -76,13 +77,28 @@ class TestDraftingThroughTheEngine:
             for _ in range(100):
                 try:
                     get_run_response = await drafting.client.get_run(client.GetRunRequest(run_id=run_id))
-                    break
                 except client.RunNotFound:
-                    await asyncio.sleep(0.05)
+                    get_run_response = None
+                if get_run_response is not None and get_run_response.stage == "awaiting_pick":
+                    break
+                await asyncio.sleep(0.05)
+            invoked = await admin.post(
+                "/query",
+                headers={"accept": "application/json"},
+                json={
+                    "query": "SELECT id FROM sys_invocation "
+                    f"WHERE target_service_name = 'RunOrchestrator' AND target_service_key = '{run_id}'"
+                },
+            )
+            for row in invoked.json()["rows"]:
+                await admin.patch(f"/invocations/{row['id']}/kill")
 
             assert begin_run_response.run_id == run_id
             assert get_run_response is not None
             assert (get_run_response.run_id, get_run_response.job) == (run_id, "a job")
+            assert get_run_response.stage == "awaiting_pick"
+            assert get_run_response.stories != ()
+            assert get_run_response.accepted_stories == ()
         finally:
             if registered.is_success:
                 await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})

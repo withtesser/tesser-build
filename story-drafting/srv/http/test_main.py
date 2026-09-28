@@ -47,6 +47,9 @@ class TestHttpHost:
                 story_drafting_app.drafting.run_actions_service.name: sorted(
                     story_drafting_app.drafting.run_actions_service.handlers
                 ),
+                story_drafting_app.drafting.drafter_actions_service.name: sorted(
+                    story_drafting_app.drafting.drafter_actions_service.handlers
+                ),
                 story_drafting_app.drafting.run_orchestrator_workflow.name: sorted(
                     story_drafting_app.drafting.run_orchestrator_workflow.handlers
                 ),

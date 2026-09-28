@@ -8,10 +8,11 @@ import tesser.application as ts
 
 class SaveRunRequest(ts.Request):
 
-    def __init__(self, run_id: str, job: str, stage: str) -> None:
+    def __init__(self, run_id: str, job: str, stage: str, stories: tuple[str, ...]) -> None:
         self.run_id = run_id
         self.job = job
         self.stage = stage
+        self.stories = stories
 
 
 class SaveRunResponse(ts.Response):

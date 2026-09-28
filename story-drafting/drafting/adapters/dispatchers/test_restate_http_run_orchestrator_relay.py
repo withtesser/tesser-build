@@ -26,18 +26,31 @@ class FakeRunApplicationClient(client.RunApplicationClient):
 
     def __init__(self) -> None:
         self.kept: list[tuple[str, str]] = []
+        self.offered: list[tuple[str, tuple[str, ...]]] = []
 
     async def keep_run(self, keep_run_request: relays.KeepRunRequest) -> relays.KeepRunResponse:
         self.kept.append((keep_run_request.run_id, keep_run_request.job))
         return relays.KeepRunResponse(run_id=keep_run_request.run_id)
 
+    async def offer_stories(self, offer_stories_request: relays.OfferStoriesRequest) -> relays.OfferStoriesResponse:
+        self.offered.append((offer_stories_request.run_id, offer_stories_request.stories))
+        return relays.OfferStoriesResponse(run_id=offer_stories_request.run_id)
+
+
+@ts.fake
+class FakeDrafterApplicationClient(client.DrafterApplicationClient):
+
+    async def write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        return relays.WriteStoriesResponse(stories=("a story",))
+
 
 class TestRestateHttpRunOrchestratorRelay:
 
-    async def test_starting_sends_the_workflow_keyed_by_the_run_id_and_the_engine_keeps_the_run(self) -> None:
+    async def test_starting_sends_the_workflow_keyed_by_the_run_id_and_the_engine_keeps_and_offers_the_run(self) -> None:
         run_id = "a/b " + uuid.uuid4().hex
         suffix = uuid.uuid4().hex
         run_actions_service = restate.Service(f"RunActions{suffix}")
+        drafter_actions_service = restate.Service(f"DrafterActions{suffix}")
         run_orchestrator_workflow = restate.Workflow(f"RunOrchestrator{suffix}")
         fake_run_application_client = FakeRunApplicationClient()
         restate_http_run_orchestrator_relay = dispatchers.RestateHttpRunOrchestratorRelay(
@@ -45,6 +58,8 @@ class TestRestateHttpRunOrchestratorRelay:
             workflows.RestateDraftStories(
                 run_orchestrator_workflow,
                 activities.RestateKeepRun(run_actions_service, fake_run_application_client),
+                activities.RestateOfferStories(run_actions_service, fake_run_application_client),
+                activities.RestateWriteStories(drafter_actions_service, FakeDrafterApplicationClient()),
             ),
         )
         with socket.socket() as probe:
@@ -55,7 +70,10 @@ class TestRestateHttpRunOrchestratorRelay:
         shutdown = asyncio.Event()
         serving = asyncio.create_task(
             hypercorn_asyncio.serve(
-                typing.cast(hypercorn_typing.ASGIFramework, restate.app([run_actions_service, run_orchestrator_workflow])),
+                typing.cast(
+                    hypercorn_typing.ASGIFramework,
+                    restate.app([run_actions_service, drafter_actions_service, run_orchestrator_workflow]),
+                ),
                 hypercorn_config_config,
                 shutdown_trigger=shutdown.wait,
             )
@@ -77,20 +95,23 @@ class TestRestateHttpRunOrchestratorRelay:
                 relays.DraftStoriesRequest(run_id=domain.RunId(run_id), job=domain.Job("a job"))
             )
             for _ in range(100):
-                if fake_run_application_client.kept:
+                if fake_run_application_client.offered:
                     break
                 await asyncio.sleep(0.05)
             keyed = await admin.post(
                 "/query",
                 headers={"accept": "application/json"},
                 json={
-                    "query": "SELECT target_service_key FROM sys_invocation "
+                    "query": "SELECT id, target_service_key FROM sys_invocation "
                     f"WHERE target_service_name = 'RunOrchestrator{suffix}'"
                 },
             )
+            for row in keyed.json()["rows"]:
+                await admin.patch(f"/invocations/{row['id']}/kill")
 
             assert start_draft_stories_response == relays.StartDraftStoriesResponse(run_id=run_id)
             assert fake_run_application_client.kept == [(run_id, "a job")]
+            assert fake_run_application_client.offered == [(run_id, ("a story",))]
             assert [row["target_service_key"] for row in keyed.json()["rows"]] == [run_id]
         finally:
             if registered.is_success:

@@ -42,17 +42,63 @@ class RestateDraftStoriesResponseSerde(ts.Serde, restate_serde.Serde[relays.Draf
 
 class RestateInvocationRunActionsRelay(ts.Dispatcher):
 
-    def __init__(self, restate_workflow_context: restate.WorkflowContext, restate_keep_run: activities.RestateKeepRun) -> None:
+    def __init__(
+        self,
+        restate_workflow_context: restate.WorkflowContext,
+        restate_keep_run: activities.RestateKeepRun,
+        restate_offer_stories: activities.RestateOfferStories,
+    ) -> None:
         self._restate_workflow_context = restate_workflow_context
         self._restate_keep_run = restate_keep_run
+        self._restate_offer_stories = restate_offer_stories
 
     async def run_keep_run(self, keep_run_request: relays.KeepRunRequest) -> relays.KeepRunResponse:
         return await self._restate_workflow_context.service_call(self._restate_keep_run.handler, keep_run_request)
 
+    async def run_offer_stories(self, offer_stories_request: relays.OfferStoriesRequest) -> relays.OfferStoriesResponse:
+        return await self._restate_workflow_context.service_call(
+            self._restate_offer_stories.handler, offer_stories_request
+        )
+
+
+class RestateInvocationDrafterActionsRelay(ts.Dispatcher):
+
+    def __init__(
+        self, restate_workflow_context: restate.WorkflowContext, restate_write_stories: activities.RestateWriteStories
+    ) -> None:
+        self._restate_workflow_context = restate_workflow_context
+        self._restate_write_stories = restate_write_stories
+
+    async def run_write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
+        return await self._restate_workflow_context.service_call(
+            self._restate_write_stories.handler, write_stories_request
+        )
+
+
+class RestateInvocationRunOrchestratorSignalRelay(ts.Dispatcher):
+
+    def __init__(self, restate_workflow_context: restate.WorkflowContext) -> None:
+        self._restate_workflow_context = restate_workflow_context
+
+    async def await_pick_stories(
+        self, await_pick_stories_request: relays.AwaitPickStoriesRequest
+    ) -> relays.AwaitPickStoriesResponse:
+        return relays.AwaitPickStoriesResponseSnapshot().deserialize(
+            await self._restate_workflow_context.promise(
+                relays.PICK_STORIES_PROMISE, serde=restate_serde.BytesSerde()
+            ).value()
+        )
+
 
 class RestateDraftStories(ts.Workflow):
 
-    def __init__(self, run_orchestrator_workflow: restate.Workflow, restate_keep_run: activities.RestateKeepRun) -> None:
+    def __init__(
+        self,
+        run_orchestrator_workflow: restate.Workflow,
+        restate_keep_run: activities.RestateKeepRun,
+        restate_offer_stories: activities.RestateOfferStories,
+        restate_write_stories: activities.RestateWriteStories,
+    ) -> None:
         @run_orchestrator_workflow.main(
             input_serde=RestateDraftStoriesRequestSerde(),
             output_serde=RestateDraftStoriesResponseSerde(),
@@ -63,7 +109,9 @@ class RestateDraftStories(ts.Workflow):
             if str(draft_stories_request.run_id) != restate_workflow_context.key():
                 raise restate.TerminalError(_FOREIGN_RUN, status_code=400)
             return await orchestrators.RunOrchestrator(
-                RestateInvocationRunActionsRelay(restate_workflow_context, restate_keep_run),
+                RestateInvocationRunActionsRelay(restate_workflow_context, restate_keep_run, restate_offer_stories),
+                RestateInvocationDrafterActionsRelay(restate_workflow_context, restate_write_stories),
+                RestateInvocationRunOrchestratorSignalRelay(restate_workflow_context),
             ).draft_stories(draft_stories_request)
 
         self.handler = draft_stories

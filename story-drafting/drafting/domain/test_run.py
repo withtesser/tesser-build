@@ -50,3 +50,60 @@ class TestJob:
 
     def test_string_is_the_canonical_exit(self) -> None:
         assert str(domain.Job("a job")) == "a job"
+
+
+class TestOfferingStories:
+
+    def test_a_drafting_run_offered_stories_awaits_the_pick_with_them(self) -> None:
+        run = domain.Run(domain.RunSpec(run_id="r1", job="a job"))
+        run.offer_stories(domain.DraftedStories(domain.DraftedStoriesSpec(stories=("first story", "second story"))))
+        assert str(run.stage) == "awaiting_pick"
+        assert run.stories == (domain.Story("first story"), domain.Story("second story"))
+
+    def test_a_run_starts_with_no_stories(self) -> None:
+        assert domain.Run(domain.RunSpec(run_id="r1", job="a job")).stories == ()
+
+
+    def test_a_run_already_awaiting_the_pick_is_not_offered_stories_again(self) -> None:
+        run = domain.Run(domain.RunSpec(run_id="r1", job="a job"))
+        run.offer_stories(domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story",))))
+        with pytest.raises(errors.DomainError) as refused:
+            run.offer_stories(domain.DraftedStories(domain.DraftedStoriesSpec(stories=("another story",))))
+        assert refused.value.code == "not_drafting"
+        assert run.stories == (domain.Story("a story"),)
+
+
+class TestDraftedStories:
+
+    def test_drafted_stories_hold_each_story_in_order(self) -> None:
+        drafted_stories_spec = domain.DraftedStoriesSpec(stories=("first story", "second story"))
+        drafted_stories = domain.DraftedStories(drafted_stories_spec)
+        assert drafted_stories.stories == (domain.Story("first story"), domain.Story("second story"))
+
+    def test_no_stories_to_pick_from_is_refused(self) -> None:
+        with pytest.raises(errors.DomainError) as refused:
+            domain.DraftedStories(domain.DraftedStoriesSpec(stories=()))
+        assert refused.value.code == "no_stories"
+
+    def test_a_blank_story_is_refused(self) -> None:
+        with pytest.raises(errors.DomainError) as refused:
+            domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story", " ")))
+        assert refused.value.code == "empty_story"
+
+    def test_drafted_stories_equal_by_value(self) -> None:
+        first = domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story",)))
+        second = domain.DraftedStories(domain.DraftedStoriesSpec(stories=("a story",)))
+        assert first == second
+        assert first != domain.DraftedStories(domain.DraftedStoriesSpec(stories=("another story",)))
+
+
+class TestStory:
+
+    def test_a_story_equals_by_value(self) -> None:
+        first = domain.Story("a story")
+        second = domain.Story("a story")
+        assert first == second
+        assert first != domain.Story("another story")
+
+    def test_string_is_the_canonical_exit(self) -> None:
+        assert str(domain.Story("a story")) == "a story"

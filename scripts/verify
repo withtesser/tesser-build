@@ -415,6 +415,7 @@ run_story_drafting() {
   local port="${STORY_DRAFTING_PORT:-9300}"
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
   local deployment="${STORY_DRAFTING_DEPLOYMENT:-http://$callback_host:$port}"
+  local drafter=canned
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   local targets=()
@@ -429,9 +430,9 @@ run_story_drafting() {
   fi
   step "pytest every tier but the root (no host served; Restate at $ingress)"
   RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" STORY_DRAFTING_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
-  step "serve the HTTP host and its Restate endpoint on :$port and register it at $admin"
-  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+    STORY_DRAFTING_DRAFTER="$drafter" pytest -q --ignore=tests || return 1
+  step "serve the HTTP host and its Restate endpoint on :$port (drafter $drafter) and register it at $admin"
+  (exec env RESTATE_INGRESS="$ingress" STORY_DRAFTING_DRAFTER="$drafter" PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
   local registered=1

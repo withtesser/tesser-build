@@ -41,7 +41,17 @@ class EnvConfigRepository(AppConfigRepository):
         ingress = os.environ.get("RESTATE_INGRESS")
         if ingress is None:
             raise errors.invalid("missing_env", "RESTATE_INGRESS is required")
-        return AppConfig(Spec(drafting=drafting_component.Config(drafting_component.Spec(ingress=ingress))))
+        drafter = os.environ.get("STORY_DRAFTING_DRAFTER")
+        if drafter is None:
+            raise errors.invalid("missing_env", "STORY_DRAFTING_DRAFTER is required")
+        anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        return AppConfig(
+            Spec(
+                drafting=drafting_component.Config(
+                    drafting_component.Spec(ingress=ingress, drafter=drafter, anthropic_api_key=anthropic_api_key)
+                )
+            )
+        )
 
 
 class AppLoader(ts.Loader):

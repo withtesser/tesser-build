@@ -39,6 +39,48 @@ class KeepRunResponseSnapshot(ts.Serde):
         return KeepRunResponse(run_id=snapshot["run_id"])
 
 
+class OfferStoriesRequest(ts.Request):
+
+    def __init__(self, run_id: str, job: str, stories: tuple[str, ...]) -> None:
+        self.run_id = run_id
+        self.job = job
+        self.stories = stories
+
+
+class OfferStoriesRequestSnapshot(ts.Serde):
+
+    def serialize(self, offer_stories_request: OfferStoriesRequest) -> bytes:
+        return json.dumps(
+            {
+                "run_id": offer_stories_request.run_id,
+                "job": offer_stories_request.job,
+                "stories": list(offer_stories_request.stories),
+            }
+        ).encode()
+
+    def deserialize(self, buf: bytes) -> OfferStoriesRequest:
+        snapshot = json.loads(buf)
+        return OfferStoriesRequest(run_id=snapshot["run_id"], job=snapshot["job"], stories=tuple(snapshot["stories"]))
+
+
+class OfferStoriesResponse(ts.Response):
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+
+
+class OfferStoriesResponseSnapshot(ts.Serde):
+
+    def serialize(self, offer_stories_response: OfferStoriesResponse) -> bytes:
+        return json.dumps({"run_id": offer_stories_response.run_id}).encode()
+
+    def deserialize(self, buf: bytes) -> OfferStoriesResponse:
+        snapshot = json.loads(buf)
+        return OfferStoriesResponse(run_id=snapshot["run_id"])
+
+
 class RunActionsRelay(ts.Relay, typing.Protocol):
 
     async def run_keep_run(self, keep_run_request: KeepRunRequest) -> KeepRunResponse: ...
+
+    async def run_offer_stories(self, offer_stories_request: OfferStoriesRequest) -> OfferStoriesResponse: ...

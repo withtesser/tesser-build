@@ -21,7 +21,7 @@ class FakeRunRepository(ports.RunRepository):
             run_id=save_run_request.run_id,
             job=save_run_request.job,
             stage=save_run_request.stage,
-            stories=(),
+            stories=tuple(ports.DraftedStory(text=story) for story in save_run_request.stories),
             accepted_stories=(),
         )
         return ports.SaveRunResponse(run_id=save_run_request.run_id)
@@ -66,12 +66,24 @@ class TestRunService:
 
     async def test_a_kept_run_is_read_back_as_it_was_kept(self) -> None:
         fake_run_repository = FakeRunRepository()
-        await fake_run_repository.save_run(ports.SaveRunRequest(run_id="r1", job="a job", stage="drafting"))
+        await fake_run_repository.save_run(ports.SaveRunRequest(run_id="r1", job="a job", stage="drafting", stories=()))
         get_run_response = await application.RunService(fake_run_repository, FakeRunOrchestratorRelay()).get_run(
             client.GetRunRequest(run_id="r1")
         )
         assert (get_run_response.run_id, get_run_response.job, get_run_response.stage) == ("r1", "a job", "drafting")
         assert get_run_response.stories == ()
+        assert get_run_response.accepted_stories == ()
+
+    async def test_a_run_awaiting_the_pick_is_read_back_with_its_stories_and_none_accepted(self) -> None:
+        fake_run_repository = FakeRunRepository()
+        await fake_run_repository.save_run(
+            ports.SaveRunRequest(run_id="r1", job="a job", stage="awaiting_pick", stories=("a story", "another story"))
+        )
+        get_run_response = await application.RunService(fake_run_repository, FakeRunOrchestratorRelay()).get_run(
+            client.GetRunRequest(run_id="r1")
+        )
+        assert get_run_response.stage == "awaiting_pick"
+        assert get_run_response.stories == (client.Story(text="a story"), client.Story(text="another story"))
         assert get_run_response.accepted_stories == ()
 
     async def test_a_run_never_kept_is_not_found(self) -> None:

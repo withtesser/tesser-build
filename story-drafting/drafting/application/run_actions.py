@@ -13,13 +13,36 @@ class MapToRunSpec(ts.Mapper, domain.RunSpec):
         super().__init__(run_id=keep_run_request.run_id, job=keep_run_request.job)
 
 
+class MapToRunSpecFromOfferStoriesRequest(ts.Mapper, domain.RunSpec):
+
+    def __init__(self, offer_stories_request: relays.OfferStoriesRequest) -> None:
+        super().__init__(run_id=offer_stories_request.run_id, job=offer_stories_request.job)
+
+
+class MapToDraftedStoriesSpec(ts.Mapper, domain.DraftedStoriesSpec):
+
+    def __init__(self, offer_stories_request: relays.OfferStoriesRequest) -> None:
+        super().__init__(stories=offer_stories_request.stories)
+
+
 class MapToSaveRunRequest(ts.Mapper, ports.SaveRunRequest):
 
     def __init__(self, run: domain.Run) -> None:
-        super().__init__(run_id=str(run.identity), job=str(run.job), stage=str(run.stage))
+        super().__init__(
+            run_id=str(run.identity),
+            job=str(run.job),
+            stage=str(run.stage),
+            stories=tuple(str(story) for story in run.stories),
+        )
 
 
 class MapToKeepRunResponse(ts.Mapper, relays.KeepRunResponse):
+
+    def __init__(self, save_run_response: ports.SaveRunResponse) -> None:
+        super().__init__(run_id=save_run_response.run_id)
+
+
+class MapToOfferStoriesResponse(ts.Mapper, relays.OfferStoriesResponse):
 
     def __init__(self, save_run_response: ports.SaveRunResponse) -> None:
         super().__init__(run_id=save_run_response.run_id)
@@ -34,3 +57,9 @@ class RunActions(ts.Actions):
         run = domain.Run(MapToRunSpec(keep_run_request))
         save_run_response = await self._run_repository.save_run(MapToSaveRunRequest(run))
         return MapToKeepRunResponse(save_run_response)
+
+    async def offer_stories(self, offer_stories_request: relays.OfferStoriesRequest) -> relays.OfferStoriesResponse:
+        run = domain.Run(MapToRunSpecFromOfferStoriesRequest(offer_stories_request))
+        run.offer_stories(domain.DraftedStories(MapToDraftedStoriesSpec(offer_stories_request)))
+        save_run_response = await self._run_repository.save_run(MapToSaveRunRequest(run))
+        return MapToOfferStoriesResponse(save_run_response)
