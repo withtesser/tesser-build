@@ -425,10 +425,36 @@ run_story_drafting() {
     step "mypy --strict"
     MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
   fi
+  local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  local deployment="${STORY_DRAFTING_DEPLOYMENT:-http://$callback_host:$port}"
   step "pytest every tier but the root (no host served; Restate at $ingress)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" pytest -q --ignore=tests || return 1
-  step "pytest the root tier (hosts from :$port)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" pytest -q tests || return 1
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
+    pytest -q --ignore=tests || return 1
+  step "serve the HTTP host on :$port and register its Restate endpoint at $admin (forcing)"
+  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+    python3 -m srv.http.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment/restate\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "story-drafting: could not register $deployment/restate with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest the root tier (against the host on :$port)"
+  STORY_DRAFTING_HOST="http://127.0.0.1:$port" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
 }
 
 # The voice example: one context (calls) whose root-tier test places a call
