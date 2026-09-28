@@ -11,8 +11,9 @@
 # starts from the same commit. The orchestrating session then spawns a
 # subagent with scripts/baseline/prompts/<phase>.md and the worktree path, and
 # afterwards runs scripts/baseline/measure on the subagent's transcript.
-# Outputs land in .baseline-runs/<run-name>/ in the main checkout
-# (gitignored: transcripts carry machine-local paths).
+# It also replaces the tree's Restate container with a fresh one. Outputs land
+# in .baseline-runs/<run-name>/ in the main checkout (gitignored: transcripts
+# carry machine-local paths); scripts/baseline/record commits the numbers.
 #
 set -euo pipefail
 
@@ -34,6 +35,16 @@ out="$MAIN/.baseline-runs/$name"
 [ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
 [ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
 mkdir -p "$out"
+
+# A fresh Restate server per run: a run's registrations (and a stray host's)
+# otherwise stay on the server and shape the next run's design.
+docker rm -f tesser-story-drafting-restate >/dev/null 2>&1 || true
+docker run -d --name tesser-story-drafting-restate -p 38080:8080 -p 39070:9070 \
+  --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
+for _ in $(seq 1 50); do
+  if curl -sf http://localhost:39070/health >/dev/null; then break; fi
+  sleep 0.2
+done
 
 base_sha=$(git rev-parse "$base^{commit}")
 git worktree add -q -b "$branch" "$wt" "$base_sha"

@@ -28,3 +28,4 @@ phase=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["phase"
 if [ -f "$wt/.tesser/changes.jsonl" ]; then cp "$wt/.tesser/changes.jsonl" "$out/hook-changes.jsonl"; fi
 
 PATH="$MAIN/.venv/bin:$PATH" python3 "$HERE/metrics.py" --phase "$phase" --worktree "$wt" --base "$base" --out "$out"
+"$HERE/record" "$name"
