@@ -524,12 +524,9 @@ run_generated_tree() {
   tessercheck_tree "$out" || return 1
   step "$spec: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase protocol srv tests conftest.py) || return 1
-  # The generated testpaths name tests/, and pytest never ignores a testpaths
-  # entry through --ignore, so the root tier is left out by glob.
   step "$spec: pytest every tier but the root, with no host served"
   (cd "$out" && env "$storage_env=$storage" "$ingress_env=$ingress" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" \
-    pytest -q -p no:cacheprovider --ignore-glob='tests/*') || return 1
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests) || return 1
   step "$spec: serve the generated Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "$storage_env=$storage" "$ingress_env=$ingress" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m srv.restate.main "0.0.0.0:$port") &
