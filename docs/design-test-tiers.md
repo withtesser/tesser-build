@@ -39,7 +39,13 @@ in time rather than renaming either:
 3. the root tier runs last, against the served hosts.
 
 A tree's verify arm is two pytest runs around the hosts:
-`pytest --ignore=tests`, serve, `pytest tests`. A second engine server per
+`pytest --ignore=tests`, serve, `pytest tests`. Such a tree leaves `tests` out
+of its `testpaths`: pytest treats every `testpaths` entry as a path named on
+the command line, and `--ignore` never removes one, so the first run would
+collect the root tier with no host served. The second run names `tests`
+itself. A tree whose root tier needs no served host (it runs a CLI host that
+does its work and exits) runs pytest once and may keep `tests` in
+`testpaths`. A second engine server per
 tree would also work, but it doubles the infrastructure to solve an ordering
 problem. Renaming a built container after the fact (reaching into the SDK's
 service tag) is refused: it is a test changing a production object's identity

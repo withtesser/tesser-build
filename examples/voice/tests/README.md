@@ -24,7 +24,7 @@ VOICE_EVALS=1 LIVEKIT_AGENT_NAME=caller-acceptance scripts/verify voice
 ```
 
 Use an agent name not served by another worker. The verification script runs
-in three steps: first every tier but this one (`pytest --ignore-glob='tests/*'`) with no
+in three steps: first every tier but this one (`pytest --ignore=tests`, which works because `testpaths` leaves `tests` out) with no
 host served; then it starts the production Restate HTTP host and registers it
 with Restate (forcing over whatever the context tests registered), and with
 `VOICE_EVALS=1` also starts the production LiveKit agent server
