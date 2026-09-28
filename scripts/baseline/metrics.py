@@ -21,7 +21,8 @@ import xml.etree.ElementTree as ET
 
 TREE = "story-drafting"
 FINDING = re.compile(r":\d+: (TB\d{3}) ")
-TESSERCHECK_COMMAND = re.compile(r"tessercheck|srv\.cli\.main|scripts/verify")
+TESSERCHECK_COMMAND = re.compile(r"scripts/verify\s+[\w-]|scripts/verify\s*($|[;&|])|-m srv\.cli\.main|tessercheck-check|tessercheck_tree")
+SKILL_DOC = re.compile(r"skills/tesser-build/([\w.-]+\.md)")
 
 
 def read_jsonl(path: pathlib.Path) -> list[dict]:
@@ -48,7 +49,9 @@ def result_text(content: object) -> str:
 
 def transcript_metrics(rows: list[dict]) -> dict:
     """A subagent transcript (session-log format): one row per content block,
-    rows of one API request sharing a requestId and repeating its usage."""
+    rows of one API request sharing a requestId and repeating its usage. The
+    recorded usage is the first streamed chunk's, so output tokens are not
+    counted: they read as a handful per request whatever was written."""
     tool_calls: collections.Counter[str] = collections.Counter()
     uses: dict[str, dict] = {}
     results: dict[str, str] = {}
@@ -80,6 +83,8 @@ def transcript_metrics(rows: list[dict]) -> dict:
                     guidance.append(f"skill:{tool_input.get('skill')}")
                 elif part["name"] == "Read" and "skills/tesser-build/" in str(tool_input.get("file_path", "")):
                     guidance.append(f"read:{pathlib.Path(tool_input['file_path']).name}")
+                elif part["name"] == "Bash":
+                    guidance.extend(f"bash:{doc}" for doc in SKILL_DOC.findall(str(tool_input.get("command", ""))))
         elif row.get("type") == "user" and isinstance(message.get("content"), list):
             for part in message["content"]:
                 if isinstance(part, dict) and part.get("type") == "tool_result":
@@ -92,7 +97,10 @@ def transcript_metrics(rows: list[dict]) -> dict:
         command = str(use.get("input", {}).get("command", ""))
         if not TESSERCHECK_COMMAND.search(command):
             continue
-        codes = collections.Counter(FINDING.findall(results.get(use_id, "")))
+        output = results.get(use_id, "")
+        codes = collections.Counter(FINDING.findall(output))
+        if not codes and "tessercheck (zero findings" not in output and "-m srv.cli.main" not in command and "tessercheck-check" not in command:
+            continue
         runs.append({"command": command[:200], "findings": sum(codes.values()), "by_code": dict(codes)})
 
     def total(key: str) -> int:
@@ -104,7 +112,6 @@ def transcript_metrics(rows: list[dict]) -> dict:
         "api_requests": len(usage_by_request),
         "tokens": {
             "input": total("input_tokens"),
-            "output": total("output_tokens"),
             "cache_read": total("cache_read_input_tokens"),
             "cache_write": total("cache_creation_input_tokens"),
         },
@@ -167,6 +174,7 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
     junit = out / "junit.xml"
     env = dict(os.environ)
+    env["COVERAGE_FILE"] = str(out / ".coverage")
     env["PYTEST_ADDOPTS"] = f"--cov=. --cov-report=json:{coverage} --junitxml={junit} -p no:cacheprovider"
     proc = subprocess.run(["scripts/verify", TREE], cwd=worktree, env=env, capture_output=True, text=True)
     (out / "verify.log").write_text(proc.stdout + proc.stderr)
@@ -225,7 +233,8 @@ def main() -> None:
 
     agent, hook, diff, gate = metrics["agent"], metrics["hook"], metrics["diff"], metrics["gate"]
     print(f"phase {args.phase}: {agent['duration_s']}s, {agent['api_requests']} API requests, "
-          f"{agent['tool_calls_total']} tool calls, tokens {agent['tokens']}, models {agent['models']}")
+          f"{agent['tool_calls_total']} tool calls {agent['tool_calls']}, tokens {agent['tokens']}, models {agent['models']}")
+    print(f"  guidance: {agent['guidance']}")
     print(f"  tessercheck runs by agent: {agent['tessercheck_runs_count']}, findings per run: "
           f"{[r['findings'] for r in agent['tessercheck_runs']]}")
     print(f"  hook: {hook['analyzed_writes']} analyzed writes, {hook['writes_with_findings']} with findings, "
