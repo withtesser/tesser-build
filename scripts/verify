@@ -303,17 +303,48 @@ EOF
 
 # The specs app: the product specification page and the service behind it.
 # One context (specification), one HTTP host that serves the page at / and
-# POST /jtbd/{id}/stories, and a root-tier Playwright test that drives the
-# page against the in-process host — so this tree needs a browser
-# (python -m playwright install chromium) as well as the Python tooling.
+# POST /jtbd/{id}/stories, and root-tier tests that play the user: one posts
+# a story over HTTP, one drives the page through Playwright — so this tree
+# needs a browser (python -m playwright install chromium) as well as the
+# Python tooling. The arm serves the HTTP host as a process on
+# SPECS_APP_PORT, puts its address in SPECS_APP_URL, and stops it after
+# pytest.
 run_specs_app() {
   cd "$ROOT/specs-app" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../tesser-py mypy --strict protocol specification app srv tests conftest.py || return 1
-  step "pytest"
-  pytest -q || return 1
+  local port="${SPECS_APP_PORT:-9283}"
+  local url="http://127.0.0.1:$port"
+  if curl -s -o /dev/null "$url/"; then
+    echo "specs-app: something already answers at $url; set SPECS_APP_PORT" >&2
+    return 1
+  fi
+  step "serve the HTTP host at $url"
+  SPECIFICATION_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" PYTHONPATH=.:../tesser-py PYTHONUNBUFFERED=1 \
+    python3 -W ignore::RuntimeWarning -m srv.http.main &
+  local host=$!
+  local ready=1
+  for _ in $(seq 1 50); do
+    if curl -sf -o /dev/null "$url/"; then
+      ready=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$ready" -ne 0 ] || ! kill -0 "$host" 2>/dev/null; then
+    echo "specs-app: the HTTP host did not come up at $url" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (root tests against the host at SPECS_APP_URL)"
+  SPECS_APP_URL="$url" pytest -q
+  local status=$?
+  kill -TERM "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
 }
 
 # The voice example: one context (calls) whose root-tier test places a call

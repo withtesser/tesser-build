@@ -112,6 +112,29 @@ def test_the_server_answers_a_routed_add_story() -> None:
         specs_app.close()
 
 
+def test_the_server_answers_an_add_story_missing_a_line_as_a_malformed_request() -> None:
+    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
+    specs_app = app.load()
+    http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
+    stop = threading.Event()
+    thread = threading.Thread(target=http_host.run, args=(stop,))
+    thread.start()
+    try:
+        conn = http_client.HTTPConnection("127.0.0.1", http_host.port, timeout=5)
+        conn.request(
+            "POST", "/jtbd/j-root/stories", body=json.dumps({"given": "g"}), headers={"Content-Type": "application/json"}
+        )
+        resp = conn.getresponse()
+        payload = json.loads(resp.read())
+        conn.close()
+        assert resp.status == 400
+        assert payload["type"] == "/problems/malformed_request"
+    finally:
+        stop.set()
+        thread.join(5)
+        specs_app.close()
+
+
 def test_the_server_answers_an_unknown_route_with_a_problem_document() -> None:
     os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
     specs_app = app.load()
