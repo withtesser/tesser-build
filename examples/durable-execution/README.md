@@ -901,6 +901,22 @@ protocols; nothing stands in for Restate.
   percent-encoding proven from the engine's side. A repeat send leaves one
   row; a repeat run answers `ALREADY_STARTED`.
 
+The root `tests/` package plays the user (`docs/design-test-tiers.md`): it
+imports nothing of the app and reaches it only through the host the arm
+serves, at the address the arm puts in `DURABLE_EXECUTION_HOST`. It posts an
+order to `POST /orders` and a purchase to `POST /purchases` and reads the
+totals and the payment reference off the answers, so the served host's own
+wiring — its client, the Restate endpoint it mounts, the catalog and the
+payment processor behind the actions — is what answers.
+
+`ordering/tests/` plays a caller. Its engine test builds the `Ordering`
+component in the test process, renames each container it publishes with a
+fresh `uuid4` suffix (the handlers share their container's service tag, so
+the dispatchers and the purchase workflow follow the rename), serves and
+registers them the way the adapter tests do, and drives the client until each
+declared situation — `OrderAlreadyStarted`, `OrderNotConfirmed`,
+`ProductPriceNotFound`, `PaymentDeclined` — reaches it as its own error.
+
 What the engine cannot be made to say from a sibling test is not asserted
 there. A refusal that is not the already-invoked wording — a `409` saying
 `killed` or `cancelled` — reaches only the caller that created the invocation

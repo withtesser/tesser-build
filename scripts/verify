@@ -185,11 +185,12 @@ run_minimal() {
 # One FastAPI host serves POST /submissions, /orders and /purchases and mounts
 # the Restate endpoint at /restate; the engine never touches the domain. The
 # adapter tests exercise the real engine (testing.md rule 10): the arm serves
-# the host here and registers it with the Restate admin API for the root-tier
-# tests, and each activities, workflows, and dispatchers test serves its own
-# registrations under fresh service names at DURABLE_CALLBACK_HOST, registers
-# them, calls through the ingress with the objects' handlers, and reads what
-# the engine recorded in sys_invocation. The app reads its own environment through the config
+# the host here, registers it with the Restate admin API, and puts its address
+# in DURABLE_EXECUTION_HOST for the root-tier tests, which reach the app only
+# through it. The context test and each activities, workflows, and
+# dispatchers test serve their own registrations under fresh service names at
+# DURABLE_CALLBACK_HOST and call through the ingress; the adapter tests then
+# read what the engine recorded in sys_invocation. The app reads its own environment through the config
 # repository, so the runner supplies it — the same job a deploy does. Tests
 # never inject it. CI provides a Restate service container; locally the
 # defaults are a server of its own on 18080/19070, so a local run never
@@ -228,7 +229,8 @@ run_durable_execution() {
     return 1
   fi
   step "pytest (against Restate at $ingress)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" pytest -q
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
+    DURABLE_EXECUTION_HOST="http://127.0.0.1:$port" pytest -q
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
