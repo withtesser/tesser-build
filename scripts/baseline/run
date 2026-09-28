@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# One baseline run: a headless Claude Code agent works one phase of the
+# story-drafting build in a fresh worktree, and the run is measured.
+#
+#   scripts/baseline/run red   <base-ref> <run-name>
+#   scripts/baseline/run green <red-run-branch> <run-name>
+#
+# The worktree is .claude/worktrees/run-<run-name> on branch
+# baseline/runs/<run-name>, cut from <base-ref>, so every run of a phase
+# starts from the same commit. The agent gets scripts/baseline/prompts/<phase>.md
+# and nothing else. Its stream-json transcript, the post-write hook's change
+# log, and metrics.json land in .baseline-runs/<run-name>/ in the main checkout
+# (gitignored: the transcript and the hook log carry machine-local paths and an
+# actor email).
+#
+# The agent runs with permissions bypassed — it is unattended by design — and
+# is confined only by the prompt's instruction to work inside its worktree.
+#
+set -euo pipefail
+
+if [ $# -ne 3 ]; then
+  echo "usage: scripts/baseline/run red|green <base-ref> <run-name>" >&2
+  exit 2
+fi
+phase=$1
+base=$2
+name=$3
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+prompt="$HERE/prompts/$phase.md"
+[ -f "$prompt" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
+
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+VENV="$MAIN/.venv"
+[ -x "$VENV/bin/tessercheck-hook" ] || { echo "baseline: $VENV has no tessercheck-hook (scripts/install-dev, then pip install ./tesser-py ./tessercheck-py ./tessercheck-cli)" >&2; exit 1; }
+
+wt="$MAIN/.claude/worktrees/run-$name"
+branch="baseline/runs/$name"
+out="$MAIN/.baseline-runs/$name"
+[ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
+[ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
+mkdir -p "$out"
+
+base_sha=$(git rev-parse "$base^{commit}")
+git worktree add -q -b "$branch" "$wt" "$base_sha"
+
+cat >"$out/run.json" <<EOF
+{"phase": "$phase", "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "started": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+EOF
+
+echo "baseline: $phase run '$name' from $base_sha in $wt"
+set +e
+(cd "$wt" && env PATH="$VENV/bin:$PATH" TESSER_VENV="$VENV" \
+  claude -p "$(cat "$prompt")" --output-format stream-json --verbose \
+    --permission-mode bypassPermissions \
+    >"$out/transcript.jsonl" 2>"$out/stderr.log")
+agent_exit=$?
+set -e
+echo "baseline: agent exited $agent_exit"
+
+if [ -f "$wt/.tesser/changes.jsonl" ]; then cp "$wt/.tesser/changes.jsonl" "$out/hook-changes.jsonl"; fi
+
+PATH="$VENV/bin:$PATH" python3 "$HERE/metrics.py" --phase "$phase" --worktree "$wt" \
+  --base "$base_sha" --out "$out" --agent-exit "$agent_exit"
