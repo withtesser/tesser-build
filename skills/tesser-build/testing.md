@@ -354,8 +354,12 @@ is ruled.
   exported kernel instead). A context's `tests/` package plays a caller: it
   builds the component in-process, drives its client and handlers, fakes
   neighbouring contexts at the port, and serves a durable workflow from the
-  test process under fresh names. A story's acceptance test is a root test;
-  its behaviour scenarios are context tests (`docs/design-test-tiers.md`).
+  test process under the component's own names. A story's acceptance test is
+  a root test; its behaviour scenarios are context tests. A root test reaches
+  a host with `ts.Cli(module).run(*args)` or the address `ts.served(VAR)`
+  reads, and uses its own data, because every root test shares the served
+  host. The runner runs every other tier first with no host served, then
+  serves the hosts, then runs the root tier (`docs/design-test-tiers.md`).
 - **Test grouping / structure.** Partially ruled (2026-08-23): grouping
   scenarios under a `Test`-prefixed class is **allowed** — the analyzer
   admits test classes and requires that they hold only test methods

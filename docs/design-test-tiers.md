@@ -20,10 +20,48 @@ import (TB070).
   builds the component in the test process and drives it through its client
   and handlers. Neighbouring contexts are hand-written fakes at the port; a
   third party is a fake at its gateway's port. A durable workflow is served
-  from the test process — the component publishes its engine containers, the
-  test registers them under fresh names, as the adapter tests already do — so
+  from the test process — the component publishes its engine containers, and
+  the test serves and registers them **under the component's own names** — so
   the workflow's callbacks land in the process whose client reads the result.
   One process: nothing to share, so in-memory adapters are enough.
+
+## The runner's order
+
+Container names are literals (TB085), so a context test and a served host
+would claim the same names on the tree's engine. The runner keeps them apart
+in time rather than renaming either:
+
+1. every tier but the root runs first, with **no host served** — a context
+   test registers the component's containers from its own process, and an
+   adapter test registers its own objects under fresh names as before;
+2. the runner then serves the hosts (and registers the engine host, forcing
+   over whatever the context tier left);
+3. the root tier runs last, against the served hosts.
+
+A tree's verify arm is two pytest runs around the hosts:
+`pytest --ignore=tests`, serve, `pytest tests`. A second engine server per
+tree would also work, but it doubles the infrastructure to solve an ordering
+problem. Renaming a built container after the fact (reaching into the SDK's
+service tag) is refused: it is a test changing a production object's identity
+through an undocumented attribute.
+
+## Reaching a host from a root test
+
+`tesser.testing` carries the two things every root test needs, so no tree
+writes its own:
+
+- `ts.Cli("srv.cli.main").run(*args)` runs a CLI host as a subprocess with the
+  caller's import path and environment, and answers a `ts.CliAnswer`
+  (`exit_code`, `stdout`, `stderr`, `lines()`).
+- `ts.served("APP_URL")` reads the address the runner named for a served host,
+  and refuses loudly when the runner did not set it.
+
+`tesser.testing` is the one `tesser` namespace allowed `os` and `subprocess`
+(TB062): it is imported only by tests, and running a host is what a root test
+does.
+
+Root tests share a served host for the whole run, so each uses its own data —
+a fresh identity or a random value — and asserts only on what it created.
 
 ## Why
 
