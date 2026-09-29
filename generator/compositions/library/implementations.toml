@@ -2,6 +2,10 @@
 
 app = "library"
 
+[implementations.NoticeSender.printed]
+class = "PrintedNoticeSender"
+body = "agent"
+
 [implementations.LoanRepository.memory]
 body = "supported"
 
@@ -15,7 +19,7 @@ admin_variable = "RESTATE_ADMIN"
 callback_host_variable = "RESTATE_CALLBACK_HOST"
 
 [environments.gate]
-implementations = { LoanRepository = "memory", LoanIdentityRepository = "uuid" }
+implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
 

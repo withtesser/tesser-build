@@ -21,3 +21,8 @@ code_names = ["title"]
 term = "lend"
 means = "Hand a book to a borrower, which opens a loan."
 code_names = ["lend_book", "arrange_loan", "record_loan"]
+
+[[terms]]
+term = "notice"
+means = "The note the borrower gets when a loan is opened."
+code_names = ["send_notice", "NoticeSender"]

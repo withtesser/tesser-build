@@ -1364,9 +1364,7 @@ class Model(ts.Entity):
             if port_name not in self._port_ops:
                 raise ValueError(f"actions.{key} names port {port_name}, which [ports] does not declare")
             store = self._stores.get(port_name)
-            if not store:
-                raise ValueError(f"actions.{key} calls {port_name}, which is not a store; a class of actions on any other port is not rendered yet")
-            holder = str(Word(store).snake())
+            holder = str(Word(store).snake()) if store else str(Word(port_name).snake())
             mappers = Mappers(MappersSpec(module=str(Word(Actions).snake())))
             operations: list[dict[str, object]] = []
             tests: list[dict[str, object]] = []
@@ -1405,13 +1403,22 @@ class Model(ts.Entity):
                         ask.target(target)
                     for held in sources.held():
                         ask.source(held)
-                    argument = str(mappers.map(ask).call())
+                    port_mapped = mappers.map(ask)
+                    argument = str(port_mapped.call())
                 else:
+                    port_mapped = Mapped(MappedSpec(call="", values=()))
                     argument = f"ports.{Call}Request()"
-                assign = f"{calls}_response = " if port_response.targets() else ""
-                call_statement = dict(blank, store_call=[{}], holder=holder, repository=str(Word(port_name).snake()),
-                                      assign=assign, call=calls, argument=argument)
+                local = calls + "_response"
+                assign = f"{local} = " if port_response.targets() else ""
+                if store:
+                    call_statement = dict(blank, store_call=[{}], holder=holder, repository=str(Word(port_name).snake()),
+                                          assign=assign, call=calls, argument=argument)
+                else:
+                    call_statement = dict(blank, port_call=[{}], holder=holder, assign=assign, call=calls, argument=argument)
                 statements.append(call_statement)
+                if port_response.targets():
+                    sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Call}Response", kind="plain",
+                                                   prefix=local + ".", holds=tuple(self._fakes[("ports", Call + "Response1")].values()))))
                 ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
                 for target in response_record.targets():
                     ask.target(target)
@@ -1419,8 +1426,14 @@ class Model(ts.Entity):
                     ask.source(held)
                 answered = mappers.map(ask)
                 answer = str(answered.call())
+                pairs = port_mapped.values()
+                fake = "fake_" + (str(Word(store).snake()) if store else str(Word(port_name).snake()))
+                if not store and port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
+                    reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
+                    expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
+                    checks.append({"check": f"[({reads},) for received in {fake}.{calls}_requests] == [({expected},)]"})
                 test_name = (f"{operation_name}_answers_for_the_{aggregate}_it_builds" if "builds" in operation
-                             else f"{operation_name}_answers_what_it_saved")
+                             else f"{operation_name}_asks_its_port_and_answers_what_it_said")
                 for target in response_record.targets():
                     value = str(answered.values().get(str(target.field())))
                     if value != UNKNOWN:
@@ -1430,20 +1443,29 @@ class Model(ts.Entity):
                 fake_local = "fake_" + holder
                 tests.append({
                     "name": test_name, "operation": operation_name, "Operation": Operation,
-                    "fake_locals": [{"local": fake_local, "construct": f"Fake{store}()"}],
+                    "fake_locals": [{"local": fake_local, "construct": f"Fake{store or port_name}()"}],
                     "dependency_arg": fake_local, "checks": checks,
                     "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request_record.targets()),
                 })
-            fake_stores = [self._frames[("store", port_name)]]
+            fake_ports: list[dict[str, object]] = []
+            fake_stores: list[dict[str, object]] = []
+            if store:
+                fake_stores.append(self._frames[("store", port_name)] if ("store", port_name) in self._frames else {})
+            else:
+                fake_ports.append({"Port": port_name, "operations": [
+                    {"operation": op, "Operation": str(Word(op).pascal()),
+                     "fake_response": str(self._fakes[("ports", str(Word(op).pascal()) + "Response1")].call())}
+                    for op in self._port_ops[port_name]]})
             rendered.append({
                 "module": str(Word(Actions).snake()), "Actions": Actions, "ApplicationClient": Key + "ApplicationClient",
-                "dependency": holder, "dependency_class": store,
+                "dependency": holder, "dependency_class": store or port_name,
                 "mappers": [{"Mapper": str(made.name()), "target": str(made.target()),
                              "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                              "args": [{"field": field, "expr": expr} for field, expr in made.args()]}
                             for made in mappers.defs()],
                 "builds": [{}] if builds else [], "operations": operations,
-                "fake_ports": [], "fake_stores": fake_stores, "fake_relays": [], "actions_tests": tests,
+                "fake_ports": fake_ports, "fake_stores": fake_stores, "fake_relays": [], "actions_tests": tests,
+                "stores_faked": [{}] if fake_stores else [],
                 "key": str(key), "Port": port_name,
             })
         self._binding["actions"] = rendered
@@ -1744,6 +1766,7 @@ class Model(ts.Entity):
         shared_stores: list[dict[str, object]] = []
         memory_repositories: list[dict[str, object]] = []
         uuid_repositories: list[dict[str, object]] = []
+        gateways: list[dict[str, object]] = []
         seeded = False
         for port_name, operations in self._port_ops.items():
             if port_name not in chosen:
@@ -1754,7 +1777,23 @@ class Model(ts.Entity):
                 raise ValueError(f"{port_name} is implemented by {key}, which [implementations.{port_name}] does not declare")
             body = implementation.get("body")
             if body == "agent":
-                raise ValueError(f"{port_name} is implemented by the agent, which is not rendered yet")
+                if "class" not in implementation:
+                    raise ValueError(f"[implementations.{port_name}.{key}] is the agent's and names no class")
+                Gateway = str(implementation["class"])
+                gateway_operations: list[dict[str, object]] = []
+                for operation in operations:
+                    Operation = str(Word(operation).pascal())
+                    response = self._messages[("ports", Operation + "Response")]
+                    request = self._messages[("ports", Operation + "Request")]
+                    gateway_operations.append({
+                        "operation": operation, "Operation": Operation,
+                        "minimal": ", ".join(
+                            f"{t.field()}=()" if str(t.kind()) == "array" else f"{t.field()}={'0' if str(t.type_text()) == 'int' else chr(34) * 2}"
+                            for t in response.targets()),
+                        "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
+                    })
+                gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations})
+                port_exprs[port_name] = f"gateways.{Gateway}()"
             elif body == "supported" and key == "memory":
                 if port_name not in self._stores:
                     raise ValueError(f"{port_name} is memory, which renders a store, and it does not carry {self._aggregate}")
@@ -1782,6 +1821,7 @@ class Model(ts.Entity):
                 seeded = True
             else:
                 raise ValueError(f"{port_name} is implemented by {key}, a type the toolkit does not support; say body = \"agent\"")
+        self._binding["gateways"] = gateways
         self._binding["memory_repositories"] = memory_repositories
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
@@ -1884,6 +1924,8 @@ class Model(ts.Entity):
         imported = {"activities", "workflows"}
         if start_methods or run_methods:
             imported.add("dispatchers")
+        if gateways:
+            imported.add("gateways")
         if memory_repositories or uuid_repositories:
             imported.add("repositories")
         self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]

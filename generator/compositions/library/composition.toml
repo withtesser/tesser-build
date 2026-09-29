@@ -37,7 +37,16 @@ serves = ["s-1", "s-1-b-1"]
 [orchestrator.operations.arrange_loan]
 request = ["loan_id", "borrower", "title"]
 response = ["loan_id"]
-steps = ["actions.loan.record_loan"]
+steps = ["actions.notice.send_notice", "actions.loan.record_loan"]
+serves = ["s-1"]
+
+[actions.notice]
+port = "NoticeSender"
+
+[actions.notice.operations.send_notice]
+calls = "send_notice"
+request = ["loan_id", "borrower", "title"]
+response = ["loan_id"]
 serves = ["s-1"]
 
 [actions.loan]
@@ -48,6 +57,10 @@ builds = "Loan"
 calls = "save_loan"
 request = ["loan_id", "borrower", "title"]
 response = ["loan_id"]
+serves = ["s-1"]
+
+[ports.NoticeSender]
+operations.send_notice = { request = ["borrower", "title"], response = [] }
 serves = ["s-1"]
 
 [ports.LoanRepository]

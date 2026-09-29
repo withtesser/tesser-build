@@ -24,8 +24,6 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 worked example.
 
 **Not rendered yet** (a composition that uses one is refused, with the reason):
-a port implemented by the agent (`body = "agent"`), and a class of actions on
-a port that is not a store;
 `[signals]` and `signal.await_...` steps;
 `[shapes]`, `[messages]`, `[enums]`, list types, and `[aggregate.commands]`
 (with `commands` and `calls_on` on an action). Every read must be a spec field
@@ -184,7 +182,7 @@ is built, then the request. A field nothing holds is a problem.
 [orchestrator.operations.arrange_loan]
 request = ["loan_id", "borrower", "title"]   # must include the identity: it keys the workflow
 response = ["loan_id"]
-steps = ["actions.loan.record_loan"]
+steps = ["actions.notice.send_notice", "actions.loan.record_loan"]
 ```
 
 Steps, in order: `actions.<key>.<operation>` runs an action. Fields are
@@ -204,11 +202,13 @@ builds = "Loan"                       # optional: build the aggregate from the r
 ```
 
 The class is `<Key>Actions`. An action calls its port once.
-Its port must be a store (below).
 
 ### `[ports.<Port>]` — the contracts an implementation satisfies
 
 ```toml
+[ports.NoticeSender]
+operations.send_notice = { request = ["borrower", "title"], response = [] }
+
 [ports.LoanRepository]
 operations.save_loan = { request = ["loan"], response = [] }
 operations.load_loan = { request = ["loan_id"], response = ["loan"] }
@@ -235,6 +235,10 @@ body = "supported"
 [implementations.LoanIdentityRepository.uuid]
 body = "supported"
 
+[implementations.NoticeSender.printed]
+class = "PrintedNoticeSender"             # required with body = "agent"
+body = "agent"
+
 [engine.restate]                          # required, and the only engine
 body = "supported"
 ingress_variable = "RESTATE_INGRESS"      # required: the variable the app reads the ingress from
@@ -242,7 +246,7 @@ admin_variable = "RESTATE_ADMIN"          # required: read by the tests that reg
 callback_host_variable = "RESTATE_CALLBACK_HOST"   # required: likewise
 
 [environments.gate]                       # [environments.<name>], at least one
-implementations = { LoanRepository = "memory", LoanIdentityRepository = "uuid" }
+implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
 
@@ -262,6 +266,8 @@ The implementation types:
   rendered in full.
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
   and answers one field; issues version-4 UUIDs from a seed, rendered in full.
+- any key with `body = "agent"` and a `class`: a stub gateway of that class,
+  agent-owned (below).
 
 ## 5 `generator.toml`
 
@@ -281,8 +287,10 @@ Every rendered file says on its first line who owns it:
   and render again, never the file.
 - `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
   agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
-  `test_<aggregate>.py`. A stub answers
-  placeholders and never raises: a str read answers what the spec holds.
+  `test_<aggregate>.py`, and each `body = "agent"` implementation
+  (`<context>/adapters/gateways/<class>.py` and its test). A stub answers
+  placeholders and never raises: a str read answers what the spec holds, a gateway
+  `""`, `0`, or an empty list for each field it answers.
 
 `.tesser-root` carries no marker: its lines are declarations only.
 
@@ -290,7 +298,7 @@ The rendered tree: `<context>/domain`, `client`, `application` (the
 `<Aggregate>Service`, each `<Key>Actions`, `ports/`, `relays/` with their
 snapshots, `client/` application clients, `orchestrators/`), `adapters`
 (Restate `activities/`, `workflows/`, `dispatchers/`, the `handlers/http.py`
-HTTP handler, `repositories/`), `component/`; then `app/`,
+HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
 `protocol/`, `srv/http/main.py` (the HTTP host serving the routes with the
 Restate endpoint at `engine_path`), `pyproject.toml`, `requirements-dev.txt`,
 `conftest.py`, and `.tesser-root`. Every module has its sibling test.
