@@ -1,0 +1,2 @@
+from story_drafting.adapters.repositories.memory import MemoryJtbdStore as MemoryJtbdStore
+from story_drafting.adapters.repositories.uuid_jtbd_identity_repository import UuidJtbdIdentityRepository as UuidJtbdIdentityRepository
