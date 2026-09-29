@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import typing
+
+import tesser.context as ts
+
+
+class CheckTargetRequest(ts.Request):
+
+    def __init__(self, target_url: str) -> None:
+        self.target_url = target_url
+
+
+class CheckTargetResponse(ts.Response):
+
+    def __init__(self, decision: str, reason: str) -> None:
+        self.decision = decision
+        self.reason = reason
+
+
+class ListVerdictsRequest(ts.Request):
+
+    def __init__(self) -> None:
+        return None
+
+
+class Verdict(ts.Response):
+
+    def __init__(self, target_url: str, decision: str, reason: str) -> None:
+        self.target_url = target_url
+        self.decision = decision
+        self.reason = reason
+
+
+class ListVerdictsResponse(ts.Response):
+
+    def __init__(self, verdicts: tuple[Verdict, ...]) -> None:
+        self.verdicts = verdicts
+
+
+class TargetRejected(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+ERRORS: typing.Final[tuple[type[TargetRejected]]] = (TargetRejected,)
+
+
+class LinkPolicyClient(ts.Client, typing.Protocol):
+
+    def check_target(self, check_target_request: CheckTargetRequest) -> CheckTargetResponse: ...
+
+    def list_verdicts(self, list_verdicts_request: ListVerdictsRequest) -> ListVerdictsResponse: ...

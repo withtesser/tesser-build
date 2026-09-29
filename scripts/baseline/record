@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Record a measured run's metrics in the repo: scripts/baseline/results/<run>.json.
+
+The full metrics.json stays in .baseline-runs/ (gitignored). The recorded copy
+drops the machine-local parts — absolute paths become <repo>, and the
+worktree path is removed — so the numbers can be committed and compared
+across branches.
+
+    scripts/baseline/record <run-name>
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import subprocess
+import sys
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        sys.exit("usage: scripts/baseline/record <run-name>")
+    name = sys.argv[1]
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    main_checkout = pathlib.Path(common).parent
+    source = main_checkout / ".baseline-runs" / name / "metrics.json"
+    text = source.read_text()
+    for local in (str(main_checkout / ".claude" / "worktrees" / f"run-{name}"), str(main_checkout), str(pathlib.Path.home())):
+        text = text.replace(local, "<repo>" if local != str(pathlib.Path.home()) else "~")
+    metrics = json.loads(text)
+    metrics["run"].pop("worktree", None)
+    target = pathlib.Path(__file__).resolve().parent / "results" / f"{name}.json"
+    target.parent.mkdir(exist_ok=True)
+    target.write_text(json.dumps(metrics, indent=2) + "\n")
+    print(target)
+
+
+if __name__ == "__main__":
+    main()

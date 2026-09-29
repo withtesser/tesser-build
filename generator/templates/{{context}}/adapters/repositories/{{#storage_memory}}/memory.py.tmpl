@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import contextlib
+import typing
+
+import tesser.adapters as ts
+
+import {{context}}.application.ports as ports
+
+
+class Memory{{Aggregate}}Repository(ts.Repository):
+
+    def __init__(self, {{collection}}: dict[str, ports.{{Aggregate}}]) -> None:
+        self._{{collection}} = {{collection}}
+
+    async def {{save}}(self, {{save}}_request: ports.{{Save}}Request) -> ports.{{Save}}Response:
+        self._{{collection}}[{{save}}_request.{{identity}}] = ports.{{Aggregate}}(
+{{#record_fields}}
+            {{field}}={{save}}_request.{{field}},
+{{/record_fields}}
+        )
+        return ports.{{Save}}Response({{identity}}={{save}}_request.{{identity}})
+
+    async def {{load}}(self, {{load}}_request: ports.{{Load}}Request) -> ports.{{Load}}Response:
+        stored = self._{{collection}}.get({{load}}_request.{{identity}})
+        return ports.{{Load}}Response({{collection}}=() if stored is None else (stored,))
+
+
+class Memory{{Aggregate}}Store(ts.Repository):
+
+    def __init__(self) -> None:
+        self._{{collection}}: dict[str, ports.{{Aggregate}}] = {}
+
+    @contextlib.asynccontextmanager
+    async def transaction(self) -> typing.AsyncIterator[ports.{{Aggregate}}Repository]:
+        yield Memory{{Aggregate}}Repository(self._{{collection}})

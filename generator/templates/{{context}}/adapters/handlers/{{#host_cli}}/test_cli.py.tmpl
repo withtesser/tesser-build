@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import pytest
+import tesser.testing as ts
+
+import {{context}}.adapters.handlers as handlers
+import {{context}}.client as client
+import protocol
+
+
+@ts.fake
+class Fake{{Context}}Client(client.{{Context}}Client):
+
+    def __init__(self) -> None:
+        self.{{write}}_requests: list[client.{{Write}}Request] = []
+        self.{{read}}_requests: list[client.{{Read}}Request] = []
+
+    async def {{write}}(self, {{write}}_request: client.{{Write}}Request) -> client.{{Write}}Response:
+        self.{{write}}_requests.append({{write}}_request)
+        return client.{{Write}}Response({{identity}}={{identity_sample}})
+
+    async def {{read}}(self, {{read}}_request: client.{{Read}}Request) -> client.{{Read}}Response:
+        self.{{read}}_requests.append({{read}}_request)
+        return client.{{Read}}Response(client.{{Aggregate}}({{#read_fields}}{{field}}={{sample}}{{comma}}{{/read_fields}}))
+
+
+class TestCliHandler:
+
+    async def test_{{write}}_passes_each_argument_as_its_field_and_answers_the_{{identity}}(self) -> None:
+        fake_{{context}}_client = Fake{{Context}}Client()
+
+        cli_response = await handlers.CliHandler(fake_{{context}}_client).{{write}}(
+            protocol.CliRequest(args=({{#fields}}{{sample_arg}}, {{/fields}}))
+        )
+
+        assert cli_response == protocol.CliResponse.ok({{identity_sample}})
+        assert fake_{{context}}_client.{{write}}_requests == [
+            client.{{Write}}Request({{#fields}}{{field}}={{sample}}{{comma}}{{/fields}})
+        ]
+
+    async def test_{{write}}_missing_an_argument_is_a_usage_error_that_calls_nothing(self) -> None:
+        fake_{{context}}_client = Fake{{Context}}Client()
+
+        with pytest.raises(protocol.UsageError):
+            await handlers.CliHandler(fake_{{context}}_client).{{write}}(
+                protocol.CliRequest(args=({{#fields}}{{^is_asserted}}{{sample_arg}}, {{/is_asserted}}{{/fields}}))
+            )
+
+        assert fake_{{context}}_client.{{write}}_requests == []
+
+    async def test_{{read}}_answers_one_line_per_field_it_reads(self) -> None:
+        fake_{{context}}_client = Fake{{Context}}Client()
+
+        cli_response = await handlers.CliHandler(fake_{{context}}_client).{{read}}(
+            protocol.CliRequest(args=({{identity_sample}},))
+        )
+
+        assert cli_response == protocol.CliResponse.ok(
+            "\n".join(({{#read_fields}}"{{field}}=" + {{sample_arg}}, {{/read_fields}}))
+        )
+        assert fake_{{context}}_client.{{read}}_requests == [client.{{Read}}Request({{identity}}={{identity_sample}})]
+
+    async def test_{{read}}_with_an_extra_argument_is_a_usage_error_that_calls_nothing(self) -> None:
+        fake_{{context}}_client = Fake{{Context}}Client()
+
+        with pytest.raises(protocol.UsageError):
+            await handlers.CliHandler(fake_{{context}}_client).{{read}}(
+                protocol.CliRequest(args=({{identity_sample}}, {{identity_sample2}}))
+            )
+
+        assert fake_{{context}}_client.{{read}}_requests == []
