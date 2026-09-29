@@ -1,0 +1,2 @@
+from jtbds.adapters.repositories.memory import MemoryJtbdStore as MemoryJtbdStore
+from jtbds.adapters.repositories.uuid_jtbd_identity_repository import UuidJtbdIdentityRepository as UuidJtbdIdentityRepository
