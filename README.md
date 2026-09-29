@@ -27,7 +27,7 @@ Every top-level directory has a row in `manifest.json`, marked either `app`
 | [`tessercheck-py/`](tessercheck-py/) | The analyzer. It parses a tree without importing it and reports `TB0xx` findings. The full rule list is [`tessercheck-py/RULES.md`](tessercheck-py/RULES.md), which is generated from the implementation. |
 | [`tessercheck-cli/`](tessercheck-cli/) | Console entry points packaged for use outside a checkout: `tessercheck-check`, the repairs `tessercheck-rename` and `tessercheck-mark`, and `tessercheck-hook` (a Claude Code `PostToolUse` hook). Ungated; `scripts/verify-packaging` tests it. |
 | [`tesser-py/`](tesser-py/) | The `tesser` runtime library: the `ts.*` base classes (`ts.ValueObject`, `ts.AggregateRoot`, `ts.ApplicationService`, …). Subclassing one declares what a class is, and the analyzer checks the class against that declaration. |
-| [`generator/`](generator/) | Writes a starting tesser app tree from a TOML spec (`generator/specs/*.toml`): one bounded context whose service runs a Restate workflow, whose orchestrator runs one action, and whose action writes to Postgres. The output includes tests. |
+| [`generator/`](generator/) | Writes a starting tesser app tree from a TOML spec (`generator/specs/*.toml`): one bounded context whose service runs a Restate workflow, whose orchestrator runs one action, and whose action writes to its store. The spec picks the store (`storage = "postgres"`, the default, or `"memory"`) and the host (`host = "cli"`, the default: a CLI host beside a Restate host; or `"http"`: one HTTP host serving the write and read routes with the Restate endpoint mounted at `/restate`). The output includes tests. |
 | [`skills/tesser-build/`](skills/tesser-build/) | The agent skill. `SKILL.md` routes a task to per-concept guides (`value-objects.md`, `aggregates.md`, `repositories.md`, `testing.md`, `python.md`, …). You copy it into a consumer repo to use it. |
 | [`examples/`](examples/) | Nine worked-example apps, each held to zero findings (see below). |
 | [`layout/`](layout/) | An app that checks the repo layout. It fails when the directories on disk, `manifest.json`, the `.tesser-root` files, and the CI jobs disagree. |
@@ -117,6 +117,18 @@ exact command, and the setup for the Claude Code post-write hook, are in
 cd generator
 PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate specs/shop.toml /path/to/out
 ```
+
+Two top-level spec keys choose the shape. `storage = "memory"` writes an
+in-memory repository and no `pgdatabase` package, and takes no
+`environment_variables.storage_url`; it needs `host = "http"`, because a CLI
+host reads in a process of its own and would never see the store the served
+Restate endpoint writes. `host = "http"` writes `srv/http/main.py` (a FastAPI
+app: `POST /<collection>` and `GET /<collection>/{<identity>}`, the Restate
+endpoint mounted at `/restate`), its `protocol/http.py`, an `HttpHandler`, and
+a root acceptance test that reaches the served host through
+`ts.served(...)`, reading its address from the variable named by
+`environment_variables.host_url`. `specs/library.toml` is HTTP over memory,
+`specs/helpdesk.toml` HTTP over Postgres.
 
 ## Working on this repo
 

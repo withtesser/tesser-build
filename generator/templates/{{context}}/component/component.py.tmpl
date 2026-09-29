@@ -11,7 +11,9 @@ import {{context}}.adapters.repositories as repositories
 import {{context}}.adapters.workflows as workflows
 import {{context}}.application as application
 import {{context}}.client as client
+{{#storage_postgres}}
 import pgdatabase.database as pgdatabase_database
+{{/storage_postgres}}
 
 _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationRetryPolicy(
     max_attempts=5, on_max_attempts="pause"
@@ -20,8 +22,10 @@ _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationR
 
 class Spec(ts.Spec):
 
-    def __init__(self, storage: str, ingress: str, identity_seed: int) -> None:
+    def __init__(self, {{#storage_postgres}}storage: str, {{/storage_postgres}}ingress: str, identity_seed: int) -> None:
+{{#storage_postgres}}
         self.storage = storage
+{{/storage_postgres}}
         self.ingress = ingress
         self.identity_seed = identity_seed
 
@@ -29,16 +33,26 @@ class Spec(ts.Spec):
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
+{{#storage_postgres}}
         self.storage = spec.storage
+{{/storage_postgres}}
         self.ingress = spec.ingress
         self.identity_seed = spec.identity_seed
+{{#storage_postgres}}
         self.database = pgdatabase_database.DatabaseRequest(spec.storage)
+{{/storage_postgres}}
 
 
 class {{Context}}(ts.Component):
 
+{{#storage_postgres}}
     def __init__(self, config: Config, database: pgdatabase_database.Database) -> None:
         self._postgres_{{aggregate}}_store = repositories.Postgres{{Aggregate}}Store(database)
+{{/storage_postgres}}
+{{#storage_memory}}
+    def __init__(self, config: Config) -> None:
+        self._memory_{{aggregate}}_store = repositories.Memory{{Aggregate}}Store()
+{{/storage_memory}}
         self.{{aggregate}}_actions_service: restate.Service = restate.Service(
             "{{Aggregate}}Actions", ingress_private=True, invocation_retry_policy=_RETRY_POLICY
         )
@@ -48,13 +62,13 @@ class {{Context}}(ts.Component):
         restate_{{conduct}} = workflows.Restate{{Conduct}}(
             self.{{aggregate}}_orchestrator_workflow,
             activities.Restate{{Record}}(
-                self.{{aggregate}}_actions_service, application.{{Aggregate}}Actions(self._postgres_{{aggregate}}_store)
+                self.{{aggregate}}_actions_service, application.{{Aggregate}}Actions(self._{{storage}}_{{aggregate}}_store)
             ),
         )
         self.client: client.{{Context}}Client = application.{{Aggregate}}Service(
             dispatchers.RestateHttp{{Aggregate}}OrchestratorRelay(config.ingress, restate_{{conduct}}),
             repositories.Uuid{{Aggregate}}IdentityRepository(config.identity_seed),
-            self._postgres_{{aggregate}}_store,
+            self._{{storage}}_{{aggregate}}_store,
         )
 
     async def close(self) -> None:

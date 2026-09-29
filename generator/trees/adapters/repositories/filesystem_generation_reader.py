@@ -15,7 +15,8 @@ SCALARS: typing.Final[tuple[tuple[str, str, str], ...]] = (
     ("bounded_context_name", "", "bounded_context_name"),
     ("aggregate_root_class_name", "", "aggregate_root_class_name"),
     ("durable_execution_engine", "", "durable_execution_engine"),
-    ("database", "", "database"),
+    ("storage", "", "storage"),
+    ("host", "", "host"),
     ("identity_field_name", "", "identity_field_name"),
     ("identity_port_operation_name", "", "identity_port_operation_name"),
     ("write_operation_name", "client", "write_operation_name"),
@@ -30,6 +31,7 @@ SCALARS: typing.Final[tuple[tuple[str, str, str], ...]] = (
     ("asserted_field", "acceptance_test", "asserted_field"),
     ("storage_url_variable", "environment_variables", "storage_url"),
     ("restate_ingress_url_variable", "environment_variables", "restate_ingress_url"),
+    ("host_url_variable", "environment_variables", "host_url"),
 )
 
 LISTS: typing.Final[tuple[tuple[str, str], ...]] = (

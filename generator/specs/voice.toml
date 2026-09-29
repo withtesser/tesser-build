@@ -2,7 +2,7 @@ app_name = "voice"
 bounded_context_name = "calls"
 aggregate_root_class_name = "Call"
 durable_execution_engine = "restate"
-database = "postgres"
+storage = "postgres"
 identity_field_name = "call_id"
 identity_port_operation_name = "issue_call_id"
 

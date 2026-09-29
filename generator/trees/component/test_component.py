@@ -26,7 +26,7 @@ class TestTrees:
             'bounded_context_name = "calls"\n'
             'aggregate_root_class_name = "Call"\n'
             'durable_execution_engine = "restate"\n'
-            'database = "postgres"\n'
+            'storage = "postgres"\n'
             'identity_field_name = "call_id"\n'
             'identity_port_operation_name = "issue_call_id"\n'
             '[aggregate_fields]\nperson_name = "str"\n'
