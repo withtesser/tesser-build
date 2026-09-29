@@ -1,0 +1,1 @@
+from drafting.adapters.activities.restate_activities import RestateRecordJtbd as RestateRecordJtbd
