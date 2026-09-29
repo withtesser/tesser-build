@@ -16,13 +16,11 @@ Done means all of these hold:
    say.
 2. `scripts/verify story-drafting` gets past tessercheck with zero findings and
    past `mypy --strict`. Its pytest step fails.
-3. The acceptance test fails **past the wiring, at the behavior the story
-   adds.** Starting a run through the host succeeds: it goes through the
-   app's durable workflow on Restate and returns a run the host can read back. The test then fails
-   on an assertion about what the story adds — the run is not waiting for a
-   pick, or it has no drafted stories. It must not fail from an operation that
-   is not implemented at the entry point, an import error, a collection error,
-   a missing module, or a service that is not running.
+3. The acceptance test fails at the story's **then**. Starting a run through
+   the host succeeds and results are read back through the host. It must not
+   fail before that: not on a host operation that isn't implemented, an import
+   or collection error, a missing module, or a host or Restate server that
+   isn't running.
 4. You have built the structure the story's run goes through — the client, the
    service, the durable workflow on Restate, the host, and what the component
    wires for them — but not the story's behavior: no drafting, and no waiting for the
