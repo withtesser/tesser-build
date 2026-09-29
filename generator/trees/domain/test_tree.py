@@ -425,6 +425,14 @@ class TestTreeProblems:
             "operation 'record_call' is named twice; every operation has a name of its own"
         ]
 
+    def test_an_operation_with_a_relay_prefix_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(write_operation_name="start_call"))
+
+        assert [str(text) for text in tree.problems()] == [
+            "operation 'start_call' starts with 'start_', a prefix the analyzer reserves for "
+            "relay operations (TB085); name the operation without it"
+        ]
+
     def test_an_operation_of_one_word_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(write_operation_name="place"))
 

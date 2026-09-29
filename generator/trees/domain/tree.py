@@ -33,6 +33,8 @@ TYPES: typing.Final[dict[str, tuple[str, str, str, str, str]]] = {
     "int": ("bigint", "canonical_int", "__int__", "int_arg", "integer"),
 }
 
+RELAY_PREFIXES: typing.Final[tuple[str, ...]] = ("start_", "run_", "await_")
+
 RESERVED: typing.Final[frozenset[str]] = frozenset(
     {
         "adapters",
@@ -525,6 +527,15 @@ class Tree(ts.AggregateRoot):
             ]
             for operation in sorted({operation for operation in operations if operation and operations.count(operation) > 1}):
                 found.append(Text(f"operation '{operation}' is named twice; every operation has a name of its own"))
+            for operation in operations:
+                prefix = next((prefix for prefix in RELAY_PREFIXES if operation.startswith(prefix)), None)
+                if prefix is not None:
+                    found.append(
+                        Text(
+                            f"operation '{operation}' starts with '{prefix}', a prefix the analyzer reserves for "
+                            f"relay operations (TB085); name the operation without it"
+                        )
+                    )
             if spec.target == OCCUPIED:
                 found.append(Text("the output directory is not empty"))
             if not spec.templates:
