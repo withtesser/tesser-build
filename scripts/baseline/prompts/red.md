@@ -39,8 +39,8 @@ Done means all of these hold:
    server that isn't running.
 4. The tree holds the structure a submitted JTBD goes through — the client,
    the service, the durable workflow on Restate, the host, and what the
-   component wires for them — but not the user story's behavior: no
-   drafting, and no waiting for the pick.
+   component wires for them — but not the user story's behavior: a
+   submitted JTBD has no status yet.
 
 ## The user story
 

@@ -2,7 +2,7 @@
 
 The story-drafting skill: a two-step agent skill backed by a durable Restate
 workflow. Step 1: an agent turns a job-to-be-done into drafts. Step 2: the
-developer picks one — and the JTBD waits at the pick, durably, until they do.
+developer picks one — and the JTBD waits, durably, until they do.
 
 ## The job-to-be-done
 
@@ -21,10 +21,13 @@ developer picks one — and the JTBD waits at the pick, durably, until they do.
   drafts, its picked draft, and the step it is at.
 - **Submit** — hand a JTBD to the story-drafting skill so drafting begins.
 - **Step** — one of the story-drafting skill's parts, fixed in advance and in
-  order. A submitted JTBD is always at one step: *drafting*, then *the pick*. "Waiting for my pick"
-  means it is at the pick.
-- **Checkpoint** — a step where the developer weighs in. In this user story
-  the pick is the checkpoint.
+  order. A submitted JTBD is always at one step: *drafting* (the agent is
+  writing its drafts), then *waiting for a pick* (the developer is picking
+  one).
+- **Status** — what the developer sees when they check on a JTBD: the step it
+  is at, its drafts, and its picked draft once there is one.
+- **Checkpoint** — a step where the developer weighs in. Waiting for a pick is
+  a checkpoint.
 - **Draft** — a candidate user story the agent wrote for a JTBD.
 - **Pick** — the developer choosing one draft; the chosen draft is the
   **picked draft**.
@@ -34,25 +37,20 @@ developer picks one — and the JTBD waits at the pick, durably, until they do.
 ## The user story being built
 
 **As a** developer, **I want** to submit a JTBD to the story-drafting skill and
-have it stop for my pick once the drafts are written, **so that** the agent
-cannot skip my checkpoint.
+check on it right away, **so that** I know drafting has begun and can step
+away.
 
-- **Given** a job-to-be-done,
-- **when** I submit it to the story-drafting skill,
-- **then** I can come back to it right away, before its drafts are written,
-- **and when** I come back to it once they are written, it is at the pick, at
-  least one draft is there to pick from, and no draft is picked yet.
+- **Given** I have just submitted a JTBD,
+- **when** I check on its status right away,
+- **then** I see that it is drafting.
 
 ## Constraints on the build
 
-- Each submitted JTBD is worked through by a durable workflow on Restate;
-  waiting for the pick is waiting on a durable promise.
-- Drafting is done by a language model behind a port. No test calls a real
-  model: the host the acceptance test drives is served with a deterministic
-  drafting adapter, selected through the environment.
+- Each submitted JTBD is worked through by a durable workflow on Restate.
 - The acceptance test is a root test (`docs/design-test-tiers.md`): it drives
   the app only through a running host the developer or an agent would use,
   speaking the app's protocol, and reads the result back through that host.
   The user story's behaviour scenarios are context tests.
-- Out of scope for this user story: making the pick, revising a draft, and the
-  story-drafting skill's agent-facing document (`SKILL.md`).
+- Out of scope for this user story: writing the drafts, waiting for a pick,
+  making the pick, revising a draft, and the story-drafting skill's
+  agent-facing document (`SKILL.md`).
