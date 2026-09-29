@@ -30,7 +30,7 @@ generated mark; do not edit one — a drift check fails if you do. **Yours are:*
   its `test_template_story_drafter.py`: the body of the one implementation
   the toolkit does not supply.
 
-Do not edit the specs, the acceptance tests, `scripts/verify`, or any
+Do not edit the specs (generator/compositions/story-drafting/), the acceptance tests, `scripts/verify`, or any
 `.tesser-root` (no `skip` lines).
 
 **If the contract lacks something you need** — a field, an outcome, a read,
@@ -42,25 +42,25 @@ there, not in your files.
 ## The language
 
 ```toml
-{{FILE:story-drafting/specs/language.toml}}
+{{FILE:generator/compositions/story-drafting/language.toml}}
 ```
 
 ## The stories
 
 ```toml
-{{FILE:story-drafting/specs/story.toml}}
+{{FILE:generator/compositions/story-drafting/story.toml}}
 ```
 
 ## The contracts (composition)
 
 ```toml
-{{FILE:story-drafting/specs/composition.toml}}
+{{FILE:generator/compositions/story-drafting/composition.toml}}
 ```
 
 ## The implementations
 
 ```toml
-{{FILE:story-drafting/specs/implementations.toml}}
+{{FILE:generator/compositions/story-drafting/implementations.toml}}
 ```
 
 ## The acceptance tests (they must pass unchanged)
