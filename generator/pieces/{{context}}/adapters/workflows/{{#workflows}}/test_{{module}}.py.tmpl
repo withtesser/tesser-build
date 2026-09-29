@@ -93,6 +93,7 @@ class Test{{Workflow}}:
                     key=workflow_key,
                     arg=relays.{{Operation}}Request({{keyed_request_sample}}),
                 )
+{{#awaits}}
             for _ in range(100):
                 awaiting = await admin.post(
                     "/query",
@@ -107,14 +108,20 @@ class Test{{Workflow}}:
                 if waiting:
                     break
                 await asyncio.sleep(0.1)
-            invoked = await admin.post(
-                "/query",
-                headers={"accept": "application/json"},
-                json={
-                    "query": "SELECT target, completion_result FROM sys_invocation "
-                    "WHERE invoked_by_target = '" + parent_target + "' ORDER BY created_at"
-                },
-            )
+{{/awaits}}
+            invoked = httpx.Response(503)
+            for _ in range(100):
+                invoked = await admin.post(
+                    "/query",
+                    headers={"accept": "application/json"},
+                    json={
+                        "query": "SELECT target, completion_result FROM sys_invocation "
+                        "WHERE invoked_by_target = '" + parent_target + "' ORDER BY created_at"
+                    },
+                )
+                if [row["completion_result"] for row in invoked.json()["rows"]] == [{{#workflow_activities}}"success", {{/workflow_activities}}]:
+                    break
+                await asyncio.sleep(0.1)
 
             assert foreign.value.status_code == 400
             assert [

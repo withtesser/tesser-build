@@ -159,25 +159,27 @@ class TestRenderedTree:
         assert [str(text) for text in rendered_tree.kept()] == ["lending/domain/loan.txt"]
         assert "lending/domain/loan.txt" not in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
 
-    def test_a_generated_file_already_in_the_output_is_rewritten_while_it_is_marked_generated(self) -> None:
+    def test_a_file_the_renderer_does_not_write_is_left_beside_the_tree(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(target="occupied", existing=(("README.md", "# lending\n"),)))
+
+        assert rendered_tree.health() == domain.Health.CLEAN
+        assert "README.md" not in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
+
+    def test_a_file_it_would_write_the_same_is_written_again(self) -> None:
         rendered_tree = domain.RenderedTree(
-            rendered_tree_spec(
-                target="occupied",
-                existing=(("lending/ports/notice_sender.txt", "# pragma: tesser-generated; x\nOldSender\n"),),
-            )
+            rendered_tree_spec(target="occupied", existing=(("lending/ports/notice_sender.txt", "# pragma: tesser-generated; x\nNoticeSender\n"),))
         )
 
         assert rendered_tree.health() == domain.Health.CLEAN
         assert "lending/ports/notice_sender.txt" in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
 
-    def test_an_unmarked_file_where_a_generated_one_goes_is_a_problem_and_nothing_is_written(self) -> None:
+    def test_a_file_it_would_write_differently_is_a_problem_and_nothing_is_written(self) -> None:
         rendered_tree = domain.RenderedTree(
-            rendered_tree_spec(target="occupied", existing=(("lending/ports/notice_sender.txt", "hand written\n"),))
+            rendered_tree_spec(target="occupied", existing=(("lending/ports/notice_sender.txt", "# pragma: tesser-generated; x\nOld\n"),))
         )
 
         assert [str(text) for text in rendered_tree.problems()] == [
-            "the output directory already has lending/ports/notice_sender.txt, which is not marked generated, "
-            "so the renderer will not replace it"
+            "the output directory already has lending/ports/notice_sender.txt, which the renderer would write differently"
         ]
         assert rendered_tree.files() == ()
 

@@ -31,3 +31,13 @@ class {{Dispatcher}}(ts.Dispatcher):
             )
         return relays.{{Returns}}({{identity}}={{param}}.{{identity}})
 {{/start_methods}}
+{{#run_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        async with httpx.AsyncClient(base_url=self._ingress, timeout=_START_TIMEOUT) as async_client:
+            return await restate_client.Client(async_client).workflow_call(
+                self._{{workflow_param}}.handler,
+                key=urllib_parse.quote({{param}}.{{identity}}, safe=""),
+                arg={{param}},
+            )
+{{/run_methods}}

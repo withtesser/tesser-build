@@ -16,8 +16,6 @@ GUARD: typing.Final[re.Pattern[str]] = re.compile(r"\{\{([#^])([A-Za-z_][A-Za-z0
 
 TEMPLATE_SUFFIX: typing.Final[str] = ".tmpl"
 
-GENERATED_MARKER: typing.Final[str] = "# pragma: tesser-generated;"
-
 AGENT_MARKER: typing.Final[str] = "# pragma: tesser-agent-owned;"
 
 DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
@@ -1036,8 +1034,8 @@ class Model(ts.Entity):
             if kind != "orchestrator":
                 continue
             mode, operation_name = rest.split("_", 1)
-            if mode != "start":
-                raise ValueError(f"step {step} runs the orchestrator; a client step starts it (start_), because only a start returns without waiting")
+            if mode not in ("start", "run"):
+                raise ValueError(f"step {step} names the orchestrator without start_ or run_, the two ways a client step waits on it")
             modes = self._orchestrator_modes.setdefault(operation_name, [])
             if mode not in modes:
                 modes.append(mode)
@@ -1051,10 +1049,12 @@ class Model(ts.Entity):
             declared.append(("relays", relay_module, Operation + "Request", "Request", list(operation["request"]), True, self._Orchestrator, False))
             declared.append(("relays", relay_module, Operation + "Response", "Response", list(operation["response"]), True, self._Orchestrator, False))
             for mode in self._orchestrator_modes.get(operation_name, []):
-                declared.append(("relays", relay_module, "Start" + Operation + "Response", "Response", [self._identity], False, self._Orchestrator, False))
+                returns = Operation + "Response"
+                if mode == "start":
+                    returns = "Start" + Operation + "Response"
+                    declared.append(("relays", relay_module, returns, "Response", [self._identity], False, self._Orchestrator, False))
                 self._relay_ops[self._Orchestrator + "Relay"].append(
-                    (f"{mode}_{operation_name}", operation_name + "_request", Operation + "Request",
-                     "Start" + Operation + "Response", operation_name))
+                    (f"{mode}_{operation_name}", operation_name + "_request", Operation + "Request", returns, operation_name))
         for key, table in composition.get("actions", {}).items():
             Actions = str(Word(str(key)).pascal()) + "Actions"
             module = str(Word(Actions).snake()) + "_relay"
@@ -1294,7 +1294,9 @@ class Model(ts.Entity):
                     dependency = {"dependency": holder, "dependency_type": f"relays.{Orchestrator}Relay"}
                     if dependency not in dependencies:
                         dependencies.append(dependency)
-                    statements.append(dict(blank, port_call=[{}], holder=holder, assign=f"{rest}_response = ",
+                    returned_name = ("Start" if mode == "start" else "") + Step + "Response"
+                    result = str(Word(returned_name).snake())
+                    statements.append(dict(blank, port_call=[{}], holder=holder, assign=f"{result} = ",
                                            call=rest, argument=str(mapped.call())))
                     pairs = mapped.values()
                     if relay_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
@@ -1303,13 +1305,13 @@ class Model(ts.Entity):
                         checks.append({"check": f"[({reads},) for received in fake_{holder}.received] == [({expected},)]"})
                     if saved:
                         checks.append({"check": f"fake_{holder}.saved_when_received == [True]"})
-                    returned = self._messages[("relays", "Start" + Step + "Response")]
-                    echoed = Ask(AskSpec(name=f"Start{Step}Response", target_ref=f"Start{Step}Response", allow_empty=False))
+                    returned = self._messages[("relays", returned_name)]
+                    echoed = Ask(AskSpec(name=returned_name, target_ref=returned_name, allow_empty=False))
                     for target in returned.targets():
                         echoed.target(target)
                     echoed.source(Source(SourceSpec(expr="sent", type_ref="sent", kind="plain", prefix="sent.", holds=tuple(pairs))))
-                    sources.hold(Source(SourceSpec(expr=rest + "_response", type_ref=f"relays.Start{Step}Response",
-                                                   kind="plain", prefix=rest + "_response.",
+                    sources.hold(Source(SourceSpec(expr=result, type_ref=f"relays.{returned_name}",
+                                                   kind="plain", prefix=result + ".",
                                                    holds=tuple(self._echo[0].of(echoed).values()))))
                     test_name = f"{operation_name}_{rest}_with_the_{aggregate}_it_built"
                 else:
@@ -1374,6 +1376,7 @@ class Model(ts.Entity):
             operations: list[dict[str, object]] = []
             tests: list[dict[str, object]] = []
             commanded = False
+            builds = False
             for operation_name, operation in table.get("operations", {}).items():
                 Operation = str(Word(operation_name).pascal())
                 request_record = self._messages[("relays", Operation + "Request")]
@@ -1392,7 +1395,7 @@ class Model(ts.Entity):
                 statements: list[dict[str, object]] = []
                 checks: list[dict[str, object]] = []
                 if "builds" in operation:
-                    commanded = True
+                    builds = True
                     ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True))
                     for target in self._domain_targets[Aggregate + "Spec"]:
                         ask.target(target)
@@ -1426,6 +1429,7 @@ class Model(ts.Entity):
                 if commands:
                     if len(commands) != 1 or "builds" not in operation:
                         raise ValueError(f"{operation_name} gives one command to the aggregate it builds, because an action decides once")
+                    commanded = True
                     command = str(commands[0])
                     if command not in self._commands:
                         raise ValueError(f"{operation_name} gives {command}, which the aggregate does not declare")
@@ -1465,11 +1469,12 @@ class Model(ts.Entity):
                     answer = str(answered.call())
                     pairs = port_mapped.values()
                     fake = "fake_" + (str(Word(store).snake()) if store else str(Word(port_name).snake()))
-                    if port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
+                    if not store and port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
                         reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
                         expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
                         checks.append({"check": f"[({reads},) for received in {fake}.{calls}_requests] == [({expected},)]"})
-                    test_name = f"{operation_name}_asks_its_port_and_answers_what_it_said"
+                    test_name = (f"{operation_name}_answers_for_the_{aggregate}_it_builds" if "builds" in operation
+                                 else f"{operation_name}_asks_its_port_and_answers_what_it_said")
                 for target in response_record.targets():
                     value = str(answered.values().get(str(target.field())))
                     if value != UNKNOWN:
@@ -1499,8 +1504,9 @@ class Model(ts.Entity):
                              "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                              "args": [{"field": field, "expr": expr} for field, expr in made.args()]}
                             for made in mappers.defs()],
-                "commanded": [{}] if commanded else [], "operations": operations,
+                "commanded": [{}] if commanded else [], "builds": [{}] if builds else [], "operations": operations,
                 "fake_ports": fake_ports, "fake_stores": fake_stores, "fake_relays": [], "actions_tests": tests,
+                "stores_faked": [{}] if fake_stores else [],
                 "key": str(key), "Port": port_name,
             })
         self._binding["actions"] = rendered
@@ -2007,14 +2013,21 @@ class Model(ts.Entity):
             "served_containers": ", ".join(str(c["container_attr"]) for c in containers),
             "keyed_request_sample": keyed,
             "awaited_promises": [{"PROMISE": m["PROMISE"]} for m in awaited],
+            "awaits": [{}] if awaited else [],
         }
         self._binding["workflows"] = [workflow]
-        start_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns}
-                         for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]]
+        start_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns,
+                          "result": str(Word(returns).snake())}
+                         for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]
+                         if method.startswith("start_")]
+        run_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns,
+                        "result": str(Word(returns).snake())}
+                       for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]
+                       if method.startswith("run_")]
         self._binding["ingress_dispatchers"] = [dict(
             workflow, module="restate_http_" + str(Word(Orchestrator).snake()) + "_relay",
-            Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods,
-        )] if start_methods else []
+            Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods, run_methods=run_methods,
+        )] if start_methods or run_methods else []
         service_args: list[dict[str, object]] = []
         service_dependencies = self._binding.get("dependencies", [])
         for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
@@ -2027,7 +2040,7 @@ class Model(ts.Entity):
                 service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
         self._binding["service_args"] = service_args
         imported = {"activities", "workflows"}
-        if start_methods:
+        if start_methods or run_methods:
             imported.add("dispatchers")
         if gateways:
             imported.add("gateways")
@@ -2221,10 +2234,8 @@ class RenderedTree(ts.AggregateRoot):
                 written.append(rendered_file)
             elif content.startswith(AGENT_MARKER):
                 kept.append(Text(path))
-            elif existing[path].startswith(GENERATED_MARKER):
-                written.append(rendered_file)
             else:
-                found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
+                found.append(Text(f"the output directory already has {path}, which the renderer would write differently"))
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
