@@ -1,0 +1,103 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+{{#commanded}}
+
+import contextlib
+import typing
+{{/commanded}}
+
+import tesser.testing as ts
+
+import {{context}}.application as application
+import {{context}}.application.ports as ports
+import {{context}}.application.relays as relays
+{{#fake_ports}}
+
+
+@ts.fake
+class Fake{{Port}}(ports.{{Port}}):
+
+    def __init__(self) -> None:
+{{#operations}}
+        self.{{operation}}_requests: list[ports.{{Operation}}Request] = []
+{{/operations}}
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: ports.{{Operation}}Request) -> ports.{{Operation}}Response:
+        self.{{operation}}_requests.append({{operation}}_request)
+        return ports.{{Operation}}Response({{fake_response}})
+{{/operations}}
+{{/fake_ports}}
+{{#fake_stores}}
+
+
+@ts.fake
+class Fake{{Port}}(ports.{{Port}}):
+
+    def __init__(self, {{aggregates}}: dict[str, ports.{{Record}}]) -> None:
+        self._{{aggregates}} = {{aggregates}}
+
+    async def {{save}}(self, {{save}}_request: ports.{{Save}}Request) -> ports.{{Save}}Response:
+        self._{{aggregates}}[{{save}}_request.{{aggregate}}.{{identity}}] = {{save}}_request.{{aggregate}}
+        return ports.{{Save}}Response()
+
+    async def {{load}}(self, {{load}}_request: ports.{{Load}}Request) -> ports.{{Load}}Response:
+        return ports.{{Load}}Response({{aggregate}}=self._{{aggregates}}[{{load}}_request.{{identity}}])
+
+
+@ts.fake
+class Fake{{Store}}(ports.{{Store}}):
+
+    def __init__(self) -> None:
+        self.{{aggregates}}: dict[str, ports.{{Record}}] = {}
+
+    @contextlib.asynccontextmanager
+    async def transaction(self) -> typing.AsyncIterator[ports.{{Port}}]:
+        yield Fake{{Port}}(self.{{aggregates}})
+{{/fake_stores}}
+{{#fake_relays}}
+
+
+@ts.fake
+class Fake{{Relay}}(relays.{{Relay}}):
+
+    def __init__(self{{#watches_store}}, {{aggregates}}: dict[str, ports.{{Record}}]{{/watches_store}}{{#journaled}}, journal: list[str]{{/journaled}}) -> None:
+{{#watches_store}}
+        self._{{aggregates}} = {{aggregates}}
+        self.saved_when_received: list[bool] = []
+{{/watches_store}}
+{{#journaled}}
+        self.journal = journal
+{{/journaled}}
+        self.received: list[relays.{{received_type}}] = []
+{{#operations}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+{{#journaled}}
+        self.journal.append("{{method}}")
+{{/journaled}}
+        self.received.append({{param}})
+{{#watches_store}}
+        self.saved_when_received.append({{param}}.{{identity}} in self._{{aggregates}})
+{{/watches_store}}
+        return relays.{{Returns}}({{fake_response}})
+{{/operations}}
+{{/fake_relays}}
+
+
+class Test{{Actions}}:
+{{#actions_tests}}
+
+    async def test_{{name}}(self) -> None:
+{{#fake_locals}}
+        {{local}} = {{construct}}
+{{/fake_locals}}
+
+        {{operation}}_response = await application.{{Actions}}({{dependency_arg}}).{{operation}}(
+            relays.{{Operation}}Request({{request_sample}})
+        )
+
+{{#checks}}
+        assert {{check}}
+{{/checks}}
+{{/actions_tests}}

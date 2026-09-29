@@ -1,0 +1,34 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import pytest
+
+import {{context}}.application.relays as relays
+import tesser.errors as errors
+{{#records}}
+{{#snapshot}}
+
+
+class Test{{Record}}Snapshot:
+
+    def test_a_{{record}}_is_its_fields(self) -> None:
+        {{record}} = relays.{{Record}}({{sample}})
+
+        raw = relays.{{Record}}Snapshot().serialize({{record}})
+
+        assert raw == {{sample_bytes}}
+
+    def test_a_{{record}}_comes_back_equal(self) -> None:
+        {{record}}_snapshot = relays.{{Record}}Snapshot()
+        {{record}} = relays.{{Record}}({{sample}})
+
+        returned = {{record}}_snapshot.deserialize({{record}}_snapshot.serialize({{record}}))
+
+        assert returned == {{record}}
+
+    def test_a_{{record}}_of_the_wrong_shape_is_refused_before_the_constructor(self) -> None:
+        for raw in ({{wrong_shapes}}):
+            with pytest.raises(errors.DomainError):
+                relays.{{Record}}Snapshot().deserialize(raw)
+{{/snapshot}}
+{{/records}}

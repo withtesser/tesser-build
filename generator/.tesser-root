@@ -1,1 +1,3 @@
 app
+stdlib json
+stdlib tomllib

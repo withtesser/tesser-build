@@ -1,0 +1,86 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import typing
+
+import tesser.adapters as ts
+import restate
+import restate.serde as restate_serde
+
+import {{context}}.adapters.activities as activities
+import {{context}}.application.orchestrators as orchestrators
+import {{context}}.application.relays as relays
+
+_EMPTY_BODY: typing.Final[str] = "a message crosses the engine with a body"
+_FOREIGN_KEY: typing.Final[str] = "a request names the {{aggregate}} its workflow is keyed by"
+{{#serdes}}
+
+
+class Restate{{Message}}Serde(ts.Serde, restate_serde.Serde[relays.{{Message}}]):
+
+    def serialize(self, {{message}}: relays.{{Message}} | None) -> bytes:
+        if {{message}} is None:
+            return b""
+        return relays.{{Message}}Snapshot().serialize({{message}})
+
+    def deserialize(self, buf: bytes) -> relays.{{Message}} | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.{{Message}}Snapshot().deserialize(buf)
+{{/serdes}}
+{{#invocation_dispatchers}}
+
+
+class {{Dispatcher}}(ts.Dispatcher):
+
+    def __init__(
+        self,
+        restate_workflow_context: restate.WorkflowContext,
+{{#dispatcher_activities}}
+        {{activity_param}}: activities.{{Activity}},
+{{/dispatcher_activities}}
+    ) -> None:
+        self._restate_workflow_context = restate_workflow_context
+{{#dispatcher_activities}}
+        self._{{activity_param}} = {{activity_param}}
+{{/dispatcher_activities}}
+{{#run_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        return await self._restate_workflow_context.service_call(self._{{activity_param}}.handler, {{param}})
+{{/run_methods}}
+{{#await_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        return relays.{{Returns}}Snapshot().deserialize(
+            await self._restate_workflow_context.promise(relays.{{PROMISE}}, serde=restate_serde.BytesSerde()).value()
+        )
+{{/await_methods}}
+{{/invocation_dispatchers}}
+
+
+class {{Workflow}}(ts.Workflow):
+
+    def __init__(
+        self,
+        {{container_attr}}: restate.Workflow,
+{{#workflow_activities}}
+        {{activity_param}}: activities.{{Activity}},
+{{/workflow_activities}}
+    ) -> None:
+        @{{container_attr}}.main(
+            input_serde=Restate{{Operation}}RequestSerde(),
+            output_serde=Restate{{Operation}}ResponseSerde(),
+        )
+        async def {{operation}}(
+            restate_workflow_context: restate.WorkflowContext, {{operation}}_request: relays.{{Operation}}Request
+        ) -> relays.{{Operation}}Response:
+            if {{operation}}_request.{{identity}} != restate_workflow_context.key():
+                raise restate.TerminalError(_FOREIGN_KEY, status_code=400)
+            return await orchestrators.{{Orchestrator}}(
+{{#invocation_dispatchers}}
+                {{Dispatcher}}(restate_workflow_context{{#dispatcher_activities}}, {{activity_param}}{{/dispatcher_activities}}),
+{{/invocation_dispatchers}}
+            ).{{operation}}({{operation}}_request)
+
+        self.handler = {{operation}}

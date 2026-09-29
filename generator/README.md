@@ -157,3 +157,48 @@ host_url = "LIBRARY_HOST"
 
 Every spec in `specs/` is gated: `scripts/verify generator` generates each one
 and runs the generated tree's own gates.
+
+## Rendering a composition
+
+The second entry point renders a tree from a composition directory instead of
+a fixed-shape spec: the five spec formats of `compositions/<name>/`
+(`language.toml`, `story.toml`, `composition.toml`, `implementations.toml`,
+`generator.toml`; each file's header says what it answers).
+
+```sh
+cd generator
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
+```
+
+It exits 0 and lists the files it wrote (and, after them, `kept <path>` for
+each agent-owned file it left alone), or exits 1 with every problem and writes
+nothing.
+
+**Every piece renders by its kind.** The renderer reads the composition's
+contracts (the aggregate's contract, the messages and shapes, the client
+operations and their ordered steps, the orchestrator operation, the signal,
+the classes of actions and their ports) and `implementations.toml`'s choices,
+and renders one module per piece from the templates in `pieces/`: a path
+segment `{{#name}}` renders the file once per item of that section. Names
+come from the specs and the language, and the conventions derive the rest
+(`JtbdOrchestrator`, `StoryActions`, `RestateHttpJtbdOrchestratorRelay`, the
+engine containers). A route is the method, path, and status a level-2
+story's `when` and `then` name. Every module comes with its sibling test.
+
+**Two owners.** Every rendered file says who owns it on its first line:
+
+- `# pragma: tesser-generated; ...` — the renderer's. Rendering again
+  rewrites it; an unmarked file where one goes is a problem.
+- `# pragma: tesser-agent-owned; ...` — rendered once, as a stub, then the
+  agent's: the aggregate's domain module (only its contract is rendered — the
+  spec it is built from, its commands and their outcomes, its reads) with its
+  test, and an implementation whose type the toolkit does not support
+  (`body = "agent"`) with its test. Rendering again keeps an existing one.
+
+The marker is a `# pragma:` comment because that is a directive tessercheck's
+comments norm (TB020) reads past; `.tesser-root` carries none, because its
+lines are declarations only.
+
+Every composition in `compositions/` is gated: `scripts/verify generator`
+renders each one and runs the rendered tree's tessercheck, `mypy --strict`,
+and every test tier but the root.

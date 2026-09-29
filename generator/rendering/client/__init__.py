@@ -1,0 +1,3 @@
+from rendering.client.client import RenderCompositionRequest as RenderCompositionRequest
+from rendering.client.client import RenderCompositionResponse as RenderCompositionResponse
+from rendering.client.client import RenderingClient as RenderingClient
