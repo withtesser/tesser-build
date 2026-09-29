@@ -1,0 +1,147 @@
+# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
+# 5 generator. Each fact lives in the one spec whose question it answers; what a
+# convention derives (TB085 names, a class named for its aggregate) is in none.
+#
+# 3 COMPOSITION — Which pieces exist and how do they connect? The design
+# decisions no convention determines, made before any code. Written by the agent
+# in step 1 and reviewed; the generator reads it directly. Every name is a
+# language code name or convention word. Every piece names the stories it serves
+# (story ids, level 1 and 2); a piece that serves none is a finding. Which
+# implementation or host exists, and which is used where, is the implementations
+# spec's: this one declares contracts (the aggregate, the ports, the relays and
+# the signal), never what satisfies them.
+
+context = "drafting"
+
+# ---- the domain: the aggregate's contract ----------------------------------
+# What a service, action, or orchestrator relies on, and nothing more: the spec
+# it is constructed from, the commands it can be given and the outcomes they
+# answer, and what can be read from it. Generated as a stub once; after that the
+# domain module is the agent's, and a check holds its public signatures to this
+# contract. Value objects, internal fields, validation, defaults, and how a read
+# is computed (stored or derived) are the agent's and are not written here.
+
+[aggregate]
+name = "Jtbd"
+identity = "jtbd_id"
+serves = ["s-1", "s-2"]
+
+[aggregate.spec]                       # JtbdSpec: what it is built from, when submitted and when loaded
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+stories = "StorySpec[]"                # empty when submitted; the stories and their states when loaded
+
+[aggregate.commands.record_stories]
+takes = { story_texts = "StoryText[]" }
+outcomes = ["recorded", "already_recorded", "none_given"]   # the invariant, as answers the caller matches
+serves = ["s-2"]
+
+[aggregate.reads]                      # what the application reads to answer get_jtbd; types, not representation
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+status = "JtbdStatus"
+stories = "StoryView[]"
+
+[shapes.StorySpec]                     # one story, as the spec carries it (story_id joins when a story needs to name one: accepting)
+given = "str"
+when = "str"
+then = "str"
+state = "StoryState"
+
+[shapes.StoryView]                     # one story, as the application reads it
+given = "str"
+when = "str"
+then = "str"
+state = "StoryState"
+
+[enums]                                # values that cross the domain's edge
+JtbdStatus = ["drafting_stories", "awaiting_story_acceptance", "stories_decided"]
+StoryState = ["drafted", "accepted", "rejected"]
+
+# ---- messages ---------------------------------------------------------------
+
+[messages.StoryText]                   # what a story drafting yields, carried across the port and the relays
+given = "str"
+when = "str"
+then = "str"
+
+# ---- public interface -------------------------------------------------------
+# The routes are the level-2 stories' (s-1-a-1, s-2-a-1); they are not repeated here.
+
+[interfaces.http]
+serves = ["s-1-a-1", "s-2-a-1"]
+
+[client.operations.submit_jtbd]
+kind = "write"
+request = ["role", "i_want", "so_that"]
+response = ["jtbd_id", "status"]
+steps = [
+  "identity.issue_jtbd_id",
+  "repository.save_jtbd",              # save before starting: the job to be done is readable at once, drafting stories
+  "orchestrator.start_conduct_story_drafting",  # start, not run: returns without waiting
+]
+serves = ["s-1", "s-1-a-1"]
+
+[client.operations.get_jtbd]
+kind = "read"
+request = ["jtbd_id"]
+response = ["jtbd_id", "role", "i_want", "so_that", "status", "stories"]
+steps = ["repository.load_jtbd"]
+serves = ["s-2", "s-2-a-1"]
+
+# ---- the workflow -----------------------------------------------------------
+
+[orchestrator.operations.conduct_story_drafting]
+request = ["jtbd_id", "role", "i_want", "so_that"]
+response = ["jtbd_id"]                 # answered only once the checkpoint is resolved (out of scope)
+steps = [
+  "actions.story.draft_stories",
+  "actions.jtbd.record_stories",
+  "signal.await_accept_stories",       # the checkpoint
+]
+serves = ["s-2"]
+
+[signals.accept_stories]                # a durable promise: needs an engine that keeps one (implementations.toml)
+decision = "set"                       # one decision over all drafted stories; one promise, resolved once
+payload = ["jtbd_id"]                  # which stories are accepted joins with the accept story, which names them
+resolved = false                       # the wait only; resolving it is out of scope
+serves = ["s-2"]
+
+# ---- classes of actions (one port each, one call per method) ----------------
+
+[actions.story]
+port = "StoryDrafter"
+[actions.story.operations.draft_stories]
+calls = "draft_stories"
+request = ["jtbd_id", "role", "i_want", "so_that"]
+response = ["story_texts"]
+serves = ["s-2"]
+
+[actions.jtbd]
+port = "JtbdRepository"
+[actions.jtbd.operations.record_stories]
+builds = "Jtbd"                        # from the request, as a JtbdSpec with no stories
+commands = ["record_stories"]          # then matches its outcome: recorded → save; already_recorded, none_given → answer so
+calls = "save_jtbd"                    # one port call
+request = ["jtbd_id", "role", "i_want", "so_that", "story_texts"]
+response = ["jtbd_id"]
+serves = ["s-2"]
+
+# ---- ports: the contracts an implementation must satisfy -------------------
+
+[ports.StoryDrafter]
+operations.draft_stories = { request = ["role", "i_want", "so_that"], response = ["story_texts: StoryText[]"] }
+serves = ["s-2"]
+
+[ports.JtbdRepository]
+operations.save_jtbd = { request = ["jtbd"], response = [] }
+operations.load_jtbd = { request = ["jtbd_id"], response = ["jtbd"] }
+serves = ["s-1", "s-2"]
+
+[ports.JtbdIdentityRepository]
+operations.issue_jtbd_id = { request = [], response = ["jtbd_id"] }
+serves = ["s-1"]
