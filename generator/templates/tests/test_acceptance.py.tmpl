@@ -1,24 +1,34 @@
 from __future__ import annotations
 
+import os
 import random
-
-import tesser.testing as ts
+import subprocess
+import sys
 
 
 class {{test_class}}:
 
     def {{test_method}}(self) -> None:
-        cli = ts.Cli("srv.cli.main")
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
         {{asserts}} = random.choice({{random_choices}})
 
-        {{write}} = cli.run(
-            "{{write}}",
+        {{write}} = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "srv.cli.main",
+                "{{write}}",
 {{#fields}}
-            {{#is_asserted}}str({{asserts}}){{/is_asserted}}{{^is_asserted}}{{sample_arg}}{{/is_asserted}},
+                {{#is_asserted}}str({{asserts}}){{/is_asserted}}{{^is_asserted}}{{sample_arg}}{{/is_asserted}},
 {{/fields}}
+            ],
+            capture_output=True, text=True, check=False, env=env,
         )
-        {{read}} = cli.run("{{read}}", {{write}}.stdout.strip())
+        {{read}} = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "{{read}}", {{write}}.stdout.strip()],
+            capture_output=True, text=True, check=False, env=env,
+        )
 
-        assert ({{write}}.exit_code, {{write}}.stderr) == (0, "")
-        assert ({{read}}.exit_code, {{read}}.stderr) == (0, "")
-        assert "{{asserts}}=" + str({{asserts}}) in {{read}}.lines()
+        assert ({{write}}.returncode, {{write}}.stderr) == (0, "")
+        assert ({{read}}.returncode, {{read}}.stderr) == (0, "")
+        assert "{{asserts}}=" + str({{asserts}}) in {{read}}.stdout.splitlines()

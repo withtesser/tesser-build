@@ -30,7 +30,7 @@ with Restate (forcing over whatever the context tests registered), and with
 `VOICE_EVALS=1` also starts the production LiveKit agent server
 (`srv.livekit.agent_server`) under that agent name; last it runs this tier
 (`pytest tests`). The tests are clients of both hosts, and each one runs the
-CLI host through `ts.Cli("srv.cli.main")` once per command: it places a call
+CLI host (`subprocess.run` of `python -m srv.cli.main`) once per command: it places a call
 through `place-call` while a simulated person
 (`simulated/person.py`, a directory the analyzer does not govern) watches
 LiveKit for the room the agent was dispatched into, joins it as `person`, and

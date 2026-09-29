@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import pathlib
+import subprocess
+import sys
 
 import tesser.testing as ts
 
@@ -43,12 +46,20 @@ def _repo(root: pathlib.Path) -> pathlib.Path:  # tesser:debt TB073
 
 def test_a_consistent_repo_checks_clean_and_lists_its_app_trees(tmp_path: pathlib.Path) -> None:
     _repo(tmp_path)
-    check = ts.Cli("srv.cli.check").run(str(tmp_path))
-    assert check.exit_code == 0, check.stderr
+    check = subprocess.run(
+        [sys.executable, "-m", "srv.cli.check", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert check.returncode == 0, check.stderr
     assert "layout: 6 rows, 1 app trees" in check.stdout
     assert check.stderr == ""
-    trees = ts.Cli("srv.cli.trees").run(str(tmp_path))
-    assert trees.exit_code == 0, trees.stderr
+    trees = subprocess.run(
+        [sys.executable, "-m", "srv.cli.trees", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert trees.returncode == 0, trees.stderr
     assert trees.stdout == "appone\n"
 
 
@@ -58,11 +69,19 @@ def test_a_drifted_repo_fails_the_check_and_names_each_problem(tmp_path: pathlib
     (tmp_path / "appone" / "pyproject.toml").write_text(
         '[project]\nname = "appone"\nrequires-python = ">=3.11"\n'
     )
-    check = ts.Cli("srv.cli.check").run(str(tmp_path))
-    assert check.exit_code == 1
+    check = subprocess.run(
+        [sys.executable, "-m", "srv.cli.check", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert check.returncode == 1
     assert check.stdout == ""
     assert "directory 'utils' has no manifest.json row" in check.stderr
     assert "the Python floor is 3.12" in check.stderr
-    trees = ts.Cli("srv.cli.trees").run(str(tmp_path))
-    assert trees.exit_code == 1
+    trees = subprocess.run(
+        [sys.executable, "-m", "srv.cli.trees", str(tmp_path)],
+        capture_output=True, text=True, check=False,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    assert trees.returncode == 1
     assert trees.stdout == ""

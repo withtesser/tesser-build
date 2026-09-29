@@ -53,18 +53,17 @@ through an undocumented attribute.
 
 ## Reaching a host from a root test
 
-`tesser.testing` carries the two things every root test needs, so no tree
-writes its own:
+A CLI host is run directly: `subprocess.run([sys.executable, "-m",
+"srv.cli.main", *args], capture_output=True, text=True, check=False,
+env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})`. The test's own
+`sys.path` becomes the child's `PYTHONPATH`, so the host imports what the test
+could, and the answer is the `CompletedProcess` (`returncode`, `stdout`,
+`stderr`); there is no wrapper to learn.
 
-- `ts.Cli("srv.cli.main").run(*args)` runs a CLI host as a subprocess with the
-  caller's import path and environment, and answers a `ts.CliAnswer`
-  (`exit_code`, `stdout`, `stderr`, `lines()`).
-- `ts.served("APP_URL")` reads the address the runner named for a served host,
-  and refuses loudly when the runner did not set it.
-
-`tesser.testing` is the one `tesser` namespace allowed `os` and `subprocess`
-(TB062): it is imported only by tests, and running a host is what a root test
-does.
+`tesser.testing` carries the one thing a root test cannot write for itself:
+`ts.served("APP_URL")` reads the address the runner named for a served host,
+and refuses loudly when the runner did not set it. `tesser.testing` is the one
+`tesser` namespace allowed `os` (TB062): it is imported only by tests.
 
 Root tests share a served host for the whole run, so each uses its own data —
 a fresh identity or a random value — and asserts only on what it created.

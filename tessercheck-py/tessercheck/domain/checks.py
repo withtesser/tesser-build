@@ -562,7 +562,7 @@ TESSER_STDLIB: typing.Final[frozenset[str]] = frozenset(
     }
 )
 
-TESSER_TESTING_STDLIB: typing.Final[frozenset[str]] = frozenset({"os", "subprocess"})
+TESSER_TESTING_STDLIB: typing.Final[frozenset[str]] = frozenset({"os"})
 
 STUB_SUFFIX: typing.Final[str] = ".pyi"
 

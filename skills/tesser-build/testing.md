@@ -356,8 +356,9 @@ is ruled.
   neighbouring contexts at the port, and serves a durable workflow from the
   test process under the component's own names. A story's acceptance test is
   a root test; its behaviour scenarios are context tests. A root test reaches
-  a host with `ts.Cli(module).run(*args)` or the address `ts.served(VAR)`
-  reads, and uses its own data, because every root test shares the served
+  a CLI host by running `python -m <module>` with `subprocess.run` (its
+  `PYTHONPATH` is the test's `sys.path`), and an HTTP host at the address
+  `ts.served(VAR)` reads, and uses its own data, because every root test shares the served
   host. The runner runs every other tier first with no host served, then
   serves the hosts, then runs the root tier (`docs/design-test-tiers.md`).
 - **Test grouping / structure.** Partially ruled (2026-08-23): grouping

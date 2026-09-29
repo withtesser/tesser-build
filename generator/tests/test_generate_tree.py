@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 import pathlib
-
-import tesser.testing as ts
+import subprocess
+import sys
 
 
 class TestGeneratingTrees:
@@ -10,21 +11,24 @@ class TestGeneratingTrees:
     def test_every_committed_spec_generates_every_template_and_exits_zero(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[1]
         template_count = len(list((tree / "templates").rglob("*.tmpl")))
-        cli = ts.Cli("srv.cli.generate")
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
 
         answered = {
-            spec.stem: cli.run(str(spec), str(tmp_path / spec.stem))
+            spec.stem: subprocess.run(
+                [sys.executable, "-m", "srv.cli.generate", str(spec), str(tmp_path / spec.stem)],
+                capture_output=True, text=True, check=False, env=env,
+            )
             for spec in sorted((tree / "specs").glob("*.toml"))
         }
 
         assert answered
-        assert {name: (cli_answer.exit_code, cli_answer.stderr) for name, cli_answer in answered.items()} == {
+        assert {name: (completed.returncode, completed.stderr) for name, completed in answered.items()} == {
             name: (0, "") for name in answered
         }
-        assert {name: len(cli_answer.lines()) for name, cli_answer in answered.items()} == {
+        assert {name: len(completed.stdout.splitlines()) for name, completed in answered.items()} == {
             name: template_count for name in answered
         }
         assert {
             name: sorted(path.relative_to(tmp_path / name).as_posix() for path in (tmp_path / name).rglob("*") if path.is_file())
             for name in answered
-        } == {name: sorted(cli_answer.lines()) for name, cli_answer in answered.items()}
+        } == {name: sorted(completed.stdout.splitlines()) for name, completed in answered.items()}

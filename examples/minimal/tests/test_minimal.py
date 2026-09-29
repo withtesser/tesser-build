@@ -1,30 +1,46 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import time
 import uuid
-
-import tesser.testing as ts
 
 
 class TestCliHost:
 
     def test_a_created_widget_is_found_once_its_name_is_approved(self) -> None:
         name = "w-" + str(uuid.uuid4())
-        host = ts.Cli("srv.cli.main")
-        created = host.run("create", name)
-        found_before_approval = host.run("find", name)
-        approved = host.run("approve", name)
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        created = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "create", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        found_before_approval = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "find", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        approved = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "approve", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
         for _ in range(50):
-            if approved.exit_code == 0 or "HTTP 412" not in approved.stderr:
+            if approved.returncode == 0 or "HTTP 412" not in approved.stderr:
                 break
             time.sleep(0.1)
-            approved = host.run("approve", name)
+            approved = subprocess.run(
+                [sys.executable, "-m", "srv.cli.main", "approve", name],
+                capture_output=True, text=True, check=False, env=env,
+            )
         found = found_before_approval
         for _ in range(50):
-            found = host.run("find", name)
-            if found.lines() == ("yes",):
+            found = subprocess.run(
+                [sys.executable, "-m", "srv.cli.main", "find", name],
+                capture_output=True, text=True, check=False, env=env,
+            )
+            if found.stdout.splitlines() == ["yes"]:
                 break
             time.sleep(0.1)
-        assert (created.exit_code, created.lines()) == (0, (name,)), created.stderr
-        assert (approved.exit_code, approved.lines()) == (0, (name,)), approved.stderr
-        assert (found_before_approval.lines(), found.lines()) == (("no",), ("yes",))
+        assert (created.returncode, created.stdout.splitlines()) == (0, [name]), created.stderr
+        assert (approved.returncode, approved.stdout.splitlines()) == (0, [name]), approved.stderr
+        assert (found_before_approval.stdout.splitlines(), found.stdout.splitlines()) == (["no"], ["yes"])
