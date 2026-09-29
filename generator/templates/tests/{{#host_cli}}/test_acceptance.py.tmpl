@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+import random
+{{#calling_start}}
+import time
+{{/calling_start}}
+
+import tesser.testing as ts
+
+
+class {{test_class}}:
+
+    def {{test_method}}(self) -> None:
+        cli = ts.Cli("srv.cli.main")
+        {{asserts}} = random.choice({{random_choices}})
+
+        {{write}} = cli.run(
+            "{{write}}",
+{{#fields}}
+            {{#is_asserted}}str({{asserts}}){{/is_asserted}}{{^is_asserted}}{{sample_arg}}{{/is_asserted}},
+{{/fields}}
+        )
+        {{read}} = cli.run("{{read}}", {{write}}.stdout.strip())
+{{#calling_start}}
+        deadline = time.monotonic() + 30
+        while {{read}}.exit_code != 0 and time.monotonic() < deadline:
+            time.sleep(0.2)
+            {{read}} = cli.run("{{read}}", {{write}}.stdout.strip())
+{{/calling_start}}
+
+        assert ({{write}}.exit_code, {{write}}.stderr) == (0, "")
+        assert ({{read}}.exit_code, {{read}}.stderr) == (0, "")
+        assert "{{asserts}}=" + str({{asserts}}) in {{read}}.lines()

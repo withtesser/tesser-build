@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+import typing
+
+import tesser.adapters as ts
+
+import {{context}}.client as client
+import protocol
+
+_WRITE_USAGE: typing.Final[str] = "usage: {{write}}{{#fields}} <{{field}}>{{/fields}}"
+
+_READ_USAGE: typing.Final[str] = "usage: {{read}} <{{identity}}>"
+
+
+class CliHandler(ts.Handler):
+
+    def __init__(self, {{context}}_client: client.{{Context}}Client) -> None:
+        self._{{context}}_client = {{context}}_client
+
+    async def {{write}}(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:
+{{#fields}}
+        {{field}} = cli_request.{{cli_arg}}({{index}}, "{{field}}", _WRITE_USAGE)
+{{/fields}}
+        cli_request.no_extra_args({{field_count}}, _WRITE_USAGE)
+        {{write}}_response = await self._{{context}}_client.{{write}}(
+            client.{{Write}}Request({{#fields}}{{field}}={{field}}{{comma}}{{/fields}})
+        )
+        return protocol.CliResponse.ok({{write}}_response.{{identity}})
+
+    async def {{read}}(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:
+        {{identity}} = cli_request.arg(0, "{{identity}}", _READ_USAGE)
+        cli_request.no_extra_args(1, _READ_USAGE)
+        {{read}}_response = await self._{{context}}_client.{{read}}(client.{{Read}}Request({{identity}}={{identity}}))
+        return protocol.CliResponse.ok(
+            "\n".join(
+                (
+{{#read_fields}}
+                    "{{field}}=" + str({{read}}_response.{{aggregate}}.{{field}}),
+{{/read_fields}}
+                )
+            )
+        )

@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import pathlib
+
+import tessercheck.adapters.repositories as repositories
+import tessercheck.application.ports as ports
+
+
+def test_a_declared_tree_reads_as_an_app(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.APP
+    assert read_sources_response.sources == ()
+    assert read_sources_response.nested == ()
+    assert read_sources_response.symlinked == ()
+    assert "os" in read_sources_response.stdlib
+
+
+def test_a_tree_with_no_declaration_reads_as_missing(tmp_path: pathlib.Path) -> None:
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.MISSING
+
+
+def test_a_declaration_that_does_not_open_with_app_reads_as_unrecognized(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("library\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.UNRECOGNIZED
+
+
+def test_an_undecodable_declaration_reads_as_unreadable(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_bytes(b"\xff\xfe\x00app")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.UNREADABLE
+
+
+def test_a_bom_prefixed_declaration_still_reads_as_an_app(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_bytes(b"\xef\xbb\xbfapp\n")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.APP
+
+
+def test_export_and_import_directives_are_carried_through(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text(
+        "app\nexport tesser\nimport other.client.client\n", encoding="utf-8"
+    )
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.exports == ("tesser",)
+    assert read_sources_response.imports == ("other.client.client",)
+
+
+def test_a_stdlib_directive_is_carried_through(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text(
+        "app\nstdlib collections.abc\nstdlib copy\n", encoding="utf-8"
+    )
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.APP
+    assert read_sources_response.pure_stdlib == ("collections.abc", "copy")
+
+
+def test_a_stdlib_naming_a_path_makes_the_declaration_unrecognized(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\nstdlib not/a/module\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.UNRECOGNIZED
+    assert read_sources_response.pure_stdlib == ()
+
+
+def test_a_directive_with_no_value_makes_the_declaration_unrecognized(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\nskip\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.UNRECOGNIZED
+
+
+def test_a_skip_naming_a_path_makes_the_declaration_unrecognized(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\nskip a/b\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.UNRECOGNIZED
+
+
+def test_a_skipped_directory_is_not_walked(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\nskip testdata\n", encoding="utf-8")
+    (tmp_path / "testdata").mkdir()
+    (tmp_path / "testdata" / "broken.py").write_text("def f(:\n", encoding="utf-8")
+    (tmp_path / "kept.py").write_text("x = 1\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert [source.path for source in read_sources_response.sources] == ["kept.py"]
+
+
+def test_the_standard_noise_directories_are_not_walked(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "junk.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "junk.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "kept.py").write_text("x = 1\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert [source.path for source in read_sources_response.sources] == ["kept.py"]
+
+
+def test_sources_come_back_sorted_by_path_with_their_module_names(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "app" / "zebra.py").write_text("z = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "alpha.pyi").write_text("a: int\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert [(source.path, source.name) for source in read_sources_response.sources] == [
+        ("app/__init__.py", "app"),
+        ("app/alpha.pyi", "app.alpha"),
+        ("app/zebra.py", "app.zebra"),
+    ]
+
+
+def test_an_init_reads_as_a_package_and_a_module_reads_as_a_module(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "app" / "thing.py").write_text("x = 1\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    forms = {source.name: source.form for source in read_sources_response.sources}
+    assert forms["app"] is ports.ModuleForm.PACKAGE
+    assert forms["app.thing"] is ports.ModuleForm.MODULE
+
+
+def test_a_root_level_init_carries_no_module_name_and_is_dropped(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "kept.py").write_text("x = 1\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert [source.path for source in read_sources_response.sources] == ["kept.py"]
+
+
+def test_a_readable_source_carries_its_text_and_a_read_state(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "thing.py").write_bytes(b"\xef\xbb\xbfx = 1\n")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.sources[0].state is ports.SourceState.READ
+    assert read_sources_response.sources[0].text == "x = 1\n"
+
+
+def test_an_undecodable_source_carries_no_text_and_an_unreadable_state(
+    tmp_path: pathlib.Path,
+) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "thing.py").write_bytes(b"\xff\xfe\x00x")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.sources[0].state is ports.SourceState.UNREADABLE
+    assert read_sources_response.sources[0].text == ""
+
+
+def test_a_declaration_below_the_root_is_reported_as_nested(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    (tmp_path / "inner").mkdir()
+    (tmp_path / "inner" / ".tesser-root").write_text("app\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.nested == ("inner/.tesser-root",)
+
+
+def test_a_symlinked_directory_is_reported_and_never_walked(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\n", encoding="utf-8")
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (outside / "smuggled.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "vendored").symlink_to(outside)
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.symlinked == ("vendored",)
+    assert read_sources_response.sources == ()
+
+
+def test_the_directories_the_walk_did_not_enter_are_reported(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".tesser-root").write_text("app\nskip legacy\n", encoding="utf-8")
+    (tmp_path / "legacy").mkdir()
+    (tmp_path / "legacy" / "old.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "alpha" / "legacy").mkdir(parents=True)
+    (tmp_path / "alpha" / "legacy" / "old.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "alpha" / ".venv").mkdir()
+    (tmp_path / "alpha" / "new.py").write_text("x = 1\n", encoding="utf-8")
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.pruned == ("alpha/.venv", "alpha/legacy", "legacy")
+    assert [source.path for source in read_sources_response.sources] == ["alpha/new.py"]
+
+
+def test_an_undeclared_tree_still_reports_what_it_did_not_enter(tmp_path: pathlib.Path) -> None:
+    (tmp_path / ".venv").mkdir()
+    read_sources_response = repositories.FilesystemSourceReader().read_sources(
+        ports.ReadSourcesRequest(tree=str(tmp_path))
+    )
+    assert read_sources_response.outcome is ports.ReadSourcesOutcome.MISSING
+    assert read_sources_response.pruned == (".venv",)

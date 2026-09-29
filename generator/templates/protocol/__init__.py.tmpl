@@ -1,0 +1,11 @@
+{{#host_cli}}
+from protocol.cli import CliRequest as CliRequest
+from protocol.cli import CliResponse as CliResponse
+from protocol.cli import Command as Command
+from protocol.cli import UsageError as UsageError
+{{/host_cli}}
+{{#host_http}}
+from protocol.http import BadRequest as BadRequest
+from protocol.http import HttpRequest as HttpRequest
+from protocol.http import HttpResponse as HttpResponse
+{{/host_http}}

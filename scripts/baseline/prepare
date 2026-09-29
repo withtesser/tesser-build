@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# Prepare one baseline run: a fresh worktree and a fresh Restate server for a
+# subagent to work one phase of the story-drafting build in.
+#
+#   scripts/baseline/prepare red   story-drafting-scaffold-v2 <run-name> <slot>
+#   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
+#
+# The worktree is .claude/worktrees/run-<run-name> on branch
+# baseline/runs/<run-name>, cut from <base-ref>, so every run of a phase
+# starts from the same commit: a red run from the empty scaffold tag (the
+# story-drafting tree on the branch is a finished green run, not a start; the
+# scaffold is cut by scripts/baseline/scaffold). The slot (0-9) gives the run its own Restate
+# container (tesser-story-drafting-restate-<slot>, ingress 38080+100*slot,
+# admin 39070+100*slot) and ten host ports from 9300+10*slot, so runs in
+# different slots go side by side; the container is replaced, so a run never
+# inherits another's registrations. The filled prompt lands in
+# .baseline-runs/<run-name>/prompt.md for the orchestrating session to hand to
+# a subagent; afterwards scripts/baseline/measure reads the transcript, and
+# scripts/baseline/record commits the numbers (.baseline-runs/ is gitignored:
+# transcripts carry machine-local paths).
+#
+set -euo pipefail
+
+if [ $# -ne 4 ]; then
+  echo "usage: scripts/baseline/prepare red|green <base-ref> <run-name> <slot>" >&2
+  exit 2
+fi
+phase=$1
+base=$2
+name=$3
+slot=$4
+case "$slot" in [0-9]) ;; *) echo "baseline: slot is 0-9" >&2; exit 2 ;; esac
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+prompt="$HERE/prompts/$phase.md"
+[ -f "$prompt" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
+
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$MAIN/.claude/worktrees/run-$name"
+branch="baseline/runs/$name"
+out="$MAIN/.baseline-runs/$name"
+[ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
+[ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
+
+ingress_port=$((38080 + 100 * slot))
+admin_port=$((39070 + 100 * slot))
+host_port=$((9300 + 10 * slot))
+container="tesser-story-drafting-restate-$slot"
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker run -d --name "$container" -p "$ingress_port:8080" -p "$admin_port:9070" \
+  --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
+for _ in $(seq 1 50); do
+  if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
+  sleep 0.2
+done
+
+mkdir -p "$out"
+base_sha=$(git rev-parse "$base^{commit}")
+git worktree add -q -b "$branch" "$wt" "$base_sha"
+
+cat >"$out/run.json" <<JSON
+{"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+JSON
+
+# A red trial is shown a generated tree, rendered from a gated spec by the
+# worktree's own generator (library: http over memory), so the prompt can
+# carry what a generated host answers before the trial generates its own.
+(cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
+  specs/library.toml "$out/example/library" >/dev/null)
+
+# The prompt is a template. {name} is a run value; {{FILE:path}} is a file
+# from the trial's worktree at its base commit and {{EXAMPLE:path}} a file of
+# the example tree, each pasted verbatim (run values are not filled inside
+# them). A name or path that does not resolve stops the prepare.
+WT="$wt" VENV="$MAIN/.venv" INGRESS="http://localhost:$ingress_port" ADMIN="http://localhost:$admin_port" \
+  PORT="$host_port" PORT_LAST="$((host_port + 9))" SPEC="$out/spec.toml" LOG="$out/verify.log" EXAMPLE="$out/example" \
+  python3 - "$prompt" "$out/prompt.md" <<'PY'
+import os, pathlib, re, sys
+values = {"worktree": "WT", "venv": "VENV", "ingress": "INGRESS", "admin": "ADMIN", "port_last": "PORT_LAST", "port": "PORT", "spec": "SPEC", "log": "LOG"}
+roots = {"FILE": pathlib.Path(os.environ["WT"]), "EXAMPLE": pathlib.Path(os.environ["EXAMPLE"])}
+def fill(text):
+    def value(match):
+        if match.group(1) not in values:
+            sys.exit(f"baseline: the prompt names {{{match.group(1)}}}, which is not a run value")
+        return os.environ[values[match.group(1)]]
+    return re.sub(r"(?<!\{)\{([a-z_]+)\}(?!\})", value, text)
+def include(match):
+    path = roots[match.group(1)] / match.group(2)
+    if not path.is_file():
+        sys.exit(f"baseline: the prompt includes {match.group(1)}:{match.group(2)}, which is not a file")
+    return path.read_text().rstrip("\n")
+parts = re.split(r"(\{\{(?:FILE|EXAMPLE):[^}]+\}\})", open(sys.argv[1]).read())
+out = []
+for part in parts:
+    token = re.fullmatch(r"\{\{(FILE|EXAMPLE):([^}]+)\}\}", part)
+    out.append(include(token) if token else fill(part))
+open(sys.argv[2], "w").write("".join(out))
+PY
+echo "$out/prompt.md"

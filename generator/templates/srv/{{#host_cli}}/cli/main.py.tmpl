@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import asyncio
+import sys
+import typing
+
+import tesser.srv as ts
+
+import app as app
+import {{context}}.adapters.handlers as {{context}}_handlers
+import protocol
+
+_USAGE: typing.Final[str] = (
+    "usage: python -m srv.cli.main <command> [args]\n"
+    "commands:\n"
+    "  {{write}}{{#fields}} <{{field}}>{{/fields}}\n"
+    "  {{read}} <{{identity}}>"
+)
+
+
+class CliHost(ts.Host):
+
+    def run(self, argv: list[str]) -> int:
+        {{app}}_app = app.load()
+        with asyncio.Runner() as runner:
+            runner.run({{app}}_app.open())
+            try:
+                cli_handler = {{context}}_handlers.CliHandler({{app}}_app.{{context}}.client)
+                commands: dict[str, protocol.Command] = {
+                    "{{write}}": cli_handler.{{write}},
+                    "{{read}}": cli_handler.{{read}},
+                }
+                if not argv or argv[0] not in commands:
+                    cli_response = protocol.CliResponse(2, stdout="", stderr=_USAGE)
+                else:
+                    try:
+                        cli_response = runner.run(commands[argv[0]](protocol.CliRequest(args=tuple(argv[1:]))))
+                    except protocol.UsageError as error:
+                        cli_response = protocol.CliResponse(2, stdout="", stderr=str(error))
+                    except Exception:
+                        cli_response = protocol.CliResponse(1, stdout="", stderr="unexpected error")
+            finally:
+                runner.run({{app}}_app.close())
+        if cli_response.stdout:
+            print(cli_response.stdout)
+        if cli_response.stderr:
+            print(cli_response.stderr, file=sys.stderr)
+        return cli_response.exit_code
+
+
+if __name__ == "__main__":
+    ts.main(CliHost().run)
