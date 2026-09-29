@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import json
@@ -8,46 +9,81 @@ import tesser.application as ts
 import tesser.errors as errors
 
 
-class WriteStoriesRequest(ts.Request):
+class DraftStoriesRequest(ts.Request):
 
-    def __init__(self, job: str) -> None:
-        self.job = job
-
-
-class WriteStoriesRequestSnapshot(ts.Serde):
-
-    def serialize(self, write_stories_request: WriteStoriesRequest) -> bytes:
-        return json.dumps({"job": write_stories_request.job}).encode()
-
-    def deserialize(self, buf: bytes) -> WriteStoriesRequest:
-        snapshot = json.loads(buf)
-        if not (isinstance(snapshot, dict) and isinstance(snapshot.get("job"), str)):
-            raise errors.invalid("invalid_snapshot", "a write stories request is a job")
-        return WriteStoriesRequest(job=snapshot["job"])
+    def __init__(self, jtbd_id: str, role: str, i_want: str, so_that: str) -> None:
+        self.jtbd_id = jtbd_id
+        self.role = role
+        self.i_want = i_want
+        self.so_that = so_that
 
 
-class WriteStoriesResponse(ts.Response):
+class DraftStoriesRequestSnapshot(ts.Serde):
 
-    def __init__(self, stories: tuple[str, ...]) -> None:
-        self.stories = stories
+    def serialize(self, draft_stories_request: DraftStoriesRequest) -> bytes:
+        return json.dumps(
+            {
+                "jtbd_id": draft_stories_request.jtbd_id,
+                "role": draft_stories_request.role,
+                "i_want": draft_stories_request.i_want,
+                "so_that": draft_stories_request.so_that,
+            }
+        ).encode()
 
-
-class WriteStoriesResponseSnapshot(ts.Serde):
-
-    def serialize(self, write_stories_response: WriteStoriesResponse) -> bytes:
-        return json.dumps({"stories": list(write_stories_response.stories)}).encode()
-
-    def deserialize(self, buf: bytes) -> WriteStoriesResponse:
+    def deserialize(self, buf: bytes) -> DraftStoriesRequest:
         snapshot = json.loads(buf)
         if not (
             isinstance(snapshot, dict)
-            and isinstance(snapshot.get("stories"), list)
-            and all(isinstance(story, str) for story in snapshot["stories"])
+            and isinstance(snapshot.get("jtbd_id"), str)
+            and isinstance(snapshot.get("role"), str)
+            and isinstance(snapshot.get("i_want"), str)
+            and isinstance(snapshot.get("so_that"), str)
         ):
-            raise errors.invalid("invalid_snapshot", "a write stories response is a list of stories")
-        return WriteStoriesResponse(stories=tuple(snapshot["stories"]))
+            raise errors.invalid("invalid_snapshot", "a draft stories request is its jtbd_id, role, i_want, and so_that")
+        return DraftStoriesRequest(
+            jtbd_id=snapshot["jtbd_id"],
+            role=snapshot["role"],
+            i_want=snapshot["i_want"],
+            so_that=snapshot["so_that"],
+        )
+
+
+class StoryText(ts.Response):
+
+    def __init__(self, given: str, when: str, then: str) -> None:
+        self.given = given
+        self.when = when
+        self.then = then
+
+
+class DraftStoriesResponse(ts.Response):
+
+    def __init__(self, story_texts: tuple[StoryText, ...]) -> None:
+        self.story_texts = story_texts
+
+
+class DraftStoriesResponseSnapshot(ts.Serde):
+
+    def serialize(self, draft_stories_response: DraftStoriesResponse) -> bytes:
+        return json.dumps(
+            {
+                "story_texts": [{"given": story_text.given, "when": story_text.when, "then": story_text.then} for story_text in draft_stories_response.story_texts],
+            }
+        ).encode()
+
+    def deserialize(self, buf: bytes) -> DraftStoriesResponse:
+        snapshot = json.loads(buf)
+        if not (
+            isinstance(snapshot, dict)
+            and isinstance(snapshot.get("story_texts"), list)
+            and all(isinstance(story_text, dict) and isinstance(story_text.get("given"), str) and isinstance(story_text.get("when"), str) and isinstance(story_text.get("then"), str) for story_text in snapshot["story_texts"])
+        ):
+            raise errors.invalid("invalid_snapshot", "a draft stories response is its story_texts")
+        return DraftStoriesResponse(
+            story_texts=tuple(StoryText(given=story_text["given"], when=story_text["when"], then=story_text["then"]) for story_text in snapshot["story_texts"]),
+        )
 
 
 class StoryActionsRelay(ts.Relay, typing.Protocol):
 
-    async def run_write_stories(self, write_stories_request: WriteStoriesRequest) -> WriteStoriesResponse: ...
+    async def run_draft_stories(self, draft_stories_request: DraftStoriesRequest) -> DraftStoriesResponse: ...

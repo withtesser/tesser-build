@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import json
@@ -7,88 +8,59 @@ import tesser.testing as ts
 
 import drafting.adapters.handlers as handlers
 import drafting.client as client
-import protocol as protocol
+import protocol
 
 
 @ts.fake
 class FakeDraftingClient(client.DraftingClient):
 
     def __init__(self) -> None:
-        self.opened: list[tuple[str, str]] = []
-        self.read: list[str] = []
+        self.submit_jtbd_requests: list[client.SubmitJtbdRequest] = []
+        self.get_jtbd_requests: list[client.GetJtbdRequest] = []
 
-    async def open_run(self, open_run_request: client.OpenRunRequest) -> client.OpenRunResponse:
-        self.opened.append((open_run_request.run_id, open_run_request.job))
-        return client.OpenRunResponse(run_id=open_run_request.run_id)
+    async def submit_jtbd(self, submit_jtbd_request: client.SubmitJtbdRequest) -> client.SubmitJtbdResponse:
+        self.submit_jtbd_requests.append(submit_jtbd_request)
+        return client.SubmitJtbdResponse(jtbd_id="jtbd-1", status="drafting_stories")
 
-    async def get_run(self, get_run_request: client.GetRunRequest) -> client.GetRunResponse:
-        self.read.append(get_run_request.run_id)
-        return client.GetRunResponse(
-            run_id=get_run_request.run_id, job="ship", stage="awaiting_pick", stories=("a", "b"), accepted_stories=()
-        )
+    async def get_jtbd(self, get_jtbd_request: client.GetJtbdRequest) -> client.GetJtbdResponse:
+        self.get_jtbd_requests.append(get_jtbd_request)
+        return client.GetJtbdResponse(jtbd_id="jtbd-1", role="a traveller", i_want="one itinerary we all agreed on", so_that="I can book it", status="drafting_stories", stories=(client.StoryView(given="a trip with three friends", when="I propose an itinerary", then="each friend can agree to it", state="drafted"),))
 
 
-@ts.fake
-class FakeRefusingDraftingClient(client.DraftingClient):
+class TestHttpHandler:
 
-    def __init__(self, error: Exception) -> None:
-        self.error = error
-
-    async def open_run(self, open_run_request: client.OpenRunRequest) -> client.OpenRunResponse:
-        raise self.error
-
-    async def get_run(self, get_run_request: client.GetRunRequest) -> client.GetRunResponse:
-        raise self.error
-
-
-class TestHandler:
-
-    async def test_an_opened_run_is_accepted_with_its_id_and_carries_the_body_to_the_client(self) -> None:
+    async def test_submit_jtbd_passes_what_it_reads_and_answers_201_with_the_response_fields(self) -> None:
         fake_drafting_client = FakeDraftingClient()
-        http_response = await handlers.Handler(fake_drafting_client).open_run(
-            protocol.HttpRequest(path_params={}, body=b'{"run_id": "r1", "job": "ship"}')
-        )
-        assert http_response.status_code == 202
-        assert json.loads(http_response.body) == {"run_id": "r1"}
-        assert fake_drafting_client.opened == [("r1", "ship")]
 
-    async def test_a_missing_job_is_a_bad_request(self) -> None:
+        http_response = await handlers.HttpHandler(fake_drafting_client).submit_jtbd(
+            protocol.HttpRequest(path_params={}, body=b'{"role": "a traveller", "i_want": "one itinerary we all agreed on", "so_that": "I can book it"}')
+        )
+
+        assert (http_response.status_code, json.loads(http_response.body)) == (201, {"jtbd_id": "jtbd-1", "status": "drafting_stories"})
+        assert fake_drafting_client.submit_jtbd_requests == [client.SubmitJtbdRequest(role="a traveller", i_want="one itinerary we all agreed on", so_that="I can book it")]
+
+    async def test_submit_jtbd_missing_what_it_reads_is_a_bad_request_that_calls_nothing(self) -> None:
+        fake_drafting_client = FakeDraftingClient()
+
         with pytest.raises(protocol.BadRequest):
-            await handlers.Handler(FakeDraftingClient()).open_run(
-                protocol.HttpRequest(path_params={}, body=b'{"run_id": "r1"}')
-            )
+            await handlers.HttpHandler(fake_drafting_client).submit_jtbd(protocol.HttpRequest(path_params={}, body=b"{}"))
 
-    async def test_a_run_is_read_by_the_id_in_its_path(self) -> None:
+        assert fake_drafting_client.submit_jtbd_requests == []
+
+    async def test_get_jtbd_passes_what_it_reads_and_answers_200_with_the_response_fields(self) -> None:
         fake_drafting_client = FakeDraftingClient()
-        http_response = await handlers.Handler(fake_drafting_client).get_run(
-            protocol.HttpRequest(path_params={"run_id": "r1"}, body=b"")
+
+        http_response = await handlers.HttpHandler(fake_drafting_client).get_jtbd(
+            protocol.HttpRequest(path_params={"jtbd_id": "jtbd-1"}, body=b"")
         )
-        assert http_response.status_code == 200
-        assert json.loads(http_response.body) == {
-            "run_id": "r1",
-            "job": "ship",
-            "stage": "awaiting_pick",
-            "stories": ["a", "b"],
-            "accepted_stories": [],
-        }
-        assert fake_drafting_client.read == ["r1"]
 
-    async def test_a_rejected_run_is_422_carrying_the_contexts_wording(self) -> None:
-        http_response = await handlers.Handler(
-            FakeRefusingDraftingClient(client.RunRejected("empty_job", "a job to be done is never blank"))
-        ).open_run(protocol.HttpRequest(path_params={}, body=b'{"run_id": "r1", "job": " "}'))
-        assert http_response.status_code == 422
-        assert json.loads(http_response.body) == {"detail": "a job to be done is never blank"}
+        assert (http_response.status_code, json.loads(http_response.body)) == (200, {"jtbd_id": "jtbd-1", "role": "a traveller", "i_want": "one itinerary we all agreed on", "so_that": "I can book it", "status": "drafting_stories", "stories": [{"given": "a trip with three friends", "when": "I propose an itinerary", "then": "each friend can agree to it", "state": "drafted"}]})
+        assert fake_drafting_client.get_jtbd_requests == [client.GetJtbdRequest(jtbd_id="jtbd-1")]
 
-    async def test_a_run_not_found_is_404_carrying_the_contexts_wording(self) -> None:
-        http_response = await handlers.Handler(FakeRefusingDraftingClient(client.RunNotFound("no run 'r1'"))).get_run(
-            protocol.HttpRequest(path_params={"run_id": "r1"}, body=b"")
-        )
-        assert http_response.status_code == 404
-        assert json.loads(http_response.body) == {"detail": "no run 'r1'"}
+    async def test_get_jtbd_missing_what_it_reads_is_a_bad_request_that_calls_nothing(self) -> None:
+        fake_drafting_client = FakeDraftingClient()
 
-    async def test_a_failure_the_context_never_declared_leaves_the_handler(self) -> None:
-        with pytest.raises(RuntimeError):
-            await handlers.Handler(FakeRefusingDraftingClient(RuntimeError("unexpected"))).get_run(
-                protocol.HttpRequest(path_params={"run_id": "r1"}, body=b"")
-            )
+        with pytest.raises(protocol.BadRequest):
+            await handlers.HttpHandler(fake_drafting_client).get_jtbd(protocol.HttpRequest(path_params={}, body=b"{}"))
+
+        assert fake_drafting_client.get_jtbd_requests == []
