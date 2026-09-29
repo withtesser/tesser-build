@@ -3,6 +3,9 @@ from {{context}}.application.relays.{{aggregate}}_orchestrator_relay import {{Co
 from {{context}}.application.relays.{{aggregate}}_orchestrator_relay import {{Conduct}}RequestSnapshot as {{Conduct}}RequestSnapshot
 from {{context}}.application.relays.{{aggregate}}_orchestrator_relay import {{Conduct}}Response as {{Conduct}}Response
 from {{context}}.application.relays.{{aggregate}}_orchestrator_relay import {{Conduct}}ResponseSnapshot as {{Conduct}}ResponseSnapshot
+{{#calling_start}}
+from {{context}}.application.relays.{{aggregate}}_orchestrator_relay import Start{{Conduct}}Response as Start{{Conduct}}Response
+{{/calling_start}}
 from {{context}}.application.relays.{{aggregate}}_actions_relay import {{Aggregate}}ActionsRelay as {{Aggregate}}ActionsRelay
 from {{context}}.application.relays.{{aggregate}}_actions_relay import {{Record}}Request as {{Record}}Request
 from {{context}}.application.relays.{{aggregate}}_actions_relay import {{Record}}RequestSnapshot as {{Record}}RequestSnapshot

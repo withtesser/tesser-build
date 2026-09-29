@@ -13,6 +13,8 @@ def tree_spec(
     note: str = "spec.toml",
     unknown_keys: tuple[str, ...] = (),
     target: str = "absent",
+    existing: tuple[tuple[str, str], ...] = (),
+    printed: tuple[str, ...] = (),
     app_name: str = "voice",
     bounded_context_name: str = "calls",
     aggregate_root_class_name: str = "Call",
@@ -31,6 +33,7 @@ def tree_spec(
     read_operation_name: str = "get_call",
     read_response_fields: tuple[str, ...] = ("call_id", "person_name"),
     orchestrator_operation_name: str = "conduct_call",
+    orchestrator_calling_mode: str = "run",
     action_operation_name: str = "record_call",
     save_operation_name: str = "save_call",
     load_operation_name: str = "load_call",
@@ -49,6 +52,8 @@ def tree_spec(
         note=note,
         unknown_keys=unknown_keys,
         target=target,
+        existing=existing,
+        printed=printed,
         app_name=app_name,
         bounded_context_name=bounded_context_name,
         aggregate_root_class_name=aggregate_root_class_name,
@@ -63,6 +68,7 @@ def tree_spec(
         read_operation_name=read_operation_name,
         read_response_fields=read_response_fields,
         orchestrator_operation_name=orchestrator_operation_name,
+        orchestrator_calling_mode=orchestrator_calling_mode,
         action_operation_name=action_operation_name,
         save_operation_name=save_operation_name,
         load_operation_name=load_operation_name,
@@ -332,6 +338,36 @@ class TestTreeRendering:
         assert tree.health() is domain.Health.CLEAN
         assert str(tree.files()[0].content()) == "memory VOICE_HOST memory http"
 
+    def test_an_absent_calling_mode_is_run(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                orchestrator_calling_mode="",
+                templates=(
+                    (
+                        "{{context}}/domain/{{aggregate}}.py.tmpl",
+                        "{{#calling_run}}run{{/calling_run}}{{#calling_start}}start{{/calling_start}}",
+                    ),
+                ),
+            )
+        )
+
+        assert str(tree.files()[0].content()) == "run"
+
+    def test_the_start_calling_mode_opens_its_sections_and_closes_the_run_ones(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                orchestrator_calling_mode="start",
+                templates=(
+                    (
+                        "{{context}}/domain/{{aggregate}}.py.tmpl",
+                        "{{#calling_run}}run{{/calling_run}}{{#calling_start}}start{{/calling_start}}",
+                    ),
+                ),
+            )
+        )
+
+        assert str(tree.files()[0].content()) == "start"
+
 
 class TestTreeProblems:
 
@@ -355,6 +391,13 @@ class TestTreeProblems:
         tree = domain.Tree(tree_spec(host="grpc"))
 
         assert [str(text) for text in tree.problems()] == ["host 'grpc' has no templates; a host is one of cli, http"]
+
+    def test_a_calling_mode_without_templates_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(orchestrator_calling_mode="await"))
+
+        assert [str(text) for text in tree.problems()] == [
+            "orchestrator.calling_mode 'await' has no templates; a calling mode is one of run, start"
+        ]
 
     def test_a_memory_store_behind_a_cli_host_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(storage="memory", host="cli", storage_url_variable=""))
@@ -413,10 +456,61 @@ class TestTreeProblems:
 
         assert [str(text) for text in tree.problems()] == ["there is no spec file at spec.toml"]
 
-    def test_an_occupied_output_directory_is_a_problem(self) -> None:
-        tree = domain.Tree(tree_spec(target="occupied"))
+    def test_an_output_path_that_is_not_a_directory_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(target="not_directory"))
 
-        assert [str(text) for text in tree.problems()] == ["the output directory is not empty"]
+        assert [str(text) for text in tree.problems()] == ["the output path is not a directory"]
+
+    def test_a_file_the_tree_does_not_write_is_kept_beside_it(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("README.md", "# voice\n"),)))
+
+        assert (tree.health(), [str(generated_file.path()) for generated_file in tree.files()]) == (
+            domain.Health.CLEAN,
+            ["calls/domain/call.py"],
+        )
+
+    def test_a_file_the_tree_writes_the_same_is_not_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("calls/domain/call.py", "class Call:\n"),)))
+
+        assert tree.health() == domain.Health.CLEAN
+
+    def test_a_file_the_tree_would_write_differently_is_a_problem_and_nothing_is_written(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("calls/domain/call.py", "class Other:\n"),)))
+
+        assert ([str(text) for text in tree.problems()], tree.files()) == (
+            ["the output directory already has calls/domain/call.py, which the generator would write differently"],
+            (),
+        )
+
+    def test_a_printed_path_comes_back_as_the_file_the_tree_writes_in_the_order_named(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                printed=("tests/test_acceptance.py", "calls/domain/call.py"),
+                templates=(
+                    ("{{context}}/domain/{{aggregate}}.py.tmpl", "class {{Aggregate}}:\n"),
+                    ("tests/test_acceptance.py.tmpl", "class {{test_class}}:\n"),
+                ),
+            )
+        )
+
+        assert [(str(generated_file.path()), str(generated_file.content())) for generated_file in tree.printed()] == [
+            ("tests/test_acceptance.py", "class TestPlacingCalls:\n"),
+            ("calls/domain/call.py", "class Call:\n"),
+        ]
+
+    def test_nothing_printed_prints_nothing(self) -> None:
+        tree = domain.Tree(tree_spec())
+
+        assert (tree.health(), tree.printed()) == (domain.Health.CLEAN, ())
+
+    def test_a_printed_path_the_tree_does_not_write_is_a_problem_and_nothing_is_written(self) -> None:
+        tree = domain.Tree(tree_spec(printed=("calls/domain/call.py", "tests/test_missing.py")))
+
+        assert ([str(text) for text in tree.problems()], tree.files(), tree.printed()) == (
+            ["--print names tests/test_missing.py, which the generator does not write"],
+            (),
+            (),
+        )
 
     def test_an_operation_named_twice_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(write_operation_name="record_call", action_operation_name="record_call"))
@@ -431,6 +525,19 @@ class TestTreeProblems:
         assert [str(text) for text in tree.problems()] == [
             "operation 'start_call' starts with 'start_', a prefix the analyzer reserves for "
             "relay operations (TB085); name the operation without it"
+        ]
+
+    def test_a_test_class_with_a_one_letter_word_is_not_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(test_class_name="TestSubmittingAJtbd"))
+
+        assert tree.health() == domain.Health.CLEAN
+
+    def test_a_test_class_that_is_not_pascal_case_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(test_class_name="Testplacing_calls"))
+
+        assert [str(text) for text in tree.problems()] == [
+            "acceptance_test.test_class_name 'Testplacing_calls' is not a Test-prefixed PascalCase class name, "
+            "like TestPlacingCalls"
         ]
 
     def test_an_operation_of_one_word_is_a_problem(self) -> None:

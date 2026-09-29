@@ -22,6 +22,7 @@ SCALARS: typing.Final[tuple[tuple[str, str, str], ...]] = (
     ("write_operation_name", "client", "write_operation_name"),
     ("read_operation_name", "client", "read_operation_name"),
     ("orchestrator_operation_name", "orchestrator", "operation_name"),
+    ("orchestrator_calling_mode", "orchestrator", "calling_mode"),
     ("action_operation_name", "action", "operation_name"),
     ("save_operation_name", "repository", "save_operation_name"),
     ("load_operation_name", "repository", "load_operation_name"),
@@ -83,12 +84,21 @@ class FilesystemGenerationReader(ts.Repository):
         answers = tables.get("client", {}).get("read_response_fields")
         randoms = tables.get("acceptance_test", {}).get("random_values")
         out_dir = pathlib.Path(read_generation_request.out_dir)
+        existing: tuple[ports.ExistingFileRecord, ...] = ()
         if not out_dir.exists():
             target = ports.TargetState.ABSENT
-        elif out_dir.is_dir() and not any(out_dir.iterdir()):
-            target = ports.TargetState.EMPTY
+        elif not out_dir.is_dir():
+            target = ports.TargetState.NOT_DIRECTORY
         else:
-            target = ports.TargetState.OCCUPIED
+            existing = tuple(
+                ports.ExistingFileRecord(
+                    path=str(found_path.relative_to(out_dir)),
+                    text=found_path.read_bytes().decode("utf-8", errors="replace"),
+                )
+                for found_path in sorted(out_dir.rglob("*"))
+                if found_path.is_file()
+            )
+            target = ports.TargetState.OCCUPIED if existing else ports.TargetState.EMPTY
         templates_root = pathlib.Path(self._templates_root)
         found = sorted(templates_root.rglob(f"*{TEMPLATE_SUFFIX}")) if templates_root.is_dir() else []
         return ports.ReadGenerationResponse(
@@ -141,7 +151,7 @@ class FilesystemGenerationReader(ts.Repository):
                 ),
                 **{name: value if isinstance(value, str) else "" for name, value in texts.items()},
             ),
-            target=ports.TargetRecord(state=target),
+            target=ports.TargetRecord(state=target, files=existing),
             templates=tuple(
                 ports.TemplateRecord(path=str(path.relative_to(templates_root)), text=path.read_text(encoding="utf-8"))
                 for path in found

@@ -1,0 +1,361 @@
+{
+  "run": {
+    "phase": "red",
+    "name": "red-v8-haiku-default",
+    "slot": 5,
+    "base_ref": "story-drafting-scaffold-v7",
+    "base_sha": "44c897d981158296d9349014a15d45ef18e7783d",
+    "branch": "baseline/runs/red-v8-haiku-default",
+    "restate_ingress": "http://localhost:38580",
+    "restate_admin": "http://localhost:39570",
+    "host_port": 9350,
+    "prepared": "2026-09-29T19:39:25Z"
+  },
+  "agent": {
+    "models": [
+      "claude-haiku-4-5-20251001"
+    ],
+    "duration_s": 136.2,
+    "api_requests": 16,
+    "tokens": {
+      "input": 130,
+      "cache_read": 894736,
+      "cache_write": 71585
+    },
+    "tool_calls_total": 15,
+    "tool_calls": {
+      "Bash": 10,
+      "Write": 2,
+      "Edit": 2,
+      "Read": 1
+    },
+    "guidance": [],
+    "tessercheck_runs": [],
+    "tessercheck_runs_count": 0,
+    "final_message": "## Summary\n\nI've completed the red acceptance test for the story-drafting user story. Here's what was done:\n\n**Spec**: `<repo>/.baseline-runs/red-v8-haiku-default/spec.toml`\n\nThe spec models a JTBD (job-to-be-done) aggregate with:\n- Identity: `jtbd_id` \n- Fields: `description` (the work being done) and `status` (current step)\n- Operations: `submit_jtbd` (write) and `check_jtbd_status` (read)\n- Workflow: `draft_for_jtbd` orchestrator that should set status to \"drafting\"\n\n**Test**: `<repo>/story-drafting/tests/test_acceptance.py`\n\nClass: `TestSubmitJtbd`, Method: `test_submitted_jtbd_is_drafting`\n\nThe test:\n1. Submits a JTBD via HTTP POST with status=\"pending\" (returns 201 with jtbd_id) \u2705\n2. Checks the status via HTTP GET with the returned ID (returns 200) \u2705\n3. Asserts the status is \"drafting\" \u274c **This fails** \u2014 it's still \"pending\"\n\n**Verification**: `scripts/verify story-drafting` produces:\n- \u2705 tessercheck: zero findings\n- \u2705 mypy --strict: no issues in 57 files\n- \u2705 Tier tests: 56 passed\n- \u2705 HTTP host serves and registers with Restate\n- \u274c Acceptance test fails at the assertion (status is 'pending', expected 'drafting')\n\nThe test correctly fails at the user story's \"then\" (checking that drafting has begun), confirming that the workflow behavior to transition the status is not yet implemented. The test does not fail before that point \u2014 all host operations (submit and read) succeed as expected."
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "eb462455314ac5bf2a8eef6f496534476b701bbd",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 61,
+    "lines_added": 2263,
+    "lines_removed": 0,
+    "py_impl_files": 40,
+    "py_impl_lines": 1069,
+    "py_test_files": 18,
+    "py_test_lines": 1182,
+    "files_outside_tree": []
+  },
+  "gate": {
+    "verify_exit": 1,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "pytest every tier but the root (no host served; Restate at http://localhost:38580)",
+      "serve srv.http.main on :9350 and register its Restate endpoint at http://localhost:39570",
+      "pytest the root tier (against the host on :9350, in STORY_DRAFTING_HOST)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app/test_app.py::TestAppConfig::test_a_config_carries_the_jtbd_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_each_read_draws_a_new_identity_seed",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestAppLoader::test_the_loader_builds_an_app_that_publishes_the_jtbd_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/activities/test_restate_activities.py::TestRestateMarkJtbdDrafting::test_restate_serves_mark_jtbd_drafting_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/activities/test_restate_activities.py::TestRestateEngineRefusals::test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/activities/test_restate_activities.py::TestRestateEngineRefusals::test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/dispatchers/test_restate_http_jtbd_orchestrator_relay.py::TestRestateHttpJtbdOrchestratorRelay::test_draft_for_jtbd_runs_the_workflow_the_engine_keys_by_the_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/handlers/test_http.py::TestHttpHandler::test_submit_jtbd_passes_each_body_field_as_its_field_and_answers_the_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/handlers/test_http.py::TestHttpHandler::test_submit_jtbd_missing_a_field_is_a_bad_request_that_calls_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/handlers/test_http.py::TestHttpHandler::test_check_jtbd_status_answers_the_fields_it_reads_for_the_jtbd_id_in_the_path",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/handlers/test_http.py::TestHttpHandler::test_check_jtbd_status_without_a_jtbd_id_is_a_bad_request_that_calls_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/repositories/test_memory.py::TestMemoryJtbdStore::test_a_saved_jtbd_is_loaded_in_a_later_transaction",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/repositories/test_memory.py::TestMemoryJtbdStore::test_a_jtbd_never_saved_loads_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/repositories/test_memory.py::TestMemoryJtbdStore::test_two_stores_hold_two_separate_jbtds",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/repositories/test_uuid_jtbd_identity_repository.py::TestUuidJtbdIdentityRepository::test_the_same_seed_issues_the_same_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/repositories/test_uuid_jtbd_identity_repository.py::TestUuidJtbdIdentityRepository::test_each_jtbd_id_issued_is_a_different_version_4_uuid",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/adapters/workflows/test_restate_draft_for_jtbd.py::TestRestateDraftForJtbd::test_draft_for_jtbd_calls_mark_jtbd_drafting_through_the_engine_and_answers_with_what_it_recorded",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/orchestrators/test_jtbd_orchestrator.py::TestJtbdOrchestrator::test_draft_for_jtbd_runs_mark_jtbd_drafting_with_the_jtbd",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/orchestrators/test_jtbd_orchestrator.py::TestJtbdOrchestrator::test_draft_for_jtbd_answers_the_jtbd_id_that_mark_jtbd_drafting_answered",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingRequestSnapshot::test_a_request_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingResponseSnapshot::test_a_response_is_its_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_actions_relay.py::TestMarkJtbdDraftingResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdRequestSnapshot::test_a_request_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdResponseSnapshot::test_a_response_is_its_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/relays/test_jtbd_orchestrator_relay.py::TestDraftForJtbdResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/test_jtbd_actions.py::TestJtbdActions::test_mark_jtbd_drafting_saves_the_jtbd_under_its_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/test_jtbd_actions.py::TestJtbdActions::test_mark_jtbd_drafting_answers_the_jtbd_id_it_saved",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/test_jtbd_service.py::TestJtbdService::test_submit_jtbd_conducts_the_jtbd_under_the_jtbd_id_its_identity_repository_issued",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/application/test_jtbd_service.py::TestJtbdService::test_a_saved_jtbd_is_read_back_by_its_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/component/test_component.py::TestConfig::test_a_config_carries_the_engine_ingress",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/component/test_component.py::TestConfig::test_a_config_carries_the_seed_its_identity_repository_is_built_with",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/component/test_component.py::TestJtbd::test_the_component_publishes_the_engine_containers_it_registered_into",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/component/test_component.py::TestJtbd::test_every_container_bounds_its_retries_and_only_the_workflow_faces_the_ingress",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/domain/test_jtbd.py::TestJtbd::test_a_jtbd_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "jtbd/domain/test_jtbd.py::TestJtbdId::test_a_jtbd_id_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_string_field_is_read_from_the_body",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_an_integer_field_is_read_from_the_body",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_field_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_field_of_the_wrong_type_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_boolean_is_not_an_integer",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_malformed_json_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_body_that_is_not_an_object_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_path_parameter_is_read_by_its_name",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_path_parameter_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_two_requests_with_the_same_fields_are_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpResponse::test_a_problem_carries_its_status_and_a_json_detail",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpResponse::test_two_responses_with_the_same_fields_are_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_mounted_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_jbtds_routes_answer_by_the_failure_they_meet",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests/test_acceptance.py::TestSubmitJtbd::test_submitted_jtbd_is_drafting",
+        "outcome": "failed",
+        "message": ""
+      }
+    ],
+    "test_outcomes": {
+      "passed": 56,
+      "failed": 1
+    },
+    "impl_coverage_pct": 87.0,
+    "impl_statements": 593
+  }
+}

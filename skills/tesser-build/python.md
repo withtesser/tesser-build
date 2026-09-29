@@ -1131,6 +1131,13 @@ is scope, reach, and what each may depend on.
   name is a constant in `application/relays/` equal to `"X"`
   (`PERSON_JOINED_PROMISE = "person_joined"`), which the signal named `X`
   resolves, which `run_X` invokes: one name, written once, read by both ends.
+  The three modes belong to relays, so no client, port, application-client,
+  or public orchestrator operation begins with one (TB085). When the domain's
+  own verb is one of them — a developer *starts* a run — name the operation
+  for that act without the prefix (`begin_run`, `open_run`), and let the
+  service choose the mode through the relay operation it calls:
+  `start_conduct_run` when its caller must not wait for the workflow,
+  `run_conduct_run` when it must.
 - **An orchestrator** (`ts.Orchestrator`, in `application/orchestrators/`, one
   per module) is built **per invocation by a workflow** (below). It depends on
   relays and **action ports** — a port some application client speaks — never

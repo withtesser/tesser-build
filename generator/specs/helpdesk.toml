@@ -23,6 +23,7 @@ read_response_fields = ["ticket_id", "subject", "priority"]
 
 [orchestrator]
 operation_name = "triage_ticket"
+calling_mode = "start"
 
 [action]
 operation_name = "record_ticket"

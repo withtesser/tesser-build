@@ -7,6 +7,10 @@
 __pycache__/
 *.py[cod]
 
+# mypy and pytest caches — every gate run leaves them in the tree it checked.
+.mypy_cache/
+.pytest_cache/
+
 # Distribution artifacts from the tesser-py wheel gate (scripts/verify
 # tesser-py). build/lib/ is a full duplicate of the source tree, and sigcheck
 # walks every .py under its root with no exclusion list — a lingering copy from

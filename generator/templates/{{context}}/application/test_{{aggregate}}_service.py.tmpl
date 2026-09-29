@@ -17,9 +17,16 @@ class Fake{{Aggregate}}OrchestratorRelay(relays.{{Aggregate}}OrchestratorRelay):
     def __init__(self) -> None:
         self.conducted: list[relays.{{Conduct}}Request] = []
 
+{{#calling_run}}
     async def run_{{conduct}}(self, {{conduct}}_request: relays.{{Conduct}}Request) -> relays.{{Conduct}}Response:
         self.conducted.append({{conduct}}_request)
         return relays.{{Conduct}}Response({{identity}}={{conduct}}_request.{{identity}})
+{{/calling_run}}
+{{#calling_start}}
+    async def start_{{conduct}}(self, {{conduct}}_request: relays.{{Conduct}}Request) -> relays.Start{{Conduct}}Response:
+        self.conducted.append({{conduct}}_request)
+        return relays.Start{{Conduct}}Response({{identity}}={{conduct}}_request.{{identity}})
+{{/calling_start}}
 
 
 @ts.fake

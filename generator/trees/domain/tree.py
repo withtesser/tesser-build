@@ -16,13 +16,15 @@ UNREADABLE: typing.Final[str] = "unreadable"
 
 MALFORMED: typing.Final[str] = "malformed"
 
-OCCUPIED: typing.Final[str] = "occupied"
+NOT_DIRECTORY: typing.Final[str] = "not_directory"
 
 ENGINE: typing.Final[str] = "restate"
 
 STORAGES: typing.Final[tuple[str, ...]] = ("postgres", "memory")
 
 HOSTS: typing.Final[tuple[str, ...]] = ("cli", "http")
+
+CALLING_MODES: typing.Final[tuple[str, ...]] = ("run", "start")
 
 IDENTITY_TYPE: typing.Final[str] = "str"
 
@@ -62,7 +64,7 @@ PASCAL: typing.Final[re.Pattern[str]] = re.compile(r"(?:[A-Z][a-z0-9]+)+")
 
 ENVIRONMENT: typing.Final[re.Pattern[str]] = re.compile(r"[A-Z][A-Z0-9_]*")
 
-TEST_CLASS: typing.Final[re.Pattern[str]] = re.compile(r"Test(?:[A-Z][a-z0-9]+)+")
+TEST_CLASS: typing.Final[re.Pattern[str]] = re.compile(r"Test(?:[A-Z][a-z0-9]*)+")
 
 TEST_METHOD: typing.Final[re.Pattern[str]] = re.compile(r"test(?:_[a-z0-9]+)+")
 
@@ -277,6 +279,8 @@ class TreeSpec(ts.Spec):
         note: str,
         unknown_keys: tuple[str, ...],
         target: str,
+        existing: tuple[tuple[str, str], ...],
+        printed: tuple[str, ...],
         app_name: str,
         bounded_context_name: str,
         aggregate_root_class_name: str,
@@ -291,6 +295,7 @@ class TreeSpec(ts.Spec):
         read_operation_name: str,
         read_response_fields: tuple[str, ...],
         orchestrator_operation_name: str,
+        orchestrator_calling_mode: str,
         action_operation_name: str,
         save_operation_name: str,
         load_operation_name: str,
@@ -308,6 +313,8 @@ class TreeSpec(ts.Spec):
         self.note = note
         self.unknown_keys = unknown_keys
         self.target = target
+        self.existing = existing
+        self.printed = printed
         self.app_name = app_name
         self.bounded_context_name = bounded_context_name
         self.aggregate_root_class_name = aggregate_root_class_name
@@ -322,6 +329,7 @@ class TreeSpec(ts.Spec):
         self.read_operation_name = read_operation_name
         self.read_response_fields = read_response_fields
         self.orchestrator_operation_name = orchestrator_operation_name
+        self.orchestrator_calling_mode = orchestrator_calling_mode
         self.action_operation_name = action_operation_name
         self.save_operation_name = save_operation_name
         self.load_operation_name = load_operation_name
@@ -346,6 +354,7 @@ class Tree(ts.AggregateRoot):
         sampled = dict(spec.sample_values)
         storage = spec.storage or STORAGES[0]
         host = spec.host or HOSTS[0]
+        calling_mode = spec.orchestrator_calling_mode or CALLING_MODES[0]
         if spec.state == MISSING:
             found.append(Text(f"there is no spec file at {spec.note}"))
         elif spec.state == UNREADABLE:
@@ -432,6 +441,13 @@ class Tree(ts.AggregateRoot):
                 found.append(Text(f"storage '{storage}' has no templates; a storage is one of {', '.join(STORAGES)}"))
             if host not in HOSTS:
                 found.append(Text(f"host '{host}' has no templates; a host is one of {', '.join(HOSTS)}"))
+            if calling_mode not in CALLING_MODES:
+                found.append(
+                    Text(
+                        f"orchestrator.calling_mode '{calling_mode}' has no templates; "
+                        f"a calling mode is one of {', '.join(CALLING_MODES)}"
+                    )
+                )
             if storage == "memory" and host == "cli":
                 found.append(
                     Text(
@@ -536,13 +552,14 @@ class Tree(ts.AggregateRoot):
                             f"relay operations (TB085); name the operation without it"
                         )
                     )
-            if spec.target == OCCUPIED:
-                found.append(Text("the output directory is not empty"))
+            if spec.target == NOT_DIRECTORY:
+                found.append(Text("the output path is not a directory"))
             if not spec.templates:
                 found.append(Text("no templates were found"))
-        self._problems = tuple(found)
         if found:
+            self._problems = tuple(found)
             self._files: tuple[GeneratedFile, ...] = ()
+            self._printed: tuple[GeneratedFile, ...] = ()
             return
         classes = {
             name: "".join(part.capitalize() for part in name.split("_"))
@@ -648,6 +665,8 @@ class Tree(ts.AggregateRoot):
             ("storage_memory", "true" if storage == "memory" else ""),
             ("host_cli", "true" if host == "cli" else ""),
             ("host_http", "true" if host == "http" else ""),
+            ("calling_run", "true" if calling_mode == "run" else ""),
+            ("calling_start", "true" if calling_mode == "start" else ""),
             ("asserts", spec.asserted_field),
             ("field_count", str(len(field_names))),
             ("random_choices", "(" + ", ".join(choices) + ("," if len(choices) == 1 else "") + ")"),
@@ -655,7 +674,7 @@ class Tree(ts.AggregateRoot):
             ("test_method", spec.test_method_name),
         )
         scope = Scope(ScopeSpec(values=values, sections=sections))
-        self._files = tuple(
+        rendered = tuple(
             sorted(
                 (
                     GeneratedFile(
@@ -670,6 +689,19 @@ class Tree(ts.AggregateRoot):
                 key=str,
             )
         )
+        existing = dict(spec.existing)
+        written = {str(generated_file.path()): generated_file for generated_file in rendered}
+        self._problems = tuple(
+            Text(f"the output directory already has {generated_file.path()}, which the generator would write differently")
+            for generated_file in rendered
+            if existing.get(str(generated_file.path()), str(generated_file.content())) != str(generated_file.content())
+        ) + tuple(
+            Text(f"--print names {path}, which the generator does not write")
+            for path in spec.printed
+            if path not in written
+        )
+        self._files = () if self._problems else rendered
+        self._printed = () if self._problems else tuple(written[path] for path in spec.printed)
 
     def health(self) -> Health:
         return Health.PROBLEMS if self._problems else Health.CLEAN
@@ -679,3 +711,6 @@ class Tree(ts.AggregateRoot):
 
     def files(self) -> tuple[GeneratedFile, ...]:
         return self._files
+
+    def printed(self) -> tuple[GeneratedFile, ...]:
+        return self._printed

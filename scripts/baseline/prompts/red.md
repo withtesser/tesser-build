@@ -1,45 +1,102 @@
 You are working alone in a git worktree of tesser-build that is already on
 its own branch: {worktree}. Every file you read or write and every command you
-run is in that worktree — use absolute paths, and `cd {worktree}` at the start
-of each shell command. Its tools are on PATH through
-{venv}/bin (prefix commands with `source {venv}/bin/activate &&`). No human
-will answer questions: make each decision yourself and keep going. Do not
-spawn subagents.
+execute is in that worktree — use absolute paths, and `cd {worktree}` at the
+start of each shell command. Its tools are on PATH through {venv}/bin (prefix
+commands with `source {venv}/bin/activate &&`). No human will answer
+questions: make each decision yourself and keep going. Do not spawn
+subagents.
 
-Task: write the **red acceptance test** for the story in
+Task: write the **red acceptance test** for the user story in
 `story-drafting/README.md`, in the `story-drafting/` app tree.
+
+**Do not read, list, or inspect anything before you generate.** This prompt is
+complete: the user story, the generator's spec reference, what the generated
+tree looks like, and every command you need are all below. Your first tool
+call writes the spec and generates. The worktree holds only the scaffold, and
+nothing else in it bears on your two decisions.
+
+The work is two decisions, and the rest is mechanical:
+
+1. **The spec.** Model the user story's domain as a generator spec — the
+   bounded context, the aggregate and its fields, and the name of every
+   operation — in the README's own language. Write it to `{spec}` and
+   generate the tree straight into `story-drafting/`.
+2. **The acceptance test.** Decide how the user story's *then* shows over the
+   host's protocol — what the read answers, and when — and write it as the
+   root test `story-drafting/tests/test_acceptance.py`, replacing the one the
+   generator wrote (the generate command prints it for you).
 
 Done means all of these hold:
 
-1. The acceptance test exists as a root test and drives the app only through
-   a running host, speaking the app's protocol, as the README's constraints
-   say.
+1. The acceptance test is a root test: it drives the app only through the
+   running host, speaking the app's protocol, as the README's constraints say.
 2. `scripts/verify story-drafting` gets past tessercheck with zero findings and
    past `mypy --strict`. Its pytest step fails.
-3. The acceptance test fails **past the wiring, at the behavior the story
-   adds.** Starting a run through the host succeeds: it goes through the
-   app's durable workflow on Restate and returns a run the host can read back. The test then fails
-   on an assertion about what the story adds — the run is not waiting for a
-   pick, or it has no drafted stories. It must not fail from an operation that
-   is not implemented at the entry point, an import error, a collection error,
-   a missing module, or a service that is not running.
-4. You have built the structure the story's run goes through — the client, the
-   service, the durable workflow on Restate, the host, and what the component
-   wires for them — but not the story's behavior: no drafting, and no waiting for the
-   pick.
+3. The acceptance test fails at the user story's **then**. Submitting a JTBD
+   through the host succeeds and results are read back through the host. It
+   must not fail before that: not on a host operation that isn't implemented,
+   an import or collection error, a missing module, or a host or Restate
+   server that isn't running.
+4. The tree holds the structure a submitted JTBD goes through — the client,
+   the service, the durable workflow on Restate, the host, and what the
+   component wires for them — but not the user story's behavior: a
+   submitted JTBD has no status yet.
 
-Follow the repo's `CLAUDE.md` and the `tesser-build` skill. You may extend the
-tree's `run_story_drafting` arm in `scripts/verify` (to serve and register the
-hosts the root tier drives, as `run_durable_execution` does); keep taking the
-Restate server and host ports from the environment as it does now, and after
-editing `scripts/verify` diff it and confirm only `run_story_drafting` changed.
-Your Restate server is at ingress {ingress} and admin {admin}; serve hosts only
-on ports {port}–{port_last}. Run the gate as
-`RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} scripts/verify story-drafting`.
-Other agents run side by side on other ports: don't touch processes you
-didn't start. Paid APIs are allowed. Work only inside the worktree.
+## The user story
 
-When done, commit your work on the current branch, staging files
-individually. Do not create worktrees or branches, do not push, and do not open
-a pull request. Finish with a short summary: the test's file and name, and the
-exact failure it produces.
+{{FILE:story-drafting/README.md}}
+
+## The generator
+
+{{FILE:generator/README.md}}
+
+## What a generated http handler answers
+
+The `library` spec above generates this handler behind its routes,
+`loans/adapters/handlers/http.py`; yours is the same with your spec's names:
+
+```python
+{{EXAMPLE:library/loans/adapters/handlers/http.py}}
+```
+
+## The harness
+
+- The spec's `[environment_variables]` are `restate_ingress_url =
+  "RESTATE_INGRESS"` and `host_url = "STORY_DRAFTING_HOST"`; use
+  `host = "http"` and `storage = "memory"`.
+- Generate with
+  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting --print tests/test_acceptance.py`.
+  It prints the path of every file it wrote, then the generated root test
+  `tests/test_acceptance.py` verbatim — the file you replace with your
+  acceptance test, so you have it without reading it back. The README
+  already in `story-drafting/` stays.
+- Run `scripts/verify` once, keeping its whole output, like this:
+
+  ```sh
+  cd {worktree} && RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
+    scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
+  ```
+
+  It runs its steps in order and stops at the first that fails, printing a
+  `  →` line as each step starts: tessercheck, `mypy --strict`, the non-root
+  tests, then it serves `srv/http/main.py` on port {port}, registers its
+  Restate endpoint, and runs `tests/` with the host's address in
+  `STORY_DRAFTING_HOST`. Every step before the last `  →` line passed. The
+  full output stays in `{log}` to grep; don't run it again to see more. Do
+  not edit `scripts/verify`.
+- Your Restate server is at ingress {ingress} and admin {admin}; generated
+  tests that serve their own endpoints pick free ports themselves. Other
+  agents work side by side on other ports: don't touch processes you didn't
+  start. Work only inside the worktree.
+
+When done, commit your work on the current branch with
+
+```sh
+cd {worktree} && git ls-files --modified --others --exclude-standard -z | xargs -0 git add -- \
+  && git commit -q -m "<what you built>"
+```
+
+which stages every changed and new file by its path. Do not create worktrees
+or branches, do not push, and do not open a pull request. Finish with a short
+summary: the test's file and name, and the exact failure it produces.

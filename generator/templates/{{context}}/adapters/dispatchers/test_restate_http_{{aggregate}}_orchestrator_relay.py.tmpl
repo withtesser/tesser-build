@@ -33,7 +33,12 @@ class Fake{{Aggregate}}ApplicationClient(client.{{Aggregate}}ApplicationClient):
 
 class TestRestateHttp{{Aggregate}}OrchestratorRelay:
 
+{{#calling_run}}
     async def test_{{conduct}}_runs_the_workflow_the_engine_keys_by_the_{{identity}}(self) -> None:
+{{/calling_run}}
+{{#calling_start}}
+    async def test_{{conduct}}_starts_the_workflow_the_engine_keys_by_the_{{identity}}(self) -> None:
+{{/calling_start}}
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         {{aggregate}}_actions_service = restate.Service(f"{{Aggregate}}Actions{suffix}")
@@ -68,6 +73,7 @@ class TestRestateHttp{{Aggregate}}OrchestratorRelay:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
+{{#calling_run}}
             {{conduct}}_response = await dispatchers.RestateHttp{{Aggregate}}OrchestratorRelay(
                 os.environ["{{ingress_env}}"], restate_{{conduct}}
             ).run_{{conduct}}(relays.{{Conduct}}Request({{#record_fields}}{{field}}={{#is_identity}}workflow_key{{/is_identity}}{{^is_identity}}{{sample}}{{/is_identity}}{{comma}}{{/record_fields}}))
@@ -81,6 +87,27 @@ class TestRestateHttp{{Aggregate}}OrchestratorRelay:
             )
 
             assert {{conduct}}_response == relays.{{Conduct}}Response({{identity}}=workflow_key)
+{{/calling_run}}
+{{#calling_start}}
+            start_{{conduct}}_response = await dispatchers.RestateHttp{{Aggregate}}OrchestratorRelay(
+                os.environ["{{ingress_env}}"], restate_{{conduct}}
+            ).start_{{conduct}}(relays.{{Conduct}}Request({{#record_fields}}{{field}}={{#is_identity}}workflow_key{{/is_identity}}{{^is_identity}}{{sample}}{{/is_identity}}{{comma}}{{/record_fields}}))
+            invoked = httpx.Response(503)
+            for _ in range(100):
+                invoked = await admin.post(
+                    "/query",
+                    headers={"accept": "application/json"},
+                    json={
+                        "query": "SELECT target_service_key, invoked_by, status, completion_result FROM sys_invocation "
+                        f"WHERE target_service_name = '{{Aggregate}}Orchestrator{suffix}'"
+                    },
+                )
+                if [row["status"] for row in invoked.json()["rows"]] == ["completed"]:
+                    break
+                await asyncio.sleep(0.05)
+
+            assert start_{{conduct}}_response == relays.Start{{Conduct}}Response({{identity}}=workflow_key)
+{{/calling_start}}
             assert [
                 (row["target_service_key"], row["invoked_by"], row["completion_result"]) for row in invoked.json()["rows"]
             ] == [(workflow_key, "ingress", "success")]
