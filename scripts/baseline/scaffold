@@ -28,6 +28,11 @@ git worktree add -q --detach "$tmp/tree" HEAD
 (
   cd "$tmp/tree"
   git ls-files story-drafting | grep -v -E '^story-drafting/(README\.md|specs/(language|story)\.toml)$' | xargs git rm -q --
+  # The generator's own story-drafting composition is the answer a red-specs
+  # trial designs, so a scaffold never carries it.
+  if git ls-files --error-unmatch generator/compositions/story-drafting >/dev/null 2>&1; then
+    git rm -q -r generator/compositions/story-drafting
+  fi
   python3 - "$HERE/scaffold-arm.bash" <<'PY'
 import re, sys
 arm = open(sys.argv[1]).read()

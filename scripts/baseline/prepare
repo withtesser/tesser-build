@@ -5,7 +5,7 @@
 #
 #   scripts/baseline/prepare red   story-drafting-scaffold-v2 <run-name> <slot>
 #   scripts/baseline/prepare red-specs story-drafting-scaffold-s1 <run-name> <slot>
-#   scripts/baseline/prepare green-specs story-drafting-scaffold-g4 <run-name> <slot>
+#   scripts/baseline/prepare green-specs story-drafting-scaffold-g5 <run-name> <slot>
 #   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
 #
 # The worktree is .claude/worktrees/run-<run-name> on branch

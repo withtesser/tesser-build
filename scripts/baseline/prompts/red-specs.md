@@ -37,9 +37,11 @@ Done means all of these hold:
 1. `scripts/verify story-drafting` gets past tessercheck with zero findings,
    past `mypy --strict`, and past every test tier but the root. Its root tier
    fails.
-2. Each acceptance test fails at its story's **then**: the host answers, and
-   what it answers is the generated stubs' placeholder behavior. None fails
-   before that: not on an operation that isn't implemented, an import or
+2. At least one acceptance test fails, and every one that fails fails at its
+   story's **then**: the host answers, and what it answers is the generated
+   stubs' placeholder behavior. A test whose *then* the stubs already satisfy
+   passes; don't weaken or distort a test to make it fail. None fails before
+   its *then*: not on an operation that isn't implemented, an import or
    collection error, a missing module, or a host or Restate server that isn't
    running.
 3. Every level-1 and level-2 story in `story.toml` is served by some piece in
