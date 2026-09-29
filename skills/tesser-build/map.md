@@ -20,7 +20,9 @@ file at its root — that one file is what makes the directory a tessercheck
 subject. The file has a total grammar — a first line `app`, then only
 `skip <dir>`, `export <dir>`, `import <package>`, and `stdlib <module>` lines
 (`kernels.md`; tree-specific configuration goes in this file, never in the
-analyzer's code); anything else is a finding. A missing, unreadable, or wrong `.tesser-root`, or one
+analyzer's code); anything else is a finding. A `skip` line is added only
+with the user's explicit permission: a skipped directory is outside every
+norm. A missing, unreadable, or wrong `.tesser-root`, or one
 nested inside another tree, is a `TB044` finding; a symlinked directory
 inside the tree is `TB045` (the walk never follows symlinks and must say what
 it could not see). When one of these fires it is the only finding reported,
