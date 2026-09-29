@@ -33,12 +33,13 @@ cannot skip my checkpoint.
 
 - The run is a durable workflow on Restate; waiting for the pick is waiting on
   a durable promise.
-- Drafting is done by a language model behind a port. No test calls a real
-  model: the acceptance run selects a deterministic drafting adapter through
-  the environment.
+- Drafting is behind a port with one adapter, which returns deterministic
+  stories for a job. No language-model adapter and no vendor SDK in this
+  story.
 - The acceptance test is a root test (`docs/design-test-tiers.md`): it drives
   the app only through a running host the developer or an agent would use,
   speaking the app's protocol, and reads the result back through that host.
   The story's behaviour scenarios are context tests.
-- Out of scope for this story: making the pick, revising a draft, and the
-  agent-facing skill document (`SKILL.md`).
+- Out of scope for this story: making the pick, revising a draft, a
+  language-model drafting adapter, and the agent-facing skill document
+  (`SKILL.md`).
