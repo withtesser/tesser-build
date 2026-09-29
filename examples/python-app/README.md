@@ -117,15 +117,19 @@ pip install -r requirements-dev.txt
 ruff check .
 PYTHONPATH=. lint-imports
 MYPYPATH=.:../../tesser-py mypy --strict errors.py lifecycle.py serialization.py protocol campaign linkpolicy reports bootstrap srv tests conftest.py
-pytest -q
+pytest -q --ignore=tests
+# serve the HTTP host, then:
+PYTHON_APP_ADDRESS=127.0.0.1:9240 pytest -q tests
 ```
 
 The root `tests/` package plays the user: its acceptance test
-(`tests/test_reports.py`) reaches the app only through a running HTTP host at
-`PYTHON_APP_ADDRESS`, which `scripts/verify python-app` serves (on
-`127.0.0.1:9240` unless `PYTHON_APP_PORT` says otherwise) before it runs
-pytest. The rest of the root tier reads the tree's source and imports nothing
-of the app. That the app builds each component once is `app/test_app.py`'s
+(`tests/test_reports.py`) reaches the app only through a running HTTP host,
+whose address it reads with `ts.served("PYTHON_APP_ADDRESS")`. The runner's
+order is the one `docs/design-test-tiers.md` sets: `scripts/verify python-app`
+runs every other step and every tier but the root with no host served, then
+serves the HTTP host (on `127.0.0.1:9240` unless `PYTHON_APP_PORT` says
+otherwise), then runs the root tier. The rest of the root tier reads the
+tree's source and imports nothing of the app. That the app builds each component once is `app/test_app.py`'s
 claim, not the root tier's.
 
 One more gate runs in CI and does **not** pass on a bare run yet. The tree

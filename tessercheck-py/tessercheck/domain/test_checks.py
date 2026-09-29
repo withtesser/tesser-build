@@ -10697,6 +10697,26 @@ def test_a_shell_module_stays_on_the_shell_stdlib() -> None:
     assert not any("imports tesser.domain" in f for f in findings), findings
 
 
+def test_only_the_testing_namespace_reads_the_environment() -> None:
+    findings = tuple(
+        f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
+        for v in domain.Codebase(_tesser_export_spec(
+            sources=(
+                ("tesser/testing/host.py", "tesser.testing.host", "import os\n", False),
+                ("tesser/testing/__init__.py", "tesser.testing", "", True),
+                ("tesser/srv/runner.py", "tesser.srv.runner", "import os\n", False),
+                ("tesser/srv/__init__.py", "tesser.srv", "", True),
+            ),
+        )).violations()
+    )
+    assert not any("tesser.testing.host imports" in f for f in findings), findings
+    assert any(
+        "tesser.srv.runner imports os; a shell module imports "
+        "only the tesser distribution and the shell stdlib" in f
+        for f in findings
+    ), findings
+
+
 def test_the_shells_tests_probe_freely_with_any_tesser_import() -> None:
     findings = tuple(
         f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"

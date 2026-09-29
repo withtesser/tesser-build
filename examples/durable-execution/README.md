@@ -868,8 +868,8 @@ that endpoint with the Restate admin API at `DURABLE_CALLBACK_HOST`, calls
 through the ingress with the objects' `.handler`s or the dispatcher under
 test, reads what the engine recorded in `sys_invocation`, and removes the
 deployment. The fresh names keep a test's rows apart from every earlier run on
-a shared server, and they keep its registration apart from the app the arm
-serves for the root-tier tests. The test-side containers are not
+a shared server, and from the context test's registration of the component's
+own names. The test-side containers are not
 ingress-private, which is what lets the activities test call an action
 through the ingress at all. What each test asks the engine to show is the one
 thing the tests around it cannot see: that Restate is really in the path
@@ -903,19 +903,25 @@ protocols; nothing stands in for Restate.
 
 The root `tests/` package plays the user (`docs/design-test-tiers.md`): it
 imports nothing of the app and reaches it only through the host the arm
-serves, at the address the arm puts in `DURABLE_EXECUTION_HOST`. It posts an
+serves, at the address it reads with `ts.served("DURABLE_EXECUTION_HOST")`,
+which refuses loudly when the runner did not set it. It posts an
 order to `POST /orders` and a purchase to `POST /purchases` and reads the
 totals and the payment reference off the answers, so the served host's own
 wiring — its client, the Restate endpoint it mounts, the catalog and the
 payment processor behind the actions — is what answers.
 
 `ordering/tests/` plays a caller. Its engine test builds the `Ordering`
-component in the test process, renames each container it publishes with a
-fresh `uuid4` suffix (the handlers share their container's service tag, so
-the dispatchers and the purchase workflow follow the rename), serves and
-registers them the way the adapter tests do, and drives the client until each
-declared situation — `OrderAlreadyStarted`, `OrderNotConfirmed`,
-`ProductPriceNotFound`, `PaymentDeclined` — reaches it as its own error.
+component in the test process, serves the containers it publishes under their
+own names and registers them the way the adapter tests do, and drives the
+client until each declared situation — `OrderAlreadyStarted`,
+`OrderNotConfirmed`, `ProductPriceNotFound`, `PaymentDeclined` — reaches it as
+its own error. Container names are literals, so this registration and the
+served host would claim the same names on the engine; the arm keeps them apart
+in time rather than renaming either. It runs `pytest --ignore=tests` first,
+with no host served, then serves the host and registers it (forcing over what
+the context test left), then runs `pytest tests` against it. `tests` is not in
+the tree's `testpaths`: pytest does not apply `--ignore` to a configured test
+path, and the root tier has nothing to reach until the host is served.
 
 What the engine cannot be made to say from a sibling test is not asserted
 there. A refusal that is not the already-invoked wording — a `409` saying
