@@ -1039,8 +1039,8 @@ class Model(ts.Entity):
             if kind != "orchestrator":
                 continue
             mode, operation_name = rest.split("_", 1)
-            if mode != "run":
-                raise ValueError(f"step {step} does not run the orchestrator (run_), the one way a client step waits on it that is rendered yet")
+            if mode not in ("start", "run"):
+                raise ValueError(f"step {step} names the orchestrator without start_ or run_, the two ways a client step waits on it")
             modes = self._orchestrator_modes.setdefault(operation_name, [])
             if mode not in modes:
                 modes.append(mode)
@@ -1054,9 +1054,12 @@ class Model(ts.Entity):
             declared.append(("relays", relay_module, Operation + "Request", "Request", list(operation["request"]), True, self._Orchestrator, False))
             declared.append(("relays", relay_module, Operation + "Response", "Response", list(operation["response"]), True, self._Orchestrator, False))
             for mode in self._orchestrator_modes.get(operation_name, []):
+                returns = Operation + "Response"
+                if mode == "start":
+                    returns = "Start" + Operation + "Response"
+                    declared.append(("relays", relay_module, returns, "Response", [self._identity], False, self._Orchestrator, False))
                 self._relay_ops[self._Orchestrator + "Relay"].append(
-                    (f"{mode}_{operation_name}", operation_name + "_request", Operation + "Request",
-                     Operation + "Response", operation_name))
+                    (f"{mode}_{operation_name}", operation_name + "_request", Operation + "Request", returns, operation_name))
         for key, table in composition.get("actions", {}).items():
             Actions = str(Word(str(key)).pascal()) + "Actions"
             module = str(Word(Actions).snake()) + "_relay"
@@ -1199,6 +1202,7 @@ class Model(ts.Entity):
             checks: list[dict[str, object]] = []
             seeds: list[dict[str, object]] = []
             built = False
+            saved = False
             test_name = f"{operation_name}_answers_from_its_steps"
             for step in operation.get("steps", []):
                 kind, rest = str(step).split(".", 1)
@@ -1243,6 +1247,7 @@ class Model(ts.Entity):
                         statements.append(dict(blank, port_call=[{}], holder=holder, assign=assign, call=rest, argument=argument))
                     if dependency not in dependencies:
                         dependencies.append(dependency)
+                    saved = saved or carries
                     loaded = [t for t in port_response.targets() if str(t.kind()) == "aggregate"]
                     if loaded:
                         members = loaded[0].members()
@@ -1269,7 +1274,7 @@ class Model(ts.Entity):
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(fakes[("ports", Step + "Response1")].values()))))
                 elif kind == "orchestrator":
-                    orchestrator_operation = rest.split("_", 1)[1]
+                    mode, orchestrator_operation = rest.split("_", 1)
                     Step = str(Word(orchestrator_operation).pascal())
                     relay_request = self._messages[("relays", Step + "Request")]
                     ask = Ask(AskSpec(name=f"MapTo{Step}Request", target_ref=f"relays.{Step}Request", allow_empty=False))
@@ -1282,7 +1287,7 @@ class Model(ts.Entity):
                     dependency = {"dependency": holder, "dependency_type": f"relays.{Orchestrator}Relay"}
                     if dependency not in dependencies:
                         dependencies.append(dependency)
-                    returned_name = Step + "Response"
+                    returned_name = ("Start" if mode == "start" else "") + Step + "Response"
                     result = str(Word(returned_name).snake())
                     statements.append(dict(blank, port_call=[{}], holder=holder, assign=f"{result} = ",
                                            call=rest, argument=str(mapped.call())))
@@ -1291,6 +1296,8 @@ class Model(ts.Entity):
                         reads = ", ".join(f"received.{t.field()}" for t in relay_request.targets())
                         expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in relay_request.targets())
                         checks.append({"check": f"[({reads},) for received in fake_{holder}.received] == [({expected},)]"})
+                    if saved:
+                        checks.append({"check": f"fake_{holder}.saved_when_received == [True]"})
                     returned = self._messages[("relays", returned_name)]
                     echoed = Ask(AskSpec(name=returned_name, target_ref=returned_name, allow_empty=False))
                     for target in returned.targets():
@@ -1519,7 +1526,7 @@ class Model(ts.Entity):
             for dependency in dependencies:
                 Relay = str(dependency["dependency_type"]).removeprefix("relays.")
                 fake_relays.append({
-                    "Relay": Relay, "journaled": [{}],
+                    "Relay": Relay, "journaled": [{}], "watches_store": [],
                     "received_type": " | relays.".join(request for _, _, request, _, _ in self._relay_ops[Relay]),
                     "operations": [
                         {"method": method, "param": param, "Request": request, "Returns": returns,
@@ -1598,19 +1605,28 @@ class Model(ts.Entity):
         fake_relays: list[dict[str, object]] = []
         locals_: list[tuple[str, str, str]] = []
         dependencies = self._binding.get("dependencies", [])
+        store_dependency = ""
+        for dependency in dependencies if isinstance(dependencies, list) else []:
+            dependency_type = str(dependency["dependency_type"])
+            if dependency_type.endswith("Store"):
+                store_dependency = str(dependency["dependency"])
         for dependency in dependencies if isinstance(dependencies, list) else []:
             name = str(dependency["dependency"])
             type_name = str(dependency["dependency_type"]).split(".", 1)[1]
             if type_name == self._Orchestrator + "Relay":
                 fake: dict[str, object] = {
-                    "Relay": type_name, "journaled": [],
+                    "Relay": type_name, "journaled": [], "watches_store": [{}] if store_dependency else [],
                     "received_type": " | relays.".join(request for _, _, request, _, _ in self._relay_ops[type_name]),
                     "operations": [{"method": method, "param": param, "Request": request, "Returns": returns,
                                     "fake_response": str(self._fakes[("relays", returns + "0")].call())}
                                    for method, param, request, returns, _ in self._relay_ops[type_name]],
                 }
+                if store_dependency:
+                    store_port = next(port for port, store in self._stores.items() if str(Word(store).snake()) == store_dependency)
+                    fake["Record"] = self._frames[("store", store_port)]["Record"]
                 fake_relays.append(fake)
-                locals_.append(("fake_" + name, f"Fake{type_name}()", "1"))
+                construct = f"Fake{type_name}(fake_{store_dependency}.{Word(self._aggregate).plural()})" if store_dependency else f"Fake{type_name}()"
+                locals_.append(("fake_" + name, construct, "1"))
             elif type_name in self._port_ops:
                 fake_ports.append({"Port": type_name, "operations": [
                     {"operation": op, "Operation": str(Word(op).pascal()),
@@ -1842,13 +1858,18 @@ class Model(ts.Entity):
             "keyed_request_sample": keyed,
         }
         self._binding["workflows"] = [workflow]
+        start_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns,
+                          "result": str(Word(returns).snake())}
+                         for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]
+                         if method.startswith("start_")]
         run_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns,
                         "result": str(Word(returns).snake())}
-                       for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]]
+                       for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]
+                       if method.startswith("run_")]
         self._binding["ingress_dispatchers"] = [dict(
             workflow, module="restate_http_" + str(Word(Orchestrator).snake()) + "_relay",
-            Dispatcher="RestateHttp" + Orchestrator + "Relay", run_methods=run_methods,
-        )] if run_methods else []
+            Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods, run_methods=run_methods,
+        )] if start_methods or run_methods else []
         service_args: list[dict[str, object]] = []
         service_dependencies = self._binding.get("dependencies", [])
         for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
@@ -1861,7 +1882,7 @@ class Model(ts.Entity):
                 service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
         self._binding["service_args"] = service_args
         imported = {"activities", "workflows"}
-        if run_methods:
+        if start_methods or run_methods:
             imported.add("dispatchers")
         if memory_repositories or uuid_repositories:
             imported.add("repositories")

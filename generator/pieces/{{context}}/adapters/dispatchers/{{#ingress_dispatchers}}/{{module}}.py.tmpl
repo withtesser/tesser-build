@@ -20,6 +20,17 @@ class {{Dispatcher}}(ts.Dispatcher):
     def __init__(self, ingress: str, {{workflow_param}}: workflows.{{Workflow}}) -> None:
         self._ingress = ingress
         self._{{workflow_param}} = {{workflow_param}}
+{{#start_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        async with httpx.AsyncClient(base_url=self._ingress, timeout=_START_TIMEOUT) as async_client:
+            await restate_client.Client(async_client).workflow_send(
+                self._{{workflow_param}}.handler,
+                key=urllib_parse.quote({{param}}.{{identity}}, safe=""),
+                arg={{param}},
+            )
+        return relays.{{Returns}}({{identity}}={{param}}.{{identity}})
+{{/start_methods}}
 {{#run_methods}}
 
     async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:

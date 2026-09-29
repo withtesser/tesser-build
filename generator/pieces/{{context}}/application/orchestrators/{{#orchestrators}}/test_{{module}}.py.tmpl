@@ -55,7 +55,11 @@ class Fake{{Store}}(ports.{{Store}}):
 @ts.fake
 class Fake{{Relay}}(relays.{{Relay}}):
 
-    def __init__(self{{#journaled}}, journal: list[str]{{/journaled}}) -> None:
+    def __init__(self{{#watches_store}}, {{aggregates}}: dict[str, ports.{{Record}}]{{/watches_store}}{{#journaled}}, journal: list[str]{{/journaled}}) -> None:
+{{#watches_store}}
+        self._{{aggregates}} = {{aggregates}}
+        self.saved_when_received: list[bool] = []
+{{/watches_store}}
 {{#journaled}}
         self.journal = journal
 {{/journaled}}
@@ -67,6 +71,9 @@ class Fake{{Relay}}(relays.{{Relay}}):
         self.journal.append("{{method}}")
 {{/journaled}}
         self.received.append({{param}})
+{{#watches_store}}
+        self.saved_when_received.append({{param}}.{{identity}} in self._{{aggregates}})
+{{/watches_store}}
         return relays.{{Returns}}({{fake_response}})
 {{/operations}}
 {{/fake_relays}}

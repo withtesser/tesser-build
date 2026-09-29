@@ -24,7 +24,6 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 worked example.
 
 **Not rendered yet** (a composition that uses one is refused, with the reason):
-`orchestrator.start_...` client steps;
 a port implemented by the agent (`body = "agent"`), and a class of actions on
 a port that is not a store;
 `[signals]` and `signal.await_...` steps;
@@ -151,7 +150,7 @@ serves = ["s-1-a-1", "s-1-b-1"]       # the level-2 stories the HTTP routes are
 kind = "write"                        # informational
 request = ["borrower", "title"]
 response = ["loan_id"]
-steps = ["identity.issue_loan_id", "orchestrator.run_arrange_loan"]
+steps = ["identity.issue_loan_id", "repository.save_loan", "orchestrator.start_arrange_loan"]
 serves = ["s-1", "s-1-a-1"]           # exactly one of these must be in [interfaces.http] serves
 ```
 
@@ -169,6 +168,10 @@ level-2 story it names. Its request fields are read from the path (a
   its response is the aggregate, the aggregate is rebuilt from it.
 - `orchestrator.run_<operation>`: run the orchestrator operation and wait for
   its answer.
+- `orchestrator.start_<operation>`: start it and answer at once; its answer is
+  `Start<Operation>Response`, carrying the identity. Put a
+  `repository.save_...` step before it to save before starting, so the
+  aggregate is readable at once.
 
 **Where each field comes from.** Every message a step sends (and the
 operation's answer) is filled field by field from what the method holds, newest
