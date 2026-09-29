@@ -7,8 +7,13 @@ questions: make each decision yourself and keep going. Do not spawn
 subagents.
 
 Task: write the **red acceptance test** for the user story in
-`story-drafting/README.md`, in the `story-drafting/` app tree. Everything you
-need is in this prompt; you do not need to read other files before you start.
+`story-drafting/README.md`, in the `story-drafting/` app tree.
+
+**Do not read, list, or inspect anything before you generate.** This prompt is
+complete: the user story, the generator's spec reference, what the generated
+tree looks like, and every command you need are all below. Your first tool
+call writes the spec and generates. The worktree holds only the scaffold, and
+nothing else in it bears on your two decisions.
 
 The work is two decisions, and the rest is mechanical:
 
@@ -47,17 +52,27 @@ Done means all of these hold:
 
 ## What a generated http tree answers
 
-The `library` spec above generates this root test,
+The generated root test and handler are the examples below with your spec's
+names; you don't need to read them after you generate. The `library` spec
+above (`calling_mode` left at `"run"`) generates this root test,
 `tests/test_acceptance.py`:
 
 ```python
-{{EXAMPLE:tests/test_acceptance.py}}
+{{EXAMPLE:library/tests/test_acceptance.py}}
 ```
 
-and this handler behind its routes, `loans/adapters/handlers/http.py`:
+With `calling_mode = "start"` (the `helpdesk` spec), the write answers before
+the workflow has saved, so the generated root test reads back like this:
 
 ```python
-{{EXAMPLE:loans/adapters/handlers/http.py}}
+{{EXAMPLE:helpdesk/tests/test_acceptance.py}}
+```
+
+Either way, this is the handler behind the routes
+(`loans/adapters/handlers/http.py` for `library`):
+
+```python
+{{EXAMPLE:library/loans/adapters/handlers/http.py}}
 ```
 
 ## The harness
@@ -67,19 +82,35 @@ and this handler behind its routes, `loans/adapters/handlers/http.py`:
   `host = "http"` and `storage = "memory"`.
 - Generate with
   `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting`.
-  The README already in `story-drafting/` stays.
-- Gate with
-  `cd {worktree} && RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} scripts/verify story-drafting`.
-  The gate runs tessercheck, `mypy --strict`, and the non-root tests; then it
-  serves `srv/http/main.py` on port {port}, registers its Restate endpoint,
-  and runs `tests/` with the host's address in `STORY_DRAFTING_HOST`. Do not
-  edit `scripts/verify`.
+  It prints the path of every file it wrote. The README already in
+  `story-drafting/` stays.
+- Run `scripts/verify` once, keeping its whole output, like this:
+
+  ```sh
+  cd {worktree} && RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
+    scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
+  ```
+
+  It runs its steps in order and stops at the first that fails, printing a
+  `  →` line as each step starts: tessercheck, `mypy --strict`, the non-root
+  tests, then it serves `srv/http/main.py` on port {port}, registers its
+  Restate endpoint, and runs `tests/` with the host's address in
+  `STORY_DRAFTING_HOST`. Every step before the last `  →` line passed. The
+  full output stays in `{log}` to grep; don't run it again to see more. Do
+  not edit `scripts/verify`.
 - Your Restate server is at ingress {ingress} and admin {admin}; generated
   tests that serve their own endpoints pick free ports themselves. Other
   agents work side by side on other ports: don't touch processes you didn't
   start. Work only inside the worktree.
 
-When done, commit your work on the current branch, staging files
-individually. Do not create worktrees or branches, do not push, and do not
-open a pull request. Finish with a short summary: the test's file and name,
-and the exact failure it produces.
+When done, commit your work on the current branch with
+
+```sh
+cd {worktree} && git ls-files --modified --others --exclude-standard -z | xargs -0 git add -- \
+  && git commit -q -m "<what you built>"
+```
+
+which stages every changed and new file by its path. Do not create worktrees
+or branches, do not push, and do not open a pull request. Finish with a short
+summary: the test's file and name, and the exact failure it produces.
