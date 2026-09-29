@@ -57,7 +57,8 @@ def spec_record(
     bounded_context_name: str = "calls",
     aggregate_root_class_name: str = "Call",
     durable_execution_engine: str = "restate",
-    database: str = "postgres",
+    storage: str = "postgres",
+    host: str = "cli",
     identity_field_name: str = "call_id",
     identity_port_operation_name: str = "issue_call_id",
     aggregate_fields: tuple[ports.FieldRecord, ...] = (field_record(),),
@@ -79,6 +80,7 @@ def spec_record(
     random_values: tuple[ports.ValueRecord, ...] = (value_record(text="Ada"),),
     storage_url_variable: str = "CALLS_STORAGE",
     restate_ingress_url_variable: str = "RESTATE_INGRESS",
+    host_url_variable: str = "",
 ) -> ports.SpecRecord:
     return ports.SpecRecord(
         state=state,
@@ -88,7 +90,8 @@ def spec_record(
         bounded_context_name=bounded_context_name,
         aggregate_root_class_name=aggregate_root_class_name,
         durable_execution_engine=durable_execution_engine,
-        database=database,
+        storage=storage,
+        host=host,
         identity_field_name=identity_field_name,
         identity_port_operation_name=identity_port_operation_name,
         aggregate_fields=aggregate_fields,
@@ -107,6 +110,7 @@ def spec_record(
         random_values=random_values,
         storage_url_variable=storage_url_variable,
         restate_ingress_url_variable=restate_ingress_url_variable,
+        host_url_variable=host_url_variable,
     )
 
 

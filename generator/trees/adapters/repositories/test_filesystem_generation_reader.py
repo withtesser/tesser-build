@@ -14,7 +14,7 @@ class TestFilesystemGenerationReader:
             'bounded_context_name = "calls"\n'
             'aggregate_root_class_name = "Call"\n'
             'durable_execution_engine = "restate"\n'
-            'database = "postgres"\n'
+            'storage = "postgres"\n'
             'identity_field_name = "call_id"\n'
             'identity_port_operation_name = "issue_call_id"\n'
             '[aggregate_fields]\nperson_name = "str"\nage = "int"\n'
@@ -44,7 +44,8 @@ class TestFilesystemGenerationReader:
             bounded_context_name="calls",
             aggregate_root_class_name="Call",
             durable_execution_engine="restate",
-            database="postgres",
+            storage="postgres",
+            host="",
             identity_field_name="call_id",
             identity_port_operation_name="issue_call_id",
             aggregate_fields=(
@@ -79,7 +80,25 @@ class TestFilesystemGenerationReader:
             random_values=(ports.ValueRecord(kind="str", text="Ada"), ports.ValueRecord(kind="str", text="Grace")),
             storage_url_variable="CALLS_STORAGE",
             restate_ingress_url_variable="RESTATE_INGRESS",
+            host_url_variable="",
         )
+
+    def test_the_host_the_storage_and_the_host_variable_are_read_as_given(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "spec.toml").write_text(
+            'storage = "memory"\nhost = "http"\n[environment_variables]\nhost_url = "VOICE_HOST"\n'
+        )
+        filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path / "templates"))
+
+        read_generation_response = filesystem_generation_reader.read_generation(
+            ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert (
+            read_generation_response.spec.storage,
+            read_generation_response.spec.host,
+            read_generation_response.spec.host_url_variable,
+            read_generation_response.spec.unknown_keys,
+        ) == ("memory", "http", "VOICE_HOST", ())
 
     def test_every_key_the_spec_does_not_take_is_named_by_its_path(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "spec.toml").write_text(

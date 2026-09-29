@@ -1,2 +1,7 @@
+{{#storage_memory}}
+from {{context}}.adapters.repositories.memory import Memory{{Aggregate}}Store as Memory{{Aggregate}}Store
+{{/storage_memory}}
+{{#storage_postgres}}
 from {{context}}.adapters.repositories.postgres import Postgres{{Aggregate}}Store as Postgres{{Aggregate}}Store
+{{/storage_postgres}}
 from {{context}}.adapters.repositories.uuid_{{aggregate}}_identity_repository import Uuid{{Aggregate}}IdentityRepository as Uuid{{Aggregate}}IdentityRepository

@@ -2,15 +2,31 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 import subprocess
 import sys
+import tomllib
 
 
 class TestGeneratingTrees:
 
-    def test_every_committed_spec_generates_every_template_and_exits_zero(self, tmp_path: pathlib.Path) -> None:
+    def test_every_committed_spec_generates_every_template_its_guards_open_and_exits_zero(
+        self, tmp_path: pathlib.Path
+    ) -> None:
         tree = pathlib.Path(__file__).resolve().parents[1]
-        template_count = len(list((tree / "templates").rglob("*.tmpl")))
+        guards = {
+            template.relative_to(tree / "templates").as_posix(): frozenset(
+                re.findall(r"\{\{#([a-z_]+)\}\}", template.relative_to(tree / "templates").as_posix())
+            )
+            for template in (tree / "templates").rglob("*.tmpl")
+        }
+        opened = {
+            spec.stem: frozenset(
+                (f"storage_{stated.get('storage', 'postgres')}", f"host_{stated.get('host', 'cli')}")
+            )
+            for spec in sorted((tree / "specs").glob("*.toml"))
+            for stated in (tomllib.loads(spec.read_text()),)
+        }
         env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
 
         answered = {
@@ -26,8 +42,9 @@ class TestGeneratingTrees:
             name: (0, "") for name in answered
         }
         assert {name: len(completed.stdout.splitlines()) for name, completed in answered.items()} == {
-            name: template_count for name in answered
+            name: sum(1 for guarded in guards.values() if guarded <= opened[name]) for name in answered
         }
+        assert frozenset().union(*guards.values()) <= frozenset().union(*opened.values())
         assert {
             name: sorted(path.relative_to(tmp_path / name).as_posix() for path in (tmp_path / name).rglob("*") if path.is_file())
             for name in answered

@@ -7,7 +7,9 @@ import typing
 import tesser.app as ts
 
 import {{context}}.component as {{context}}_component
+{{#storage_postgres}}
 import pgdatabase.database as pgdatabase_database
+{{/storage_postgres}}
 import tesser.errors as errors
 
 _IDENTITY_SEED_BITS: typing.Final[int] = 128
@@ -28,15 +30,27 @@ class AppConfig(ts.Config):
 class {{App}}App(ts.App):
 
     def __init__(self, app_config: AppConfig) -> None:
+{{#storage_postgres}}
         self.database = pgdatabase_database.Database(app_config.{{context}}.database)
         self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}}, self.database)
+{{/storage_postgres}}
+{{#storage_memory}}
+        self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}})
+{{/storage_memory}}
 
     async def open(self) -> None:
+{{#storage_postgres}}
         await self.database.open()
+{{/storage_postgres}}
+{{#storage_memory}}
+        return None
+{{/storage_memory}}
 
     async def close(self) -> None:
         await self.{{context}}.close()
+{{#storage_postgres}}
         await self.database.close()
+{{/storage_postgres}}
 
 
 class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
@@ -47,9 +61,11 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 class EnvConfigRepository(AppConfigRepository):
 
     def get(self) -> AppConfig:
+{{#storage_postgres}}
         {{context}}_storage = os.environ.get("{{storage_env}}")
         if {{context}}_storage is None:
             raise errors.invalid("missing_env", "{{storage_env}} is required")
+{{/storage_postgres}}
         ingress = os.environ.get("{{ingress_env}}")
         if ingress is None:
             raise errors.invalid("missing_env", "{{ingress_env}} is required")
@@ -57,7 +73,9 @@ class EnvConfigRepository(AppConfigRepository):
             Spec(
                 {{context}}={{context}}_component.Config(
                     {{context}}_component.Spec(
+{{#storage_postgres}}
                         storage={{context}}_storage,
+{{/storage_postgres}}
                         ingress=ingress,
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
                     )
