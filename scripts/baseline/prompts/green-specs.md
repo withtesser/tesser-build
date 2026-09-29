@@ -39,9 +39,6 @@ have, and report it as a GAP in your summary: what you needed, and for which
 story. A missing piece of the contract is a defect in the composition, fixed
 there, not in your files.
 
-Write files with the Edit and Write tools, not shell redirection, so each
-write is checked as you go.
-
 ## The language
 
 ```toml
