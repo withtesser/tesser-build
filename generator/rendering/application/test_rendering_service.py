@@ -32,7 +32,9 @@ class FakeRenderingWriter(ports.RenderingWriter):
 
     def write_rendering(self, write_rendering_request: ports.WriteRenderingRequest) -> ports.WriteRenderingResponse:
         self.written.append(write_rendering_request)
-        return ports.WriteRenderingResponse(paths=tuple(file_record.path for file_record in write_rendering_request.files))
+        return ports.WriteRenderingResponse(
+            paths=tuple(file_record.path for file_record in write_rendering_request.files), refused=()
+        )
 
 
 class TestRenderingService:
@@ -74,3 +76,16 @@ class TestRenderingService:
             (read_composition_request.composition_dir, read_composition_request.out_dir)
             for read_composition_request in fake_composition_reader.asked
         ] == [("/compositions/lending", "/out")]
+
+    def test_a_check_reads_the_tree_it_names_and_answers_the_problems_it_meets(self) -> None:
+        fake_composition_reader = FakeCompositionReader(documents=(), pieces=())
+
+        check_composition_response = application.RenderingService(fake_composition_reader, FakeRenderingWriter()).check_composition(
+            client.CheckCompositionRequest(composition_dir="/compositions/lending", tree_dir="/tree")
+        )
+
+        assert [(asked.composition_dir, asked.out_dir) for asked in fake_composition_reader.asked] == [
+            ("/compositions/lending", "/tree")
+        ]
+        assert check_composition_response.problems[0] == "the composition has no language.toml"
+        assert check_composition_response.drifted == ()

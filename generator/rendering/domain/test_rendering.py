@@ -166,15 +166,59 @@ class TestRenderedTree:
         assert rendered_tree.health() == domain.Health.CLEAN
         assert "lending/ports/loan_repository.txt" in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
 
-    def test_a_file_it_would_write_differently_is_a_problem_and_nothing_is_written(self) -> None:
+    def test_a_generated_file_already_in_the_output_is_overwritten(self) -> None:
         rendered_tree = domain.RenderedTree(
             rendered_tree_spec(target="occupied", existing=(("lending/ports/loan_repository.txt", "# pragma: tesser-generated; x\nOld\n"),))
         )
 
+        assert rendered_tree.health() == domain.Health.CLEAN
+        assert "lending/ports/loan_repository.txt" in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
+
+    def test_an_unmarked_file_where_a_generated_one_goes_is_a_problem_and_nothing_is_written(self) -> None:
+        rendered_tree = domain.RenderedTree(
+            rendered_tree_spec(target="occupied", existing=(("lending/ports/loan_repository.txt", "hand written\n"),))
+        )
+
         assert [str(text) for text in rendered_tree.problems()] == [
-            "the output directory already has lending/ports/loan_repository.txt, which the renderer would write differently"
+            "the output directory already has lending/ports/loan_repository.txt, which is not marked generated, "
+            "so the renderer will not replace it"
         ]
         assert rendered_tree.files() == ()
+
+    def test_drift_names_each_generated_file_that_differs_is_missing_or_lost_its_mark(self) -> None:
+        rendered_tree = domain.RenderedTree(
+            rendered_tree_spec(
+                target="occupied",
+                existing=(
+                    ("lending/ports/loan_repository.txt", "# pragma: tesser-generated; x\nEdited\n"),
+                    ("lending/ports/loan_identity_repository.txt", "LoanIdentityRepository\n"),
+                    ("lending/domain/loan.txt", "the agent's own loan\n"),
+                    ("routes.txt", "POST /loans 201\nGET /loans/{loan_id} 200\n"),
+                ),
+            )
+        )
+
+        assert [str(text) for text in rendered_tree.drift()] == [
+            "lending/ports/loan_identity_repository.txt has lost its generated mark",
+            "lending/ports/loan_repository.txt differs from what the composition renders",
+        ]
+
+    def test_a_missing_generated_file_is_drift(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(target="absent"))
+
+        assert "routes.txt is missing" in [str(text) for text in rendered_tree.drift()]
+
+    def test_two_pieces_that_render_one_path_are_a_problem(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(pieces=(("x.txt.tmpl", "a"), ("{{#ports}}/x.txt.tmpl", "b"))))
+
+        assert [str(text) for text in rendered_tree.problems()] == ["two pieces render x.txt, and a render writes each path once"]
+
+    def test_a_piece_whose_path_leaves_the_output_directory_is_a_problem(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(pieces=(("{{context}}/../../x.txt.tmpl", "a"),)))
+
+        assert [str(text) for text in rendered_tree.problems()] == [
+            "a piece renders the path 'lending/../../x.txt', which leaves the output directory"
+        ]
 
     def test_a_missing_document_is_a_problem(self) -> None:
         rendered_tree = domain.RenderedTree(rendered_tree_spec(documents=(("language", "missing", ""),)))

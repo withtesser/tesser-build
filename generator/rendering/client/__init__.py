@@ -1,3 +1,5 @@
+from rendering.client.client import CheckCompositionRequest as CheckCompositionRequest
+from rendering.client.client import CheckCompositionResponse as CheckCompositionResponse
 from rendering.client.client import RenderCompositionRequest as RenderCompositionRequest
 from rendering.client.client import RenderCompositionResponse as RenderCompositionResponse
 from rendering.client.client import RenderingClient as RenderingClient

@@ -15,7 +15,10 @@ class RenderHost(ts.Host):
         generator_app = app.load()
         handler = rendering_handlers.Handler(generator_app.rendering.client)
         try:
-            cli_response = handler.render(protocol.CliRequest(args=tuple(argv)))
+            if argv[:1] == ["--check"]:
+                cli_response = handler.check(protocol.CliRequest(args=tuple(argv[1:])))
+            else:
+                cli_response = handler.render(protocol.CliRequest(args=tuple(argv)))
         except protocol.UsageError as error:
             cli_response = protocol.CliResponse(2, stdout="", stderr=str(error))
         generator_app.close()

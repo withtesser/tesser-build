@@ -17,10 +17,15 @@ class FakeRenderingClient(client.RenderingClient):
         self._written = written
         self._kept = kept
         self.asked: list[client.RenderCompositionRequest] = []
+        self.checked: list[client.CheckCompositionRequest] = []
 
     def render_composition(self, render_composition_request: client.RenderCompositionRequest) -> client.RenderCompositionResponse:
         self.asked.append(render_composition_request)
         return client.RenderCompositionResponse(problems=self._problems, written=self._written, kept=self._kept)
+
+    def check_composition(self, check_composition_request: client.CheckCompositionRequest) -> client.CheckCompositionResponse:
+        self.checked.append(check_composition_request)
+        return client.CheckCompositionResponse(problems=self._problems, drifted=self._written, checked=len(self._kept))
 
 
 class TestHandler:
@@ -53,3 +58,24 @@ class TestHandler:
             handlers.Handler(fake_rendering_client).render(protocol.CliRequest(args=("compositions/lending",)))
 
         assert fake_rendering_client.asked == []
+
+    def test_a_check_that_finds_no_drift_exits_zero_and_says_how_many_files_match(self) -> None:
+        fake_rendering_client = FakeRenderingClient(problems=(), written=(), kept=("a", "b"))
+
+        cli_response = handlers.Handler(fake_rendering_client).check(protocol.CliRequest(args=("compositions/lending", "/tmp/lending")))
+
+        assert cli_response == protocol.CliResponse(0, stdout="check: 2 rendered files match compositions/lending", stderr="")
+        assert [(asked.composition_dir, asked.tree_dir) for asked in fake_rendering_client.checked] == [
+            ("compositions/lending", "/tmp/lending")
+        ]
+
+    def test_a_check_that_finds_drift_exits_one_naming_each_path(self) -> None:
+        fake_rendering_client = FakeRenderingClient(
+            problems=(), written=("loans/client/client.py differs from what the composition renders",), kept=()
+        )
+
+        cli_response = handlers.Handler(fake_rendering_client).check(protocol.CliRequest(args=("compositions/lending", "/tmp/lending")))
+
+        assert cli_response == protocol.CliResponse(
+            1, stdout="", stderr="check: loans/client/client.py differs from what the composition renders"
+        )

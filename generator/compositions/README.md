@@ -12,11 +12,43 @@ It prints the path of every file it wrote, one per line (then `kept <path>` for
 each agent-owned file it left alone), and exits 0; or it prints every problem
 on stderr as `render: <problem>`, exits 1, and writes nothing.
 
-**The output directory** may already hold files. A file the renderer does not
-write (a `README.md`, a `specs/` directory holding the composition itself) is
-left where it is. A file it would write the same is written again. A file it
-would write differently is a problem, and nothing is written, with one
-exception: an agent-owned file (below) that already exists is kept as it is.
+**The output directory** may already hold files, and rendering again is how a
+tree follows its composition:
+
+- a file the renderer does not write (a `README.md`, a `specs/` directory
+  holding the composition itself) is left where it is;
+- a file marked generated (below) is overwritten;
+- an agent-owned file that already exists is kept as it is;
+- a file where a generated one goes that is not marked generated, and differs,
+  is a problem.
+
+If anything is a problem, nothing is written. Every rendered path stays inside
+the output directory: the renderer refuses a path that resolves outside it,
+symlinks included, and two pieces rendering one path.
+
+**Checking a tree against its composition:**
+
+```sh
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check <composition-dir> <tree>
+```
+
+renders in memory, writes nothing, and exits 1 naming each generator-owned
+file that differs from what the composition renders, is missing, or has lost
+its generated mark (agent-owned files are not checked); otherwise it exits 0.
+A tree in this repo that the renderer wrote carries a `.tesser-rendered` file
+whose first line is its composition directory, relative to the repo root; its
+`scripts/verify` arm runs the check first.
+
+**Names.** Every name that reaches a path or an identifier is checked: the
+context, app, fields, action keys, and enum members and outcomes are
+snake_case (`loan_id`); operations, commands, and signals are snake_case of at
+least two words (`lend_book`); the aggregate, ports, shapes, messages, enums,
+and implementation classes are PascalCase (`LoanRepository`); variables are
+UPPER_CASE; `engine_path` is a lowercase URL path. None may be a Python
+keyword, and the context may not be one of the rendered tree's own package
+names (`adapters`, `app`, `application`, `client`, `component`, `config`,
+`conftest`, `domain`, `identity`, `pgdatabase`, `protocol`, `spec`, `srv`,
+`tests`).
 
 Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
@@ -337,7 +369,7 @@ its shape's fields.
 Every rendered file says on its first line who owns it:
 
 - `# pragma: tesser-generated; ...` — the renderer's. Change the composition
-  and render again, never the file.
+  and render again, never the file (`--check` catches an edit).
 - `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
   agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
   `test_<aggregate>.py`, and each `body = "agent"` implementation

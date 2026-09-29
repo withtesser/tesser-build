@@ -21,8 +21,9 @@ class WriteRenderingRequest(ts.Request):
 
 class WriteRenderingResponse(ts.Response):
 
-    def __init__(self, paths: tuple[str, ...]) -> None:
+    def __init__(self, paths: tuple[str, ...], refused: tuple[str, ...]) -> None:
         self.paths = paths
+        self.refused = refused
 
 
 class RenderingWriter(ts.Port, typing.Protocol):

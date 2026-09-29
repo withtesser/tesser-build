@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 import json
+import keyword
 import re
 import tomllib
 import typing
@@ -17,6 +18,45 @@ GUARD: typing.Final[re.Pattern[str]] = re.compile(r"\{\{([#^])([A-Za-z_][A-Za-z0
 TEMPLATE_SUFFIX: typing.Final[str] = ".tmpl"
 
 AGENT_MARKER: typing.Final[str] = "# pragma: tesser-agent-owned;"
+
+GENERATED_MARKER: typing.Final[str] = "# pragma: tesser-generated;"
+
+SNAKE: typing.Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
+
+OPERATION: typing.Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+")
+
+PASCAL: typing.Final[re.Pattern[str]] = re.compile(r"(?:[A-Z][a-z0-9]+)+")
+
+VARIABLE: typing.Final[re.Pattern[str]] = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*")
+
+ENGINE_PATH: typing.Final[re.Pattern[str]] = re.compile(r"/[a-z0-9_-]+(?:/[a-z0-9_-]+)*")
+
+RESERVED: typing.Final[frozenset[str]] = frozenset(
+    {
+        "adapters",
+        "app",
+        "application",
+        "client",
+        "component",
+        "config",
+        "conftest",
+        "domain",
+        "identity",
+        "pgdatabase",
+        "protocol",
+        "spec",
+        "srv",
+        "tests",
+    }
+)
+
+PATTERNS: typing.Final[dict[str, tuple[re.Pattern[str], str]]] = {
+    "snake": (SNAKE, "snake_case name, like loan_id"),
+    "operation": (OPERATION, "snake_case operation of at least two words, like lend_book"),
+    "pascal": (PASCAL, "PascalCase name, like LoanRepository"),
+    "variable": (VARIABLE, "UPPER_CASE variable, like RESTATE_INGRESS"),
+    "path": (ENGINE_PATH, "URL path of lowercase segments, like /restate"),
+}
 
 DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
 
@@ -994,6 +1034,62 @@ class Model(ts.Entity):
             for index in (0, 1)
         }
         self._readout = Readout(ReadoutSpec(reads=tuple(self._reads), aggregate=self._aggregate, types=TypesSpec(*self._types_args)))
+        named: list[tuple[str, str, str]] = [
+            ("snake", "context", self._context), ("snake", "app", self._app),
+            ("pascal", "[aggregate] name", self._Aggregate), ("snake", "[aggregate] identity", self._identity),
+        ]
+        if self._context in RESERVED:
+            raise ValueError(f"context names {self._context!r}, a name the rendered tree already uses for its own package")
+        named.extend(("snake", "[aggregate.spec]", field) for field, _ in self._spec_fields)
+        named.extend(("snake", "[aggregate.reads]", field) for field, _ in self._reads)
+        for command, table in self._commands.items():
+            named.append(("operation", "[aggregate.commands]", str(command)))
+            named.extend(("snake", f"{command} takes", str(field)) for field in table.get("takes", {}))
+            named.extend(("snake", f"{command} outcomes", str(outcome)) for outcome in table.get("outcomes", []))
+        for name, fields in self._shapes.items():
+            named.append(("pascal", "[shapes] or [messages]", name))
+            named.extend(("snake", name, field) for field, _ in fields)
+        for name, members in self._enums.items():
+            named.append(("pascal", "[enums]", name))
+            named.extend(("snake", name, member) for member in members)
+        for section in ("client", "orchestrator"):
+            for operation_name, operation in composition.get(section, {}).get("operations", {}).items():
+                named.append(("operation", f"[{section}.operations]", str(operation_name)))
+                named.extend(("snake", str(operation_name), str(field))
+                             for field in list(operation.get("request", [])) + list(operation.get("response", [])))
+        for key, table in composition.get("actions", {}).items():
+            named.append(("snake", "[actions]", str(key)))
+            named.append(("pascal", f"actions.{key} port", str(table.get("port", ""))))
+            for operation_name, operation in table.get("operations", {}).items():
+                named.append(("operation", f"[actions.{key}.operations]", str(operation_name)))
+                named.extend(("snake", str(operation_name), str(field))
+                             for field in list(operation.get("request", [])) + list(operation.get("response", [])))
+                named.extend(("snake", f"{operation_name} calls_on", str(outcome)) for outcome in operation.get("calls_on", []))
+        for signal_name, signal in composition.get("signals", {}).items():
+            named.append(("operation", "[signals]", str(signal_name)))
+            named.extend(("snake", str(signal_name), str(field)) for field in signal.get("payload", []))
+        for port_name, port in composition.get("ports", {}).items():
+            named.append(("pascal", "[ports]", str(port_name)))
+            for operation_name, operation in port.get("operations", {}).items():
+                named.append(("operation", f"[ports.{port_name}]", str(operation_name)))
+                named.extend(("snake", str(operation_name), str(listed).split(":", 1)[0].strip())
+                             for listed in list(operation.get("request", [])) + list(operation.get("response", [])))
+        for port_name, choices in self._implementations.get("implementations", {}).items():
+            for key, implementation in choices.items():
+                if implementation.get("body") == "agent":
+                    named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
+        engine = self._implementations.get("engine", {}).get("restate", {})
+        named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
+                     for key in ("ingress_variable", "admin_variable", "callback_host_variable") if key in engine)
+        host = self._implementations.get("hosts", {}).get("http", {})
+        if "listen_port_variable" in host:
+            named.append(("variable", "[hosts.http] listen_port_variable", str(host["listen_port_variable"])))
+        if "engine_path" in host:
+            named.append(("path", "[hosts.http] engine_path", str(host["engine_path"])))
+        for pattern_name, where, name in named:
+            pattern, description = PATTERNS[pattern_name]
+            if pattern.fullmatch(name) is None or keyword.iskeyword(name):
+                raise ValueError(f"{where} names {name!r}, which is not a {description}")
         self._messages: dict[tuple[str, str], Record] = {}
         self._port_of: dict[str, str] = {}
         self._port_ops: dict[str, list[str]] = {}
@@ -2224,21 +2320,39 @@ class RenderedTree(ts.AggregateRoot):
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:
                 found.append(Text(str(problem)))
+        paths = [str(rendered_file.path()) for rendered_file in rendered]
+        for path in sorted(set(paths)):
+            if paths.count(path) > 1:
+                found.append(Text(f"two pieces render {path}, and a render writes each path once"))
+            segments = path.split("/")
+            if path.startswith("/") or "\\" in path or any(segment in ("", ".", "..") for segment in segments):
+                found.append(Text(f"a piece renders the path {path!r}, which leaves the output directory"))
+        self._faults = tuple(found)
         existing = dict(spec.existing)
         written: list[RenderedFile] = []
         kept: list[Text] = []
+        drift: list[Text] = []
         for rendered_file in sorted(rendered, key=str):
             path = str(rendered_file.path())
             content = str(rendered_file.content())
+            agents = content.startswith(AGENT_MARKER)
+            if not agents and path not in existing:
+                drift.append(Text(f"{path} is missing"))
+            elif not agents and existing[path] != content:
+                marked = not content.startswith(GENERATED_MARKER) or existing[path].startswith(GENERATED_MARKER)
+                drift.append(Text(f"{path} differs from what the composition renders" if marked else f"{path} has lost its generated mark"))
             if path not in existing or existing[path] == content:
                 written.append(rendered_file)
-            elif content.startswith(AGENT_MARKER):
+            elif agents:
                 kept.append(Text(path))
+            elif content.startswith(GENERATED_MARKER) and existing[path].startswith(GENERATED_MARKER):
+                written.append(rendered_file)
             else:
-                found.append(Text(f"the output directory already has {path}, which the renderer would write differently"))
+                found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
+        self._drift = tuple(drift) if rendered else ()
 
     @property
     def identity(self) -> Text:
@@ -2255,3 +2369,9 @@ class RenderedTree(ts.AggregateRoot):
 
     def kept(self) -> tuple[Text, ...]:
         return self._kept
+
+    def drift(self) -> tuple[Text, ...]:
+        return self._drift
+
+    def faults(self) -> tuple[Text, ...]:
+        return self._faults

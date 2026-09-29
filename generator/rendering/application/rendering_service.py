@@ -51,7 +51,10 @@ class MapToRenderCompositionResponseWhenWritten(ts.Mapper, client.RenderComposit
 
     def __init__(self, write_rendering_response: ports.WriteRenderingResponse, rendered_tree: domain.RenderedTree) -> None:
         super().__init__(
-            problems=(),
+            problems=tuple(
+                f"{path} resolves outside the output directory, so nothing is written"
+                for path in write_rendering_response.refused
+            ),
             written=write_rendering_response.paths,
             kept=tuple(str(text) for text in rendered_tree.kept()),
         )
@@ -61,6 +64,25 @@ class MapToRenderCompositionResponseWithProblems(ts.Mapper, client.RenderComposi
 
     def __init__(self, rendered_tree: domain.RenderedTree) -> None:
         super().__init__(problems=tuple(str(text) for text in rendered_tree.problems()), written=(), kept=())
+
+
+class MapToReadCompositionRequestWhenChecked(ts.Mapper, ports.ReadCompositionRequest):
+
+    def __init__(self, check_composition_request: client.CheckCompositionRequest) -> None:
+        super().__init__(
+            composition_dir=check_composition_request.composition_dir,
+            out_dir=check_composition_request.tree_dir,
+        )
+
+
+class MapToCheckCompositionResponse(ts.Mapper, client.CheckCompositionResponse):
+
+    def __init__(self, rendered_tree: domain.RenderedTree) -> None:
+        super().__init__(
+            problems=tuple(str(text) for text in rendered_tree.faults()),
+            drifted=tuple(str(text) for text in rendered_tree.drift()),
+            checked=len(rendered_tree.files()) + len(rendered_tree.kept()),
+        )
 
 
 class RenderingService(ts.ApplicationService):
@@ -86,3 +108,10 @@ class RenderingService(ts.ApplicationService):
                 return MapToRenderCompositionResponseWithProblems(rendered_tree)
             case _ as never:
                 typing.assert_never(never)
+
+    def check_composition(self, check_composition_request: client.CheckCompositionRequest) -> client.CheckCompositionResponse:
+        read_composition_response = self._composition_reader.read_composition(
+            MapToReadCompositionRequestWhenChecked(check_composition_request)
+        )
+        rendered_tree = domain.RenderedTree(MapToRenderedTreeSpec(read_composition_response))
+        return MapToCheckCompositionResponse(rendered_tree)
