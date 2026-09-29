@@ -1,2 +1,0 @@
-from drafting.adapters.gateways.anthropic_story_writer import AnthropicStoryWriter as AnthropicStoryWriter
-from drafting.adapters.gateways.canned_story_writer import CannedStoryWriter as CannedStoryWriter
