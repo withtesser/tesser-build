@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import os
 import re
 
 import playwright.sync_api as playwright_sync_api
+
+import tesser.testing as ts
 
 
 class TestAddStoryOnThePage:
@@ -12,7 +13,7 @@ class TestAddStoryOnThePage:
         with playwright_sync_api.sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             page = browser.new_page()
-            page.goto(os.environ["SPECS_APP_URL"] + "/")
+            page.goto(ts.served("SPECS_APP_URL") + "/")
 
             jtbd = page.locator('[data-label="J1"]')
             jtbd.hover()

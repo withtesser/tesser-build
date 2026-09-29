@@ -5,7 +5,7 @@ application in its own process. It places each call by running the CLI host
 (`python -m srv.cli.main place-call`, which prints the call id) as a
 subprocess, and reads the saved name back through the same host
 (`python -m srv.cli.main get-call <call_id>`, which prints the person's name),
-speaking only `protocol`. Behind the hosts run the production clients,
+reading its exit code and output lines. Behind the hosts run the production clients,
 gateways, Restate workflow/actions, and Postgres repository. Three simulated
 people join real LiveKit rooms and reply with model-generated speech. No SIP
 trunk or telephone number is needed.
@@ -23,11 +23,14 @@ then run from the repository root:
 VOICE_EVALS=1 LIVEKIT_AGENT_NAME=caller-acceptance scripts/verify voice
 ```
 
-Use an agent name not served by another worker. The verification script starts
-the production Restate HTTP host and registers it with Restate, and with
-`VOICE_EVALS=1` it also starts the production LiveKit agent server
-(`srv.livekit.agent_server`) under that agent name. The tests are clients of
-both, and each one runs the CLI host once per command: it places a call
+Use an agent name not served by another worker. The verification script runs
+in three steps: first every tier but this one (`pytest --ignore=tests`, which works because `testpaths` leaves `tests` out) with no
+host served; then it starts the production Restate HTTP host and registers it
+with Restate (forcing over whatever the context tests registered), and with
+`VOICE_EVALS=1` also starts the production LiveKit agent server
+(`srv.livekit.agent_server`) under that agent name; last it runs this tier
+(`pytest tests`). The tests are clients of both hosts, and each one runs the
+CLI host (`subprocess.run` of `python -m srv.cli.main`) once per command: it places a call
 through `place-call` while a simulated person
 (`simulated/person.py`, a directory the analyzer does not govern) watches
 LiveKit for the room the agent was dispatched into, joins it as `person`, and

@@ -1,0 +1,518 @@
+{
+  "run": {
+    "phase": "green",
+    "name": "green-2",
+    "base_ref": "baseline/runs/red-2",
+    "base_sha": "03fbb8fb3907b9a160433b6b468cfbd1b188b1f9",
+    "branch": "baseline/runs/green-2",
+    "prepared": "2026-09-28T21:17:21Z"
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 1543.9,
+    "api_requests": 59,
+    "tokens": {
+      "input": 118,
+      "cache_read": 11312073,
+      "cache_write": 487509
+    },
+    "tool_calls_total": 58,
+    "tool_calls": {
+      "Bash": 55,
+      "Read": 2,
+      "Skill": 1
+    },
+    "guidance": [
+      "skill:claude-api",
+      "bash:testing.md",
+      "bash:testing.md",
+      "bash:testing.md",
+      "bash:testing.md"
+    ],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo> && ls skills/tesser-build/ && wc -l skills/tesser-build/*.md && find examples/durable-execution -type f -name '*.py' | g",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && python3 - <<'EOF'\nimport pathlib\np=pathlib.Path(\"scripts/verify\")\ns=p.read_text()\ns=s.replace('''# directory at STORY",
+        "findings": 9,
+        "by_code": {
+          "TB042": 3,
+          "TB050": 1,
+          "TB085": 3,
+          "TB073": 2
+        }
+      },
+      {
+        "command": "cd <repo> && source <repo>/.venv/bin/activate && time timeout 580 scripts/verify story-dra",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 3,
+    "final_message": "The acceptance test now passes, its file is unchanged from the last commit, and `scripts/verify story-drafting` is green: tessercheck zero findings, `mypy --strict` clean, pytest 84 passed. It's committed on `baseline/runs/green-2` as `ce7f9dd`.\n\n**What I built**\n- **The run itself:** the `conduct_run` workflow on Restate now does four things in order:\n  1. It drafts stories for the job through a `DraftingActions` activity.\n  2. It moves the run from `drafting` to `awaiting_pick` (`Run.stories_drafted`).\n  3. It saves the whole run through a `RunActions` activity.\n  4. It waits on a durable promise, `pick_stories`, through `RunOrchestratorSignalRelay`.\n- **Domain:** a new `awaiting_pick` step and a `DraftedStories` value object that refuses an empty draft. A model that drafts nothing, or refuses, fails the run instead of leaving an empty list to pick from.\n- **Drafting behind a port:** `StoryDrafter` has two gateways, a deterministic one and an Anthropic one (`claude-opus-5-5` through the `anthropic` SDK, key from `ANTHROPIC_API_KEY`). `STORY_DRAFTING_DRAFTER` chooses between them, and a missing or unknown value is an error at startup.\n- **Wiring:** the component, app config and Restate host now also serve the two actions services as private, and the host test expects them.\n- **`scripts/verify`:** the `run_story_drafting` arm sets `STORY_DRAFTING_DRAFTER=deterministic` for both the endpoint and pytest, so no test calls a real model.\n- **Out of scope, not built:** making the pick (so there is no signal that resolves the promise), revising a draft, and `SKILL.md`.\n\n**Things to know**\n- **The Anthropic gateway is only tested for failure.** Its one test checks that an unreachable API raises. The analyzer rejects a fake of the vendor API, and the README rules out calling a real model, so the success path has no test.\n- **Two older engine tests changed shape.** `test_restate_conduct_run.py` and `test_restate_http_run_orchestrator_relay.py` used to wait for `completed`. Th"
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "ce7f9ddf8c0a437022aee07e65e4c02ea2b6e541",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 42,
+    "lines_added": 1563,
+    "lines_removed": 57,
+    "py_impl_files": 25,
+    "py_impl_lines": 690,
+    "py_test_files": 15,
+    "py_test_lines": 865,
+    "files_outside_tree": [
+      "scripts/verify"
+    ]
+  },
+  "gate": {
+    "verify_exit": 0,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "serve the Restate endpoint on :9088 and register it at http://localhost:39070",
+      "pytest (against Restate at http://localhost:38080)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app.test_app.TestAppConfig::test_a_config_carries_each_component_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_a_missing_storage_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_a_missing_drafter_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestAppLoader::test_the_loader_builds_an_app_from_its_repository",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.activities.test_restate_activities.TestRestateDraftStories::test_restate_serves_draft_stories_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.activities.test_restate_activities.TestRestateRecordRun::test_restate_serves_record_run_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.dispatchers.test_restate_http_run_orchestrator_relay.TestRestateHttpRunOrchestratorRelay::test_starting_a_run_answers_while_the_run_it_keys_waits_for_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.gateways.test_anthropic_story_drafter.TestAnthropicStoryDrafter::test_an_unreachable_model_fails_the_draft_loudly",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.gateways.test_deterministic_story_drafter.TestDeterministicStoryDrafter::test_the_same_job_drafts_the_same_stories",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.gateways.test_deterministic_story_drafter.TestDeterministicStoryDrafter::test_every_drafted_story_is_about_the_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file.TestFileRunStore::test_a_run_saved_in_one_transaction_is_loaded_in_the_next",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file.TestFileRunStore::test_each_issued_run_id_is_new",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.workflows.test_restate_conduct_run.TestRestateConductRun::test_a_run_records_its_drafted_stories_then_waits_on_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.workflows.test_restate_conduct_run.TestRestateConductRun::test_a_run_its_key_does_not_name_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_run_orchestrator.TestRunOrchestrator::test_a_run_drafts_then_records_its_drafts_then_waits_for_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_run_orchestrator.TestRunOrchestrator::test_the_recorded_run_awaits_the_pick_with_its_drafted_stories_and_none_accepted",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_run_orchestrator.TestRunOrchestrator::test_conducting_a_run_answers_its_run_id_once_the_pick_is_in",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_run_orchestrator.TestRunOrchestrator::test_a_draft_with_no_stories_is_refused_before_anything_is_recorded",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesRequestSnapshot::test_a_request_is_its_run_id_and_its_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesResponseSnapshot::test_a_response_is_its_stories",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestDraftStoriesResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunRequestSnapshot::test_a_request_is_the_whole_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunResponseSnapshot::test_a_response_is_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_actions_relay.TestRecordRunResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_is_its_run_id_and_its_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_is_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_signal_relay.TestAwaitPickStoriesResponseSnapshot::test_a_response_is_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_signal_relay.TestAwaitPickStoriesResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_signal_relay.TestAwaitPickStoriesResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_signal_relay.TestPickPromise::test_the_pick_promise_is_named_for_the_operation_that_awaits_it",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_actions.TestDraftingActions::test_drafting_asks_the_drafter_about_the_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_actions.TestDraftingActions::test_drafting_answers_the_stories_the_drafter_wrote",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_actions.TestRunActions::test_recording_a_run_saves_it_whole_under_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_actions.TestRunActions::test_recording_a_run_answers_the_run_id_it_saved",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_opening_a_run_keeps_it_and_starts_conducting_it",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_an_opened_run_is_read_back_by_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_a_job_that_says_nothing_is_rejected_and_nothing_starts",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_a_run_that_was_never_opened_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestRunRejected::test_a_rejected_run_carries_its_code_and_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestRunNotFound::test_a_run_that_was_not_found_carries_its_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestErrors::test_the_declared_set_names_every_error_the_client_raises",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestConfig::test_a_config_carries_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_workflow_faces_the_ingress_and_the_actions_do_not",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_anthropic_drafter_is_built_with_its_key",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_anthropic_drafter_without_a_key_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_an_unknown_drafter_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_an_absent_drafter_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_wired_client_reads_back_no_run_it_never_opened",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_is_identified_by_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_refuses_a_story_that_says_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_is_never_empty",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_says_something",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_says_something",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunPresence::test_presence_decides_the_lookup",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunPresence::test_a_presence_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestDraftedStories::test_drafted_stories_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestDraftedStories::test_drafted_stories_carry_their_stories_in_order",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestDraftedStories::test_a_draft_offers_at_least_one_story",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestDraftedStories::test_a_draft_refuses_a_story_that_says_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStoriesDrafted::test_a_drafting_run_given_its_stories_waits_for_the_pick_with_none_accepted",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStoriesDrafted::test_a_run_past_drafting_refuses_a_second_draft_and_keeps_the_first",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv.restate.test_main.TestRestateHost::test_the_served_endpoint_discovers_the_workflow_and_its_actions",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests.test_story_drafting.TestDraftingStoriesForAJob::test_a_started_run_waits_for_the_pick_with_its_drafted_stories_and_none_accepted",
+        "outcome": "passed",
+        "message": ""
+      }
+    ],
+    "test_outcomes": {
+      "passed": 84
+    },
+    "impl_coverage_pct": 93.8,
+    "impl_statements": 812
+  }
+}

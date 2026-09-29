@@ -1,0 +1,11 @@
+#!/bin/sh
+# The Claude Code post-write hook's wrapper (tessercheck-cli/README.md): the
+# one file that knows where the venv is. TESSER_VENV overrides the default, so
+# a worktree under .claude/worktrees/ can use the checkout's environment.
+event=$(cat)
+case "$event" in
+  *'"tool_name": "Skill"'*|*'"tool_name":"Skill"'*|*'"tool_name": "Read"'*|*'"tool_name":"Read"'*) ;;
+  *'"file_path": "'*'.py"'*|*'"file_path":"'*'.py"'*) ;;
+  *) exit 0 ;;
+esac
+printf '%s' "$event" | exec "${TESSER_VENV:-$CLAUDE_PROJECT_DIR/.venv}/bin/tessercheck-hook"

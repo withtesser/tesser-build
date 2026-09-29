@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pathlib
 import random
 import subprocess
 import sys
@@ -10,8 +9,7 @@ import sys
 class {{test_class}}:
 
     def {{test_method}}(self) -> None:
-        tree = pathlib.Path(__file__).resolve().parents[1]
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
         {{asserts}} = random.choice({{random_choices}})
 
         {{write}} = subprocess.run(
@@ -24,17 +22,11 @@ class {{test_class}}:
                 {{#is_asserted}}str({{asserts}}){{/is_asserted}}{{^is_asserted}}{{sample_arg}}{{/is_asserted}},
 {{/fields}}
             ],
-            cwd=tree,
-            env=env,
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
         {{read}} = subprocess.run(
             [sys.executable, "-m", "srv.cli.main", "{{read}}", {{write}}.stdout.strip()],
-            cwd=tree,
-            env=env,
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
 
         assert ({{write}}.returncode, {{write}}.stderr) == (0, "")
