@@ -45,7 +45,7 @@ class TestTrees:
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tmp_path / "templates"))))
 
         generate_tree_response = trees.client.generate_tree(
-            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"), printed=())
         )
         trees.close()
 
@@ -56,7 +56,7 @@ class TestTrees:
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tmp_path))))
 
         generate_tree_response = trees.client.generate_tree(
-            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"), printed=())
         )
         trees.close()
 

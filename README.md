@@ -135,6 +135,11 @@ write (a `README.md`, say) is kept beside the tree, and a file it would write
 the same is fine; a file it would write differently is a problem, and then
 nothing is written.
 
+`--print <path>`, repeatable, prints a generated file back after the list of
+paths: a blank line, `--- <path>`, then the file as written. The path is one
+the list prints (`--print tests/test_acceptance.py`); a path the tree does not
+write is a problem like any other, and then nothing is written.
+
 ## Working on this repo
 
 ```sh

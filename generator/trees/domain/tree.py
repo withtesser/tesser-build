@@ -280,6 +280,7 @@ class TreeSpec(ts.Spec):
         unknown_keys: tuple[str, ...],
         target: str,
         existing: tuple[tuple[str, str], ...],
+        printed: tuple[str, ...],
         app_name: str,
         bounded_context_name: str,
         aggregate_root_class_name: str,
@@ -313,6 +314,7 @@ class TreeSpec(ts.Spec):
         self.unknown_keys = unknown_keys
         self.target = target
         self.existing = existing
+        self.printed = printed
         self.app_name = app_name
         self.bounded_context_name = bounded_context_name
         self.aggregate_root_class_name = aggregate_root_class_name
@@ -557,6 +559,7 @@ class Tree(ts.AggregateRoot):
         if found:
             self._problems = tuple(found)
             self._files: tuple[GeneratedFile, ...] = ()
+            self._printed: tuple[GeneratedFile, ...] = ()
             return
         classes = {
             name: "".join(part.capitalize() for part in name.split("_"))
@@ -687,12 +690,18 @@ class Tree(ts.AggregateRoot):
             )
         )
         existing = dict(spec.existing)
+        written = {str(generated_file.path()): generated_file for generated_file in rendered}
         self._problems = tuple(
             Text(f"the output directory already has {generated_file.path()}, which the generator would write differently")
             for generated_file in rendered
             if existing.get(str(generated_file.path()), str(generated_file.content())) != str(generated_file.content())
+        ) + tuple(
+            Text(f"--print names {path}, which the generator does not write")
+            for path in spec.printed
+            if path not in written
         )
         self._files = () if self._problems else rendered
+        self._printed = () if self._problems else tuple(written[path] for path in spec.printed)
 
     def health(self) -> Health:
         return Health.PROBLEMS if self._problems else Health.CLEAN
@@ -702,3 +711,6 @@ class Tree(ts.AggregateRoot):
 
     def files(self) -> tuple[GeneratedFile, ...]:
         return self._files
+
+    def printed(self) -> tuple[GeneratedFile, ...]:
+        return self._printed

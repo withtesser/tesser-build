@@ -23,6 +23,25 @@ class CliRequest(ts.Request):
         if len(self.args) > count:
             raise UsageError(f"unexpected extra arguments\n{usage}")
 
+    def take_option(self, option: str, name: str, usage: str) -> tuple[CliRequest, tuple[str, ...]]:
+        rest: list[str] = []
+        values: list[str] = []
+        remaining = iter(self.args)
+        for arg in remaining:
+            if arg != option:
+                rest.append(arg)
+                continue
+            value = next(remaining, "")
+            if not value or value.startswith("-"):
+                raise UsageError(f"missing <{name}> after {option}\n{usage}")
+            values.append(value)
+        return CliRequest(args=tuple(rest)), tuple(values)
+
+    def no_options(self, usage: str) -> None:
+        for arg in self.args:
+            if arg.startswith("-") and arg != "-":
+                raise UsageError(f"unknown option {arg}\n{usage}")
+
 
 class CliResponse(ts.Response):
 

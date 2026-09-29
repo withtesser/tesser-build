@@ -10,11 +10,19 @@ findings, `mypy --strict`, and its own tests.
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate <spec.toml> <out_dir>
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate <spec.toml> <out_dir> [--print <path>]...
 ```
 
 It exits 0 and lists the files it wrote, or exits 1 and lists every problem
 with the spec and writes nothing.
+
+**`--print <path>`** names a file to print back, by its path relative to the
+output directory as the list prints it (`--print tests/test_acceptance.py`).
+It repeats, and the files print in the order named: after the list, each gets
+a blank line, a header line `--- <path>`, and its content as written. A path
+the tree does not write is a problem (`--print names <path>, which the
+generator does not write`), so nothing is written. Without `--print` the
+output is the list alone.
 
 **The output directory** may already hold files. A file the generator does not
 write (a `README.md`, say) is kept beside the tree; a file it would write the

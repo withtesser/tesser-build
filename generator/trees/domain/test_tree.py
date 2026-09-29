@@ -14,6 +14,7 @@ def tree_spec(
     unknown_keys: tuple[str, ...] = (),
     target: str = "absent",
     existing: tuple[tuple[str, str], ...] = (),
+    printed: tuple[str, ...] = (),
     app_name: str = "voice",
     bounded_context_name: str = "calls",
     aggregate_root_class_name: str = "Call",
@@ -52,6 +53,7 @@ def tree_spec(
         unknown_keys=unknown_keys,
         target=target,
         existing=existing,
+        printed=printed,
         app_name=app_name,
         bounded_context_name=bounded_context_name,
         aggregate_root_class_name=aggregate_root_class_name,
@@ -477,6 +479,36 @@ class TestTreeProblems:
 
         assert ([str(text) for text in tree.problems()], tree.files()) == (
             ["the output directory already has calls/domain/call.py, which the generator would write differently"],
+            (),
+        )
+
+    def test_a_printed_path_comes_back_as_the_file_the_tree_writes_in_the_order_named(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                printed=("tests/test_acceptance.py", "calls/domain/call.py"),
+                templates=(
+                    ("{{context}}/domain/{{aggregate}}.py.tmpl", "class {{Aggregate}}:\n"),
+                    ("tests/test_acceptance.py.tmpl", "class {{test_class}}:\n"),
+                ),
+            )
+        )
+
+        assert [(str(generated_file.path()), str(generated_file.content())) for generated_file in tree.printed()] == [
+            ("tests/test_acceptance.py", "class TestPlacingCalls:\n"),
+            ("calls/domain/call.py", "class Call:\n"),
+        ]
+
+    def test_nothing_printed_prints_nothing(self) -> None:
+        tree = domain.Tree(tree_spec())
+
+        assert (tree.health(), tree.printed()) == (domain.Health.CLEAN, ())
+
+    def test_a_printed_path_the_tree_does_not_write_is_a_problem_and_nothing_is_written(self) -> None:
+        tree = domain.Tree(tree_spec(printed=("calls/domain/call.py", "tests/test_missing.py")))
+
+        assert ([str(text) for text in tree.problems()], tree.files(), tree.printed()) == (
+            ["--print names tests/test_missing.py, which the generator does not write"],
+            (),
             (),
         )
 

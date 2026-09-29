@@ -48,6 +48,46 @@ def test_an_extra_argument_is_rejected_with_the_usage() -> None:
     assert "usage: prog <repo-root>" in str(raised.value)
 
 
+def test_an_option_takes_the_value_after_each_of_its_flags_in_order() -> None:
+    cli_request = protocol.CliRequest(args=("--print", "a.py", "spec.toml", "--print", "b.py", "out"))
+
+    rest, values = cli_request.take_option("--print", "path", "usage: prog")
+
+    assert (rest, values) == (protocol.CliRequest(args=("spec.toml", "out")), ("a.py", "b.py"))
+
+
+def test_an_absent_option_takes_nothing_and_leaves_the_arguments() -> None:
+    cli_request = protocol.CliRequest(args=("spec.toml", "out"))
+
+    assert cli_request.take_option("--print", "path", "usage: prog") == (cli_request, ())
+
+
+def test_an_option_without_a_value_names_its_value_and_carries_the_usage() -> None:
+    with pytest.raises(protocol.UsageError) as raised:
+        protocol.CliRequest(args=("spec.toml", "out", "--print")).take_option("--print", "path", "usage: prog")
+    assert "missing <path> after --print" in str(raised.value)
+    assert "usage: prog" in str(raised.value)
+
+
+def test_an_option_followed_by_another_option_has_no_value() -> None:
+    with pytest.raises(protocol.UsageError) as raised:
+        protocol.CliRequest(args=("--print", "--print", "a.py")).take_option("--print", "path", "usage: prog")
+    assert "missing <path> after --print" in str(raised.value)
+
+
+def test_arguments_without_options_pass_the_option_gate() -> None:
+    cli_request = protocol.CliRequest(args=("spec.toml", "-"))
+    cli_request.no_options("usage: prog")
+    assert cli_request.args == ("spec.toml", "-")
+
+
+def test_an_unknown_option_is_rejected_with_the_usage() -> None:
+    with pytest.raises(protocol.UsageError) as raised:
+        protocol.CliRequest(args=("spec.toml", "--verbose")).no_options("usage: prog")
+    assert "unknown option --verbose" in str(raised.value)
+    assert "usage: prog" in str(raised.value)
+
+
 def test_ok_is_exit_zero_on_stdout_with_an_empty_stderr() -> None:
     cli_response = protocol.CliResponse.ok("done")
     assert cli_response.exit_code == 0

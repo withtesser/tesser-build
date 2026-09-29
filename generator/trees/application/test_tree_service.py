@@ -156,7 +156,7 @@ class TestTreeService:
         )
 
         generate_tree_response = tree_service.generate_tree(
-            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out")
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=())
         )
 
         assert [
@@ -168,12 +168,43 @@ class TestTreeService:
         ] == [("out", [("calls/domain/call.py", "class Call:\n")])]
         assert generate_tree_response.problems == ()
         assert generate_tree_response.paths == ("calls/domain/call.py",)
+        assert generate_tree_response.printed == ()
+
+    def test_a_printed_path_comes_back_as_the_file_written_there(self) -> None:
+        fake_tree_writer = FakeTreeWriter()
+        tree_service = application.TreeService(FakeGenerationReader(read_generation_response()), fake_tree_writer)
+
+        generate_tree_response = tree_service.generate_tree(
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=("calls/domain/call.py",))
+        )
+
+        assert [
+            (printed_file.path, printed_file.text) for printed_file in generate_tree_response.printed
+        ] == [("calls/domain/call.py", "class Call:\n")]
+        assert [
+            [(file_record.path, file_record.text) for file_record in write_tree_request.files]
+            for write_tree_request in fake_tree_writer.written
+        ] == [[("calls/domain/call.py", "class Call:\n")]]
+
+    def test_a_printed_path_the_tree_does_not_write_writes_nothing(self) -> None:
+        fake_tree_writer = FakeTreeWriter()
+        tree_service = application.TreeService(FakeGenerationReader(read_generation_response()), fake_tree_writer)
+
+        generate_tree_response = tree_service.generate_tree(
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=("tests/test_missing.py",))
+        )
+
+        assert fake_tree_writer.written == []
+        assert (generate_tree_response.problems, generate_tree_response.printed) == (
+            ("--print names tests/test_missing.py, which the generator does not write",),
+            (),
+        )
 
     def test_the_reader_is_asked_for_the_spec_and_the_output_directory_it_was_given(self) -> None:
         fake_generation_reader = FakeGenerationReader(read_generation_response())
         tree_service = application.TreeService(fake_generation_reader, FakeTreeWriter())
 
-        tree_service.generate_tree(client.GenerateTreeRequest(spec_path="specs/voice.toml", out_dir="/tmp/voice"))
+        tree_service.generate_tree(client.GenerateTreeRequest(spec_path="specs/voice.toml", out_dir="/tmp/voice", printed=()))
 
         assert [
             (read_generation_request.spec_path, read_generation_request.out_dir)
@@ -187,7 +218,7 @@ class TestTreeService:
         )
 
         generate_tree_response = tree_service.generate_tree(
-            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out")
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=())
         )
 
         assert fake_tree_writer.written == []
@@ -211,7 +242,7 @@ class TestTreeService:
         )
 
         generate_tree_response = tree_service.generate_tree(
-            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out")
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=())
         )
 
         assert fake_tree_writer.written == []
@@ -225,7 +256,7 @@ class TestTreeService:
         )
 
         generate_tree_response = tree_service.generate_tree(
-            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out")
+            client.GenerateTreeRequest(spec_path="spec.toml", out_dir="out", printed=())
         )
 
         assert generate_tree_response.problems == ("there is no spec file at spec.toml",)

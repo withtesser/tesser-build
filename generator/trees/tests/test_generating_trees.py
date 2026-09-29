@@ -15,7 +15,7 @@ class TestGeneratingTrees:
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tree / "templates"))))
 
         generate_tree_response = trees.client.generate_tree(
-            client.GenerateTreeRequest(spec_path=str(tree / "specs" / "voice.toml"), out_dir=str(tmp_path))
+            client.GenerateTreeRequest(spec_path=str(tree / "specs" / "voice.toml"), out_dir=str(tmp_path), printed=())
         )
         trees.close()
 
@@ -32,7 +32,7 @@ class TestGeneratingTrees:
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tree / "templates"))))
 
         generate_tree_response = trees.client.generate_tree(
-            client.GenerateTreeRequest(spec_path=str(tree / "specs" / "library.toml"), out_dir=str(tmp_path))
+            client.GenerateTreeRequest(spec_path=str(tree / "specs" / "library.toml"), out_dir=str(tmp_path), printed=())
         )
         trees.close()
 
@@ -64,7 +64,7 @@ class TestGeneratingTrees:
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tree / "templates"))))
 
         generate_tree_response = trees.client.generate_tree(
-            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+            client.GenerateTreeRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"), printed=())
         )
         trees.close()
 

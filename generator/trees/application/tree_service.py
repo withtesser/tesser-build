@@ -23,7 +23,9 @@ class MapToReadGenerationRequest(ts.Mapper, ports.ReadGenerationRequest):
 
 class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
 
-    def __init__(self, read_generation_response: ports.ReadGenerationResponse) -> None:
+    def __init__(
+        self, generate_tree_request: client.GenerateTreeRequest, read_generation_response: ports.ReadGenerationResponse
+    ) -> None:
         super().__init__(
             state=read_generation_response.spec.state.value,
             note=read_generation_response.spec.note,
@@ -33,6 +35,7 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
                 (existing_file_record.path, existing_file_record.text)
                 for existing_file_record in read_generation_response.target.files
             ),
+            printed=generate_tree_request.printed,
             app_name=read_generation_response.spec.app_name,
             bounded_context_name=read_generation_response.spec.bounded_context_name,
             aggregate_root_class_name=read_generation_response.spec.aggregate_root_class_name,
@@ -91,14 +94,21 @@ class MapToWriteTreeRequest(ts.Mapper, ports.WriteTreeRequest):
 
 class MapToGenerateTreeResponseWhenWritten(ts.Mapper, client.GenerateTreeResponse):
 
-    def __init__(self, write_tree_response: ports.WriteTreeResponse) -> None:
-        super().__init__(problems=(), paths=write_tree_response.paths)
+    def __init__(self, write_tree_response: ports.WriteTreeResponse, tree: domain.Tree) -> None:
+        super().__init__(
+            problems=(),
+            paths=write_tree_response.paths,
+            printed=tuple(
+                client.PrintedFile(path=str(generated_file.path()), text=str(generated_file.content()))
+                for generated_file in tree.printed()
+            ),
+        )
 
 
 class MapToGenerateTreeResponseWithProblems(ts.Mapper, client.GenerateTreeResponse):
 
     def __init__(self, tree: domain.Tree) -> None:
-        super().__init__(problems=tuple(str(text) for text in tree.problems()), paths=())
+        super().__init__(problems=tuple(str(text) for text in tree.problems()), paths=(), printed=())
 
 
 class TreeService(ts.ApplicationService):
@@ -112,11 +122,11 @@ class TreeService(ts.ApplicationService):
         read_generation_response = self._generation_reader.read_generation(
             MapToReadGenerationRequest(generation_paths)
         )
-        tree = domain.Tree(MapToTreeSpec(read_generation_response))
+        tree = domain.Tree(MapToTreeSpec(generate_tree_request, read_generation_response))
         match tree.health():
             case domain.Health.CLEAN:
                 write_tree_response = self._tree_writer.write_tree(MapToWriteTreeRequest(generation_paths, tree))
-                return MapToGenerateTreeResponseWhenWritten(write_tree_response)
+                return MapToGenerateTreeResponseWhenWritten(write_tree_response, tree)
             case domain.Health.PROBLEMS:
                 return MapToGenerateTreeResponseWithProblems(tree)
             case _ as never:
