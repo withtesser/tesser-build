@@ -131,6 +131,14 @@ host's own launch knobs (a listen port) may default locally, inside `from_env`.
 Construction mechanics: `python.md#inbound-handlers-and-hosts`; verified impl:
 `examples/python-app/srv/` (`http/main.py`, `cli/main.py`).
 
+**With a web framework (FastAPI), the framework holds the route table** — and
+the routes are still methods, never functions nested in the host's `run`
+(TB023). A second host class, `HttpRoutes(ts.Host)`, holds the handler and
+carries one method per route; `HttpHost.run` registers each with
+`api.add_api_route(path, http_routes.<operation>, methods=[...])` and mounts
+the engine endpoint (`/restate`) in the same process. Verified impl: the
+generator's `host = "http"` output (`generator/specs/library.toml`).
+
 The same route-and-transform split holds per mechanism: the **HTTP** host maps
 `(method, path)` → handler and moves bytes; the **CLI** host maps a command name
 → handler and moves argv/text. The CLI dispatcher is thinner — a command lookup
