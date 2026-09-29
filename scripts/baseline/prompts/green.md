@@ -8,12 +8,13 @@ spawn subagents.
 
 Task: make the **red acceptance test** for the story in
 `story-drafting/README.md` pass, by building the story's behavior in the
-`story-drafting/` app tree. The last commit on this branch added that test.
+`story-drafting/` app tree. The commit on this branch that added
+`story-drafting/tests/test_acceptance.py` is the red commit.
 
 Done means all of these hold:
 
 1. The acceptance test passes, and its assertions still say what they said in
-   the last commit. You may change how it is set up, not what it checks.
+   the red commit. You may change how it is set up, not what it checks.
 2. `scripts/verify story-drafting` is green: tessercheck with zero findings,
    `mypy --strict`, and pytest.
 3. You built what the story needs and nothing the README puts out of scope.
@@ -26,7 +27,8 @@ Restate server is at ingress {ingress} and admin {admin}; serve hosts only on
 ports {port}–{port_last}. Run the gate as
 `RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} scripts/verify story-drafting`.
 Other agents run side by side on other ports: don't touch processes you
-didn't start. Paid APIs are allowed. Work only inside the worktree.
+didn't start. Do not add `skip` lines to any `.tesser-root`. Work only
+inside the worktree.
 
 When done, commit your work on the current branch, staging files
 individually. Do not create worktrees or branches, do not push, and do not open
