@@ -24,7 +24,6 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 worked example.
 
 **Not rendered yet** (a composition that uses one is refused, with the reason):
-`[signals]` and `signal.await_...` steps;
 `[shapes]`, `[messages]`, `[enums]`, list types, and `[aggregate.commands]`
 (with `commands` and `calls_on` on an action). Every read must be a spec field
 of the same type.
@@ -182,11 +181,22 @@ is built, then the request. A field nothing holds is a problem.
 [orchestrator.operations.arrange_loan]
 request = ["loan_id", "borrower", "title"]   # must include the identity: it keys the workflow
 response = ["loan_id"]
-steps = ["actions.notice.send_notice", "actions.loan.record_loan"]
+steps = ["actions.notice.send_notice", "actions.loan.record_loan", "signal.await_return_book"]
 ```
 
-Steps, in order: `actions.<key>.<operation>` runs an action. Fields are
+Steps, in order: `actions.<key>.<operation>` runs an action;
+`signal.await_<signal>` waits on the signal's durable promise. Fields are
 filled as for client steps.
+
+### `[signals.<name>]` — a durable promise (optional)
+
+```toml
+[signals.return_book]
+payload = ["loan_id"]                 # what the promise resolves with: the await's answer
+resolved = false                      # required false: only the wait is rendered
+```
+
+The wait takes the identity. Resolving the promise is not rendered.
 
 ### `[actions.<key>]` — classes of actions, one port each
 
@@ -305,6 +315,7 @@ Restate endpoint at `engine_path`), `pyproject.toml`, `requirements-dev.txt`,
 
 **Derived names** (never written in a spec): `<Aggregate>Service`,
 `<Aggregate>Orchestrator` and its `<Aggregate>OrchestratorRelay`,
+`<Aggregate>OrchestratorSignalRelay` and a `<SIGNAL>_PROMISE` constant,
 `<Key>Actions` and its `<Key>ActionsRelay` and `<Key>ApplicationClient`,
 `<Operation>Request` / `<Operation>Response` for every operation, the engine
 containers (one per class of actions, named `<Key>Actions`, and the workflow,
@@ -320,7 +331,7 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    its steps in order; exactly one orchestrator operation whose request holds
-   the identity; its actions (one port each); every port.
+   the identity; its actions (one port each) and any signal; every port.
 4. `implementations.toml`: `app`; an implementation for every port;
    `[engine.restate]` with its three variables; an environment; `[hosts.http]`.
 5. `generator.toml`: two sample values for every field.

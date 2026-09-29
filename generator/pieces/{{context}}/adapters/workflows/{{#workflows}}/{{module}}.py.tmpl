@@ -49,6 +49,13 @@ class {{Dispatcher}}(ts.Dispatcher):
     async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
         return await self._restate_workflow_context.service_call(self._{{activity_param}}.handler, {{param}})
 {{/run_methods}}
+{{#await_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        return relays.{{Returns}}Snapshot().deserialize(
+            await self._restate_workflow_context.promise(relays.{{PROMISE}}, serde=restate_serde.BytesSerde()).value()
+        )
+{{/await_methods}}
 {{/invocation_dispatchers}}
 
 

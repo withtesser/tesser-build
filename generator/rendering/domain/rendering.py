@@ -939,7 +939,7 @@ class Model(ts.Entity):
         self._reads = [(str(field), str(type_text)) for field, type_text in aggregate_table["reads"].items()]
         self._read_types = dict(self._reads)
         self._commands = dict(aggregate_table.get("commands", {}))
-        for table in ("shapes", "messages", "enums", "signals"):
+        for table in ("shapes", "messages", "enums"):
             if composition.get(table):
                 raise ValueError(f"[{table}] is not rendered yet")
         if self._commands:
@@ -1070,6 +1070,18 @@ class Model(ts.Entity):
                 declared.append(("relays", module, Operation + "Response", "Response", list(operation["response"]), True, Actions, False))
                 self._relay_ops[Actions + "Relay"].append(
                     (f"run_{operation_name}", operation_name + "_request", Operation + "Request", Operation + "Response", operation_name))
+        signals = composition.get("signals", {})
+        if signals:
+            module = str(Word(self._Orchestrator).snake()) + "_signal_relay"
+            self._relay_ops[self._Orchestrator + "SignalRelay"] = []
+            for signal_name, signal in signals.items():
+                if signal.get("resolved", False):
+                    raise ValueError(f"signals.{signal_name} is resolved, and this renderer renders only the wait")
+                Signal = str(Word(str(signal_name)).pascal())
+                declared.append(("relays", module, f"Await{Signal}Request", "Request", [self._identity], False, self._Orchestrator + "Signal", False))
+                declared.append(("relays", module, f"Await{Signal}Response", "Response", list(signal.get("payload", [])), True, self._Orchestrator + "Signal", False))
+                self._relay_ops[self._Orchestrator + "SignalRelay"].append(
+                    (f"await_{signal_name}", f"await_{signal_name}_request", f"Await{Signal}Request", f"Await{Signal}Response", str(signal_name)))
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             declared.append(("client", "client", Operation + "Request", "Request", list(operation["request"]), False, "", False))
@@ -1507,6 +1519,16 @@ class Model(ts.Entity):
                     target_name = Step + "Request"
                     returned_name = Step + "Response"
                     steps.append((str(key), action, Relay))
+                elif kind == "signal":
+                    if not rest.startswith("await_"):
+                        raise ValueError(f"step {step} is a signal step that does not await")
+                    signal = rest.removeprefix("await_")
+                    Relay = Orchestrator + "SignalRelay"
+                    Step = str(Word(signal).pascal())
+                    call = rest
+                    local = rest + "_response"
+                    target_name = f"Await{Step}Request"
+                    returned_name = f"Await{Step}Response"
                 else:
                     raise ValueError(f"orchestrator step {step} is of a kind this renderer does not know: {kind}")
                 holder = str(Word(Relay).snake())
@@ -1595,15 +1617,18 @@ class Model(ts.Entity):
         self._binding["ports_exports"] = ports_exports
         relays: list[dict[str, object]] = []
         relays_exports: list[dict[str, object]] = []
+        signal_module = str(Word(self._Orchestrator).snake()) + "_signal_relay"
         for Relay, relay_operations in self._relay_ops.items():
             module = str(Word(Relay).snake())
             records = [self._frames[("relays", str(r.name()))] for r in self._packages["relays"].declared(Word(module))]
+            promises = [{"PROMISE": str(Word(operation).upper()) + "_PROMISE", "promise": operation}
+                        for _, _, _, _, operation in relay_operations] if module == signal_module else []
             relays.append({
-                "module": module, "Relay": Relay, "records": records,
+                "module": module, "Relay": Relay, "promises": promises, "records": records,
                 "operations": [{"method": method, "param": param, "Request": request, "Returns": returns}
                                for method, param, request, returns, _ in relay_operations],
             })
-            names = []
+            names = [str(p["PROMISE"]) for p in promises]
             for record in records:
                 names.append(str(record["Record"]))
                 if record["snapshot"]:
@@ -1868,17 +1893,24 @@ class Model(ts.Entity):
                            "ingress_private": [], "handler_names": f'"{operation_name}"'})
         self._binding["containers"] = containers
         dispatchers: list[dict[str, object]] = []
+        awaited: list[dict[str, object]] = []
         for dependency in self._orchestrator_dependencies:
             Relay = str(dependency["dependency_type"]).removeprefix("relays.")
             dispatcher: dict[str, object] = {"Dispatcher": "RestateInvocation" + Relay}
             dispatcher_activities: list[dict[str, object]] = []
             run_methods: list[dict[str, object]] = []
+            await_methods: list[dict[str, object]] = []
             for method, param, request_name, returns, operation in self._relay_ops[Relay]:
-                activity = next(a for a in activities if a["operation"] == operation)
-                dispatcher_activities.append({"activity_param": activity["activity_param"], "Activity": activity["Activity"]})
-                run_methods.append({"method": method, "param": param, "Request": request_name, "Returns": returns,
-                                    "activity_param": activity["activity_param"]})
-            dispatcher.update(dispatcher_activities=dispatcher_activities, run_methods=run_methods)
+                if method.startswith("run_"):
+                    activity = next(a for a in activities if a["operation"] == operation)
+                    dispatcher_activities.append({"activity_param": activity["activity_param"], "Activity": activity["Activity"]})
+                    run_methods.append({"method": method, "param": param, "Request": request_name, "Returns": returns,
+                                        "activity_param": activity["activity_param"]})
+                else:
+                    await_methods.append({"method": method, "param": param, "Request": request_name, "Returns": returns,
+                                          "PROMISE": str(Word(operation).upper()) + "_PROMISE"})
+            dispatcher.update(dispatcher_activities=dispatcher_activities, run_methods=run_methods, await_methods=await_methods)
+            awaited.extend(await_methods)
             dispatchers.append(dispatcher)
         Operation = str(Word(operation_name).pascal())
         request = self._messages[("relays", Operation + "Request")]
@@ -1896,6 +1928,8 @@ class Model(ts.Entity):
             "invocation_dispatchers": dispatchers, "workflow_activities": activities,
             "served_containers": ", ".join(str(c["container_attr"]) for c in containers),
             "keyed_request_sample": keyed,
+            "awaited_promises": [{"PROMISE": m["PROMISE"]} for m in awaited],
+            "awaits": [{}] if awaited else [],
         }
         self._binding["workflows"] = [workflow]
         start_methods = [{"method": method, "param": param, "Request": request_name, "Returns": returns,

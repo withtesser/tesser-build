@@ -7,6 +7,10 @@ import typing
 import tesser.application as ts
 
 import tesser.errors as errors
+{{#promises}}
+
+{{PROMISE}}: typing.Final[str] = "{{promise}}"
+{{/promises}}
 {{#records}}
 
 

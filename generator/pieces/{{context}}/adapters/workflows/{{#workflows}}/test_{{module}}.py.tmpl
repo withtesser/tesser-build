@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
 import typing
@@ -68,6 +69,7 @@ class Test{{Workflow}}:
         )
         admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
         registered = httpx.Response(503)
+        waiting: list[dict[str, str]] = []
         try:
             for _ in range(50):
                 registered = await admin.post(
@@ -91,6 +93,22 @@ class Test{{Workflow}}:
                     key=workflow_key,
                     arg=relays.{{Operation}}Request({{keyed_request_sample}}),
                 )
+{{#awaits}}
+            for _ in range(100):
+                awaiting = await admin.post(
+                    "/query",
+                    headers={"accept": "application/json"},
+                    json={
+                        "query": "SELECT i.id, i.status, j.entry_lite_json FROM sys_invocation i "
+                        "JOIN sys_journal j ON j.id = i.id "
+                        f"WHERE i.target = '{parent_target}' AND j.entry_type = 'Command: GetPromise'"
+                    },
+                )
+                waiting = awaiting.json()["rows"]
+                if waiting:
+                    break
+                await asyncio.sleep(0.1)
+{{/awaits}}
             invoked = httpx.Response(503)
             for _ in range(100):
                 invoked = await admin.post(
@@ -106,6 +124,10 @@ class Test{{Workflow}}:
                 await asyncio.sleep(0.1)
 
             assert foreign.value.status_code == 400
+            assert [
+                (row["status"] in ("running", "suspended"), json.loads(row["entry_lite_json"])["Command"]["GetPromise"]["key"])
+                for row in waiting
+            ] == [{{#awaited_promises}}(True, relays.{{PROMISE}}), {{/awaited_promises}}]
 {{#workflow_activities}}
 {{#keyed}}
             assert [received.{{identity}} for received in fake_{{application_client}}.received] == [workflow_key]
@@ -117,6 +139,8 @@ class Test{{Workflow}}:
 {{/workflow_activities}}
             ]
         finally:
+            for row in waiting:
+                await admin.patch(f"/invocations/{row['id']}/kill")
             if registered.is_success:
                 await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
             await admin.aclose()

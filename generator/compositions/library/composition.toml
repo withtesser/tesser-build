@@ -37,7 +37,12 @@ serves = ["s-1", "s-1-b-1"]
 [orchestrator.operations.arrange_loan]
 request = ["loan_id", "borrower", "title"]
 response = ["loan_id"]
-steps = ["actions.notice.send_notice", "actions.loan.record_loan"]
+steps = ["actions.notice.send_notice", "actions.loan.record_loan", "signal.await_return_book"]
+serves = ["s-1"]
+
+[signals.return_book]
+payload = ["loan_id"]
+resolved = false
 serves = ["s-1"]
 
 [actions.notice]
