@@ -4,13 +4,6 @@ The story-drafting skill: a two-step agent skill backed by a durable Restate
 workflow. Step 1: an agent turns a job-to-be-done into drafts. Step 2: the
 developer picks one — and the JTBD waits at the pick, durably, until they do.
 
-It is also this repo's baseline for measuring how agents build a tesser app
-from one user story: first the red acceptance test, then the implementation
-that turns it green. The tree here is the chosen green trial (green-v2-1); the
-baseline trials start from the empty scaffold tagged `story-drafting-scaffold-v2`
-(`scripts/baseline/prepare red story-drafting-scaffold-v2 <trial> <slot>`), and
-their numbers are in `scripts/baseline/results/`.
-
 ## The job-to-be-done
 
 > **When** I'm working through a multi-step piece of work with an agent
