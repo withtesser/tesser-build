@@ -557,13 +557,19 @@ run_layout() {
 # the root tier against it — an HTTP tree's root tier reaching the served host
 # at the address in its host_url variable. The local defaults are a `generator`
 # database and a Restate server of its own on 48080/49070, so a local run never
-# re-registers another tree's services.
+# re-registers another tree's services. Then every composition in
+# generator/compositions/ is rendered by the composition-driven renderer
+# (srv.cli.render) into a scratch directory and the rendered tree is gated:
+# tessercheck zero findings, mypy --strict, and pytest over every tier but the
+# root (a rendered tree has no root tier; its acceptance tests are written by
+# hand), against the same Restate server, reached through the variables its
+# implementations.toml names for the engine.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
-  MYPYPATH=.:../tesser-py mypy --strict app protocol srv tests trees conftest.py || return 1
+  MYPYPATH=.:../tesser-py mypy --strict app protocol rendering srv tests trees conftest.py || return 1
   step "pytest"
   pytest -q || return 1
   local scratch
@@ -572,7 +578,37 @@ run_generator() {
   for spec in specs/*.toml; do
     run_generated_tree "$spec" "$scratch/$(basename "$spec" .toml)" || return 1
   done
+  local composition
+  for composition in compositions/*/; do
+    run_rendered_tree "${composition%/}" "$scratch/rendered-$(basename "$composition")" || return 1
+  done
   rm -rf "$scratch"
+}
+
+run_rendered_tree() {
+  local composition=$1
+  local out=$2
+  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
+  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
+  local names ingress_env admin_env callback_env
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/implementations.toml") || return 1
+  read -r ingress_env admin_env callback_env <<<"$names"
+  step "render $composition into $out"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
+  step "$composition: tessercheck (zero findings over the rendered tree)"
+  tessercheck_tree "$out" || return 1
+  local packages=()
+  local d
+  for d in "$out"/*/; do
+    if [ -f "$d/__init__.py" ]; then packages+=("$(basename "$d")"); fi
+  done
+  if [ -f "$out/conftest.py" ]; then packages+=(conftest.py); fi
+  step "$composition: mypy --strict"
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
+  step "$composition: pytest every tier but the root, with no host served"
+  (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
+    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests)
 }
 
 run_generated_tree() {
