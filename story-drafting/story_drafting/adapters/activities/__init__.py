@@ -1,0 +1,1 @@
+from story_drafting.adapters.activities.restate_activities import RestateWriteDrafts as RestateWriteDrafts
