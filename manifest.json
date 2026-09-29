@@ -16,6 +16,7 @@
   "scripts": "ungated",
   "skills": "ungated",
   "specs-app": "app",
+  "story-drafting": "app",
   "tesser-py": "app",
   "tessercheck-cli": "ungated",
   "tessercheck-py": "app"

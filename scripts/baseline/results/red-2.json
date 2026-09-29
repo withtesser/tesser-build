@@ -1,0 +1,381 @@
+{
+  "run": {
+    "phase": "red",
+    "name": "red-2",
+    "base_ref": "baseline/story-drafting",
+    "base_sha": "6257643cfe1783c907e26312aba3512531dc9e2d",
+    "branch": "baseline/runs/red-2",
+    "prepared": "2026-09-28T20:37:23Z"
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 533.1,
+    "api_requests": 49,
+    "tokens": {
+      "input": 98,
+      "cache_read": 7729928,
+      "cache_write": 210620
+    },
+    "tool_calls_total": 51,
+    "tool_calls": {
+      "Bash": 46,
+      "Write": 3,
+      "Read": 2
+    },
+    "guidance": [
+      "bash:SKILL.md",
+      "bash:python.md",
+      "bash:testing.md",
+      "bash:python.md",
+      "bash:python.md"
+    ],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo> && grep -n \"run_story_drafting\\|run_durable_execution\" -A40 scripts/verify | head -200",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && sed -n 300,330p scripts/verify && ls generator generator/specs && cat generator/specs/*.toml | head -80 && cat generato",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/examples/minimal && cat .tesser-root; find . -type f -not -path '*/__pycache__/*' | sort | xargs wc -l; grep -n \"run_minim",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && grep -n \"tessercheck_tree()\" -A15 scripts/verify",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/tessercheck-py && source <repo>/.venv/bin/activate && PYTHONPATH=.:../tesser-py py",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/application/ports/run_repository.py <<'EOF'\nfrom __future__ import annotations\n\nimport en",
+        "findings": 13,
+        "by_code": {
+          "TB042": 12,
+          "TB081": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && mkdir -p drafting/application/client && touch drafting/application/client/__init__.py && cat > drafting/",
+        "findings": 3,
+        "by_code": {
+          "TB080": 2,
+          "TB074": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/application/test_run_service.py <<'EOF'\nfrom __future__ import annotations\n\nimport contex",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/adapters/repositories/file.py <<'EOF'\nfrom __future__ import annotations\n\nimport contextl",
+        "findings": 2,
+        "by_code": {
+          "TB074": 2
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/adapters/workflows/test_restate_conduct_run.py <<'EOF'\nfrom __future__ import annotations",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/component/component.py <<'EOF'\nfrom __future__ import annotations\n\nimport typing\n\nimport ",
+        "findings": 1,
+        "by_code": {
+          "TB042": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && sed -i '' '/StoryDraftingApp/d' app/__init__.py && cat > tests/test_story_drafting.py <<'EOF'\nfrom __fut",
+        "findings": 1,
+        "by_code": {
+          "TB071": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && python3 - <<'EOF'\np='tests/test_story_drafting.py'\ns=open(p).read()\nstart=s.index('JOB = (')\nend=s.index",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && python3 - <<'EOF'\np='scripts/verify'\ns=open(p).read()\nstart=s.index('run_story_drafting() {')\nend=s.index('\\n}\\n',start",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 14,
+    "final_message": "I wrote the red acceptance test and the structure the run goes through. It is committed on `baseline/runs/red-2` as `03fbb8f`. `scripts/verify story-drafting` passes the layout check, tessercheck (zero findings) and `mypy --strict` (\"no issues found in 43 source files\"). Pytest then gives 43 passed and 1 failed, and the one failure is the acceptance test.\n\n**The test:** `TestDraftingStoriesForAJob.test_a_started_run_waits_for_the_pick_with_its_drafted_stories_and_none_accepted` in `<repo>/story-drafting/tests/test_story_drafting.py`.\n\nIt loads the app from the environment and uses only the public client. It opens a run on a job, reads the run back by its id, and re-reads it for up to 10 seconds while it is still in the `\"drafting\"` step. It then asserts that:\n- the run id and job match,\n- `step == \"awaiting_pick\"`,\n- `drafted_stories` is not empty,\n- `accepted_stories == ()`.\n\n**The exact failure:**\n```\ntests/test_story_drafting.py:37: AssertionError\n>       assert get_run_response.run.step == \"awaiting_pick\"\nE       AssertionError: assert 'drafting' == 'awaiting_pick'\n```\nOpening the run succeeds, the run reads back, and the run id and job assertions pass. Restate's admin query shows each acceptance run's `RunOrchestrator/<run_id>/conduct_run` invocation as `completed`, so the run did go through the workflow.\n\n**What's built** (in `story-drafting/drafting/`, plus `app/` and `srv/restate/`):\n- **Client:** `DraftingClient` with `open_run` and `get_run`, plus the `RunRejected` and `RunNotFound` errors. I used `open_run` rather than `start_run` because tessercheck reserves the `start_` prefix for relays.\n- **Service:** `RunService` gets a run id, saves the run in the `\"drafting\"` step, and starts the workflow. It sends the start without waiting, because once the story is built the workflow will be waiting on the pick.\n- **Workflow:** `RestateConductRun` registers `conduct_run` on the `RunOrchestrator` "
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "03fbb8fb3907b9a160433b6b468cfbd1b188b1f9",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 44,
+    "lines_added": 1623,
+    "lines_removed": 14,
+    "py_impl_files": 29,
+    "py_impl_lines": 846,
+    "py_test_files": 14,
+    "py_test_lines": 735,
+    "files_outside_tree": [
+      "scripts/verify"
+    ]
+  },
+  "gate": {
+    "verify_exit": 1,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "serve the Restate endpoint on :9088 and register it at http://localhost:39070",
+      "pytest (against Restate at http://localhost:38080)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app.test_app.TestAppConfig::test_a_config_carries_each_component_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_a_missing_storage_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestAppLoader::test_the_loader_builds_an_app_from_its_repository",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.dispatchers.test_restate_http_run_orchestrator_relay.TestRestateHttpRunOrchestratorRelay::test_starting_a_run_sends_the_workflow_its_run_id_keys_and_answers_without_waiting",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file.TestFileRunStore::test_a_run_saved_in_one_transaction_is_loaded_in_the_next",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file.TestFileRunStore::test_each_issued_run_id_is_new",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.workflows.test_restate_conduct_run.TestRestateConductRun::test_conduct_run_answers_the_run_its_key_names_and_refuses_a_run_it_does_not",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_run_orchestrator.TestRunOrchestrator::test_conducting_a_run_answers_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_is_its_run_id_and_its_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunRequestSnapshot::test_a_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_is_its_run_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_run_orchestrator_relay.TestConductRunResponseSnapshot::test_a_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_opening_a_run_keeps_it_and_starts_conducting_it",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_an_opened_run_is_read_back_by_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_a_job_that_says_nothing_is_rejected_and_nothing_starts",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_run_service.TestRunService::test_a_run_that_was_never_opened_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestRunRejected::test_a_rejected_run_carries_its_code_and_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestRunNotFound::test_a_run_that_was_not_found_carries_its_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestErrors::test_the_declared_set_names_every_error_the_client_raises",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestConfig::test_a_config_carries_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_workflow_faces_the_ingress_and_holds_the_run_it_conducts",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_wired_client_reads_back_no_run_it_never_opened",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_is_identified_by_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRun::test_a_run_refuses_a_story_that_says_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_is_never_empty",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunId::test_a_run_id_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_says_something",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestJob::test_a_job_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_says_something",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStory::test_a_story_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_equality",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestStep::test_a_step_round_trips_through_its_string",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunPresence::test_presence_decides_the_lookup",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_run.TestRunPresence::test_a_presence_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv.restate.test_main.TestRestateHost::test_the_served_endpoint_discovers_the_run_orchestrator_workflow",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests.test_story_drafting.TestDraftingStoriesForAJob::test_a_started_run_waits_for_the_pick_with_its_drafted_stories_and_none_accepted",
+        "outcome": "failed",
+        "message": "AssertionError: assert 'drafting' == 'awaiting_pick'\n  \n  - awaiting_pick\n  + drafting"
+      }
+    ],
+    "test_outcomes": {
+      "passed": 43,
+      "failed": 1
+    },
+    "impl_coverage_pct": 92.6,
+    "impl_statements": 484
+  }
+}
