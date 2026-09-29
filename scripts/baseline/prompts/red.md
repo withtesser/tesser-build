@@ -16,15 +16,15 @@ Done means all of these hold:
    say.
 2. `scripts/verify story-drafting` gets past tessercheck with zero findings and
    past `mypy --strict`. Its pytest step fails.
-3. The acceptance test fails at the user story's **then**. Starting a run
+3. The acceptance test fails at the user story's **then**. Submitting a JTBD
    through the host succeeds and results are read back through the host. It
    must not fail before that: not on a host operation that isn't implemented,
    an import or collection error, a missing module, or a host or Restate
    server that isn't running.
-4. You have built the structure a run goes through — the client, the
-   service, the durable workflow on Restate, the host, and what the component
-   wires for them — but not the user story's behavior: no drafting, and no
-   waiting for the pick.
+4. You have built the structure a submitted JTBD goes through — the client,
+   the service, the durable workflow on Restate, the host, and what the
+   component wires for them — but not the user story's behavior: no
+   drafting, and no waiting for the pick.
 
 Follow the repo's `CLAUDE.md` and the `tesser-build` skill. You may extend the
 tree's `run_story_drafting` arm in `scripts/verify` (to serve and register the
