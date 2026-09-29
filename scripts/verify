@@ -75,11 +75,38 @@ run_python_app() {
   PYTHONPATH=. lint-imports || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict protocol kernel campaign linkpolicy reports app srv tests conftest.py || return 1
-  step "pytest"
+  # The root tier plays the user: it reaches the app only through a running
+  # host, so the arm serves the HTTP host and puts its address in
+  # PYTHON_APP_ADDRESS. Locally the default port is 9240.
+  local port="${PYTHON_APP_PORT:-9240}"
+  local address="127.0.0.1:$port"
+  step "serve the HTTP host on $address"
+  (exec env CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" \
+    PYTHONPATH=.:../../tesser-py python3 -W ignore::RuntimeWarning -m srv.http.main >/dev/null) &
+  local host=$!
+  local serving=1
+  for _ in $(seq 1 50); do
+    if curl -sf "http://$address/reports/links-by-verdict" >/dev/null; then
+      serving=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$serving" -ne 0 ]; then
+    echo "python-app: the HTTP host did not answer on $address" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (root tier against the HTTP host at $address)"
   # The app reads its own environment through the config repository, so the
   # runner supplies one — the same job a deploy does. Tests never inject it.
   CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
-    pytest -q || return 1
+    PYTHON_APP_ADDRESS="$address" pytest -q
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  [ "$status" -eq 0 ] || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
 }
@@ -158,11 +185,12 @@ run_minimal() {
 # One FastAPI host serves POST /submissions, /orders and /purchases and mounts
 # the Restate endpoint at /restate; the engine never touches the domain. The
 # adapter tests exercise the real engine (testing.md rule 10): the arm serves
-# the host here and registers it with the Restate admin API for the root-tier
-# tests, and each activities, workflows, and dispatchers test serves its own
-# registrations under fresh service names at DURABLE_CALLBACK_HOST, registers
-# them, calls through the ingress with the objects' handlers, and reads what
-# the engine recorded in sys_invocation. The app reads its own environment through the config
+# the host here, registers it with the Restate admin API, and puts its address
+# in DURABLE_EXECUTION_HOST for the root-tier tests, which reach the app only
+# through it. The context test and each activities, workflows, and
+# dispatchers test serve their own registrations under fresh service names at
+# DURABLE_CALLBACK_HOST and call through the ingress; the adapter tests then
+# read what the engine recorded in sys_invocation. The app reads its own environment through the config
 # repository, so the runner supplies it — the same job a deploy does. Tests
 # never inject it. CI provides a Restate service container; locally the
 # defaults are a server of its own on 18080/19070, so a local run never
@@ -201,7 +229,8 @@ run_durable_execution() {
     return 1
   fi
   step "pytest (against Restate at $ingress)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" pytest -q
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
+    DURABLE_EXECUTION_HOST="http://127.0.0.1:$port" pytest -q
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -211,10 +240,11 @@ run_durable_execution() {
 # The minimal tree with a real database behind it: the same two contexts, each
 # with an asyncpg repository behind a store that owns the transaction — it is
 # Postgres-only, there is no memory backend to fall back to — an async
-# client/service/port chain, and an e2e that bootstraps
-# through the app loader alone. The app reads its own environment through
-# the config repository, so the runner supplies it — the same job a deploy
-# does. Tests never inject it. The gate needs a reachable Postgres at that
+# client/service/port chain, and an e2e that runs the CLI host as a
+# subprocess and speaks only protocol to it. The app reads its own
+# environment through the config repository, so the runner supplies it — the
+# same job a deploy does, and the e2e passes it on to the host. Tests never
+# inject it. The gate needs a reachable Postgres at that
 # coordinate — there is no skip, because a skipped e2e is a gate that passes
 # without checking anything. CI provides a service container; locally:
 #
@@ -302,24 +332,56 @@ EOF
 
 # The specs app: the product specification page and the service behind it.
 # One context (specification), one HTTP host that serves the page at / and
-# POST /jtbd/{id}/stories, and a root-tier Playwright test that drives the
-# page against the in-process host — so this tree needs a browser
-# (python -m playwright install chromium) as well as the Python tooling.
+# POST /jtbd/{id}/stories, and root-tier tests that play the user: one posts
+# a story over HTTP, one drives the page through Playwright — so this tree
+# needs a browser (python -m playwright install chromium) as well as the
+# Python tooling. The arm serves the HTTP host as a process on
+# SPECS_APP_PORT, puts its address in SPECS_APP_URL, and stops it after
+# pytest.
 run_specs_app() {
   cd "$ROOT/specs-app" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../tesser-py mypy --strict protocol specification app srv tests conftest.py || return 1
-  step "pytest"
-  pytest -q || return 1
+  local port="${SPECS_APP_PORT:-9283}"
+  local url="http://127.0.0.1:$port"
+  if curl -s -o /dev/null "$url/"; then
+    echo "specs-app: something already answers at $url; set SPECS_APP_PORT" >&2
+    return 1
+  fi
+  step "serve the HTTP host at $url"
+  SPECIFICATION_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" PYTHONPATH=.:../tesser-py PYTHONUNBUFFERED=1 \
+    python3 -W ignore::RuntimeWarning -m srv.http.main &
+  local host=$!
+  local ready=1
+  for _ in $(seq 1 50); do
+    if curl -sf -o /dev/null "$url/"; then
+      ready=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$ready" -ne 0 ] || ! kill -0 "$host" 2>/dev/null; then
+    echo "specs-app: the HTTP host did not come up at $url" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (root tests against the host at SPECS_APP_URL)"
+  SPECS_APP_URL="$url" pytest -q
+  local status=$?
+  kill -TERM "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
 }
 
 # The voice example: one context (calls) whose root-tier test places a call
-# for a person through the client and reads the person's name back by the
-# call id. place_call runs the CallOrchestrator workflow on Restate, and its
-# record_call action writes the call through an asyncpg repository; get_call
-# reads it back directly. The gate needs a reachable Postgres at
+# for a person through the CLI host (srv.cli.main place-call, run as a
+# subprocess) and reads the person's name back by the call id through the same
+# host (get-call), speaking only protocol. place_call runs the
+# CallOrchestrator workflow on Restate, and its record_call action writes the
+# call through an asyncpg repository; get_call reads it back directly. The gate needs a reachable Postgres at
 # CALLS_STORAGE and a Restate server at RESTATE_URL / RESTATE_ADMIN, and
 # has no skip. It serves the tree's Restate endpoint itself, registers it
 # with the server at VOICE_DEPLOYMENT (the address the server dials back),
@@ -336,7 +398,7 @@ run_voice() {
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
-  MYPYPATH=.:../../tesser-py mypy --strict app calls pgdatabase simulated srv tests conftest.py || return 1
+  MYPYPATH=.:../../tesser-py mypy --strict app calls pgdatabase protocol simulated srv tests conftest.py || return 1
   local storage="${CALLS_STORAGE:-postgres://tesser@localhost:5434/tesser}"
   local restate_url="${RESTATE_URL:-http://localhost:28080}"
   local admin="${RESTATE_ADMIN:-http://localhost:29070}"
@@ -440,7 +502,7 @@ run_generated_tree() {
   step "$spec: tessercheck (zero findings over the generated tree)"
   tessercheck_tree "$out" || return 1
   step "$spec: mypy --strict"
-  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase srv tests conftest.py) || return 1
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict app "$context" pgdatabase protocol srv tests conftest.py) || return 1
   step "$spec: serve the generated Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "$storage_env=$storage" "$ingress_env=$ingress" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m srv.restate.main "0.0.0.0:$port") &

@@ -120,6 +120,14 @@ MYPYPATH=.:../../tesser-py mypy --strict errors.py lifecycle.py serialization.py
 pytest -q
 ```
 
+The root `tests/` package plays the user: its acceptance test
+(`tests/test_reports.py`) reaches the app only through a running HTTP host at
+`PYTHON_APP_ADDRESS`, which `scripts/verify python-app` serves (on
+`127.0.0.1:9240` unless `PYTHON_APP_PORT` says otherwise) before it runs
+pytest. The rest of the root tier reads the tree's source and imports nothing
+of the app. That the app builds each component once is `app/test_app.py`'s
+claim, not the root tier's.
+
 One more gate runs in CI and does **not** pass on a bare run yet. The tree
 declares itself with the `ts.*` shells, so `tesser-py` is on both paths and
 **tessercheck** (`tessercheck-py/`) audits it:

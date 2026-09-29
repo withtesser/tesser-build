@@ -771,7 +771,7 @@ SHELL_PACKAGES: typing.Final[frozenset[str]] = frozenset(APP_PACKAGES) | {PROTOC
 KERNEL_TIER: typing.Final[str] = "kernel"
 
 TEST_TIER_SHELL: typing.Final[dict[str, frozenset[str]]] = {
-    ROOT_TESTS_TIER: SHELL_PACKAGES,
+    ROOT_TESTS_TIER: frozenset({PROTOCOL_PACKAGE, TESTS_ROLE}),
     SRV_TIER: frozenset({"srv", "app", "protocol"}),
     APP_TIER: frozenset({"app"}),
     PROTOCOL_TIER: frozenset({"protocol"}),
@@ -12307,13 +12307,12 @@ class Module(ts.Entity):
                 ))
             )
         if tier == ROOT_TESTS_TIER:
+            export = registry.export()
             for edge in self._edges:
                 target = str(edge._target)
                 lineno = int(edge._lineno)
-                pieces = target.split(".")
-                if pieces[0] not in contexts:
-                    continue
-                if len(pieces) >= 2 and pieces[1] in ("component", "client"):
+                top = target.split(".")[0]
+                if top not in tops or top in SHELL_PACKAGES or (export is not None and top == str(export)):
                     continue
                 found.append(
                     Violation(ViolationSpec(
@@ -12321,8 +12320,8 @@ class Module(ts.Entity):
                         lineno,
                         "TB070",
                         f"{module_name} imports {target}, but a test placed in "
-                        "the root tests package reaches a context only through its "
-                        "component and client; "
+                        "the root tests package reaches the app only through a running host, "
+                        "speaking protocol, or through the tree's exported kernel; "
                         "a test reaches only what its placement allows",
                     ))
                 )

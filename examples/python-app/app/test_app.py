@@ -102,6 +102,19 @@ def test_an_app_wires_its_components_to_each_other() -> None:
     assert [row.slug for row in rows] == ["a"]
 
 
+def test_an_app_builds_each_component_once_and_reuses_it_across_calls() -> None:
+    python_app = app.PythonApp(
+        app.AppConfig(_app_spec())
+    )
+    first = python_app.campaign.client
+
+    for _ in range(5):
+        python_app.campaign.client.list_links(campaign_client.ListLinksRequest())
+
+    assert python_app.campaign.client is first
+    python_app.close()
+
+
 def test_an_app_refuses_a_slice_its_component_rejects() -> None:
     with pytest.raises(errors.DomainError) as caught:
         app.PythonApp(

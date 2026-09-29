@@ -1,47 +1,39 @@
 from __future__ import annotations
 
-import app as app
-import campaign.client as campaign_client
-import reports.client as reports_client
+import uuid
+
 import tests.support as support
 
 
-def test_report_reads_both_components_in_process() -> None:
-    python_app = app.PythonApp(support.app_config())
-    try:
-        create_campaign_response = python_app.campaign.client.create_campaign(campaign_client.CreateCampaignRequest("100.00", "USD"))
-        python_app.campaign.client.add_link(
-            campaign_client.AddLinkRequest(
-                create_campaign_response.campaign.campaign_id, "a", "https://ok.example/a"
-            )
+def test_report_lists_each_added_link_with_its_verdict() -> None:
+    status, created = support.call_host("POST", "/campaigns", {"budget": {"amount": "100.00", "currency": "USD"}})
+    assert status == 201
+    slugs = {f"a-{uuid.uuid4().hex[:8]}", f"b-{uuid.uuid4().hex[:8]}"}
+    for slug in slugs:
+        status, _ = support.call_host(
+            "POST", "/links", {"campaign_id": created["campaign_id"], "slug": slug, "target_url": f"https://ok.example/{slug}"}
         )
-        python_app.campaign.client.add_link(
-            campaign_client.AddLinkRequest(
-                create_campaign_response.campaign.campaign_id, "b", "https://ok.example/b"
-            )
-        )
-        rows = python_app.reports.client.links_by_verdict(reports_client.LinksByVerdictRequest()).links
-        assert {r.slug for r in rows} == {"a", "b"}
-        assert all(r.decision == "allowed" and r.reason == "ok" for r in rows)
-    finally:
-        python_app.close()
+        assert status == 200
+    status, report = support.call_host("GET", "/reports/links-by-verdict")
+    assert status == 200
+    links = report["links"]
+    assert isinstance(links, list)
+    rows = [row for row in links if row["slug"] in slugs]
+    assert {row["slug"] for row in rows} == slugs
+    assert all(row["decision"] == "allowed" and row["reason"] == "ok" for row in rows)
 
 
 def test_blocked_destination_never_becomes_a_link() -> None:
-    python_app = app.PythonApp(support.app_config())
-    try:
-        create_campaign_response = python_app.campaign.client.create_campaign(campaign_client.CreateCampaignRequest("100.00", "USD"))
-        try:
-            python_app.campaign.client.add_link(
-                campaign_client.AddLinkRequest(
-                    create_campaign_response.campaign.campaign_id, "bad", "http://ok.example/a"
-                )
-            )
-        except campaign_client.TargetBlocked:
-            pass
-        assert (
-            python_app.reports.client.links_by_verdict(reports_client.LinksByVerdictRequest()).links
-            == ()
-        )
-    finally:
-        python_app.close()
+    status, created = support.call_host("POST", "/campaigns", {"budget": {"amount": "100.00", "currency": "USD"}})
+    assert status == 201
+    slug = f"bad-{uuid.uuid4().hex[:8]}"
+    status, problem = support.call_host(
+        "POST", "/links", {"campaign_id": created["campaign_id"], "slug": slug, "target_url": "http://ok.example/a"}
+    )
+    assert status == 409
+    assert problem["type"] == "/problems/target_blocked"
+    status, report = support.call_host("GET", "/reports/links-by-verdict")
+    assert status == 200
+    links = report["links"]
+    assert isinstance(links, list)
+    assert [row for row in links if row["slug"] == slug] == []

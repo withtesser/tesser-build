@@ -1,71 +1,43 @@
 from __future__ import annotations
 
 import os
+import pathlib
+import subprocess
+import sys
+import uuid
 
-import alpha.client as alpha_client
-import app
-import beta.client as beta_client
-import pgdatabase.database as pgdatabase_database
+import protocol
 
 
-class TestLoadedApp:
+class TestCliHost:
 
-    async def test_the_loaded_app_writes_and_reads_both_contexts(self) -> None:
-        database = pgdatabase_database.Database(pgdatabase_database.DatabaseRequest(os.environ["ALPHA_STORAGE"]))
-        await database.open()
-        async with database.acquire() as connection:
-            await connection.execute("DROP TABLE IF EXISTS widgets")
-        await database.close()
-        asyncpg_app = app.load()
-        await asyncpg_app.open()
-        hold_key_response = await asyncpg_app.beta.client.hold_key(
-            beta_client.HoldKeyRequest(key="e2e-held")
+    def test_an_added_part_is_stored_and_a_second_add_of_its_name_is_refused(self) -> None:
+        tree = pathlib.Path(__file__).resolve().parent.parent
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        name = f"e2e-{uuid.uuid4().hex}"
+        taken_request = protocol.CliRequest(args=(f"{name}-taken", "p"))
+        held_request = protocol.CliRequest(args=(name, name))
+        repeated_request = protocol.CliRequest(args=(name, "q"))
+        taken = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", *taken_request.args],
+            cwd=tree, env=env, capture_output=True, text=True, check=False,
         )
-        checked = await asyncpg_app.beta.client.check_key(
-            beta_client.CheckKeyRequest(key="e2e-held")
+        held = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", *held_request.args],
+            cwd=tree, env=env, capture_output=True, text=True, check=False,
         )
-        unheld = await asyncpg_app.beta.client.check_key(
-            beta_client.CheckKeyRequest(key="e2e-never-held")
+        repeated = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", *repeated_request.args],
+            cwd=tree, env=env, capture_output=True, text=True, check=False,
         )
-        taken = await asyncpg_app.alpha.client.add_part(
-            alpha_client.AddPartRequest(name="e2e-taken", part="p")
+        assert protocol.CliResponse(
+            exit_code=taken.returncode, line=protocol.Line(text=taken.stdout.strip())
+        ) == protocol.CliResponse(exit_code=0, line=protocol.Line(text=f"{name}-taken p kept"))
+        assert protocol.CliResponse(
+            exit_code=held.returncode, line=protocol.Line(text=held.stdout.strip())
+        ) == protocol.CliResponse(exit_code=0, line=protocol.Line(text=f"{name} {name} released"))
+        assert protocol.CliResponse(
+            exit_code=repeated.returncode, line=protocol.Line(text=repeated.stdout.strip())
+        ) == protocol.CliResponse(
+            exit_code=1, line=protocol.Line(text=f"widget {name!r} is already stored")
         )
-        found = await asyncpg_app.alpha.client.find_widget(
-            alpha_client.FindWidgetRequest(name="e2e-taken")
-        )
-        missing = await asyncpg_app.alpha.client.find_widget(
-            alpha_client.FindWidgetRequest(name="e2e-never-added")
-        )
-        kept = await asyncpg_app.alpha.client.add_part(
-            alpha_client.AddPartRequest(name="e2e-held", part="e2e-held")
-        )
-        cleared = await asyncpg_app.alpha.client.find_widget(
-            alpha_client.FindWidgetRequest(name="e2e-held")
-        )
-        dropped = await asyncpg_app.alpha.client.add_part(
-            alpha_client.AddPartRequest(name="e2e-never-held", part="e2e-never-held")
-        )
-        refused = await asyncpg_app.alpha.client.find_widget(
-            alpha_client.FindWidgetRequest(name="e2e-never-held")
-        )
-        reloaded = await asyncpg_app.alpha.client.take_part(
-            alpha_client.TakePartRequest(name="e2e-never-held", part="q")
-        )
-        retaken = await asyncpg_app.alpha.client.take_part(
-            alpha_client.TakePartRequest(name="e2e-taken", part="q")
-        )
-        await asyncpg_app.close()
-        assert hold_key_response.key == "e2e-held"
-        assert checked.held == "yes"
-        assert unheld.held == "no"
-        assert taken.name == "e2e-taken"
-        assert found.found == "yes"
-        assert missing.found == "no"
-        assert kept.name == "e2e-held"
-        assert kept.standing == "kept"
-        assert cleared.found == "yes"
-        assert dropped.name == "e2e-never-held"
-        assert dropped.standing == "released"
-        assert refused.found == "yes"
-        assert reloaded.standing == "released"
-        assert retaken.part == "q"

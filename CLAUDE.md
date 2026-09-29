@@ -13,8 +13,8 @@ candidate mutation-testable VO base — the mutmut-visibility claim is asserted
 by the ecosystem test in `tesser-py/tests/ecosystem/mutmut/`), a generator
 (`generator/` — writes a starting tesser app tree from a TOML spec: a context
 whose service runs a Restate workflow, whose orchestrator runs one action, and
-whose action writes to Postgres, with its sibling tests and a client-only
-acceptance test; gated by generating every spec in `generator/specs/` and
+whose action writes to Postgres, with its sibling tests, a CLI host, and an
+acceptance test that drives that host as a subprocess; gated by generating every spec in `generator/specs/` and
 running the generated tree's own gates), an agent skill
 (`skills/tesser-build/` — Python construction guidance, copy-in distributed to
 consumers), and human docs (`docs/start-here.md`, `docs/faq.md`). If you are

@@ -1,11 +1,16 @@
 # Voice acceptance tests
 
-The automated name-taking test loads the application with `app.load()` and
-uses its production clients, gateways, Restate workflow/actions, and Postgres
-repository. Three simulated people join real LiveKit rooms and reply with
-model-generated speech. No SIP trunk or telephone number is needed.
+The automated name-taking test plays the user: it never loads the
+application in its own process. It places each call by running the CLI host
+(`python -m srv.cli.main place-call`, which prints the call id) as a
+subprocess, and reads the saved name back through the same host
+(`python -m srv.cli.main get-call <call_id>`, which prints the person's name),
+speaking only `protocol`. Behind the hosts run the production clients,
+gateways, Restate workflow/actions, and Postgres repository. Three simulated
+people join real LiveKit rooms and reply with model-generated speech. No SIP
+trunk or telephone number is needed.
 
-The test checks each saved name through `get_call` and checks the final agent
+The test checks each saved name through `get-call` and checks the final agent
 transcription received by the person in the room. It does not independently
 transcribe the agent's audio. The simulated person is instructed to provide
 their name only when asked.
@@ -22,7 +27,8 @@ Use an agent name not served by another worker. The verification script starts
 the production Restate HTTP host and registers it with Restate, and with
 `VOICE_EVALS=1` it also starts the production LiveKit agent server
 (`srv.livekit.agent_server`) under that agent name. The tests are clients of
-both: each one places a call through the loaded app while a simulated person
+both, and each one runs the CLI host once per command: it places a call
+through `place-call` while a simulated person
 (`simulated/person.py`, a directory the analyzer does not govern) watches
 LiveKit for the room the agent was dispatched into, joins it as `person`, and
 answers either when asked or over the question.

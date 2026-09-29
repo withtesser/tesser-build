@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import os
 import pathlib
+import subprocess
+import sys
 
 import tesser.testing as ts
-
-import repo.client as repo_client
-import repo.component as repo_component
 
 
 @ts.helper
@@ -44,44 +44,43 @@ def _repo(root: pathlib.Path) -> pathlib.Path:  # tesser:debt TB073
     return root
 
 
-def test_a_consistent_repo_checks_clean(tmp_path: pathlib.Path) -> None:
-    check_layout_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.check_layout(repo_client.CheckLayoutRequest(repo_root=str(_repo(tmp_path))))
-    assert check_layout_response.problems == ()
-    assert check_layout_response.counts == ("6", "1")
+@ts.helper
+def _host(module: str, repo_root: pathlib.Path) -> subprocess.CompletedProcess[str]:  # tesser:debt TB073
+    tree = pathlib.Path(__file__).resolve().parents[1]
+    return subprocess.run(
+        [sys.executable, "-m", module, str(repo_root)],
+        cwd=tree,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join([str(tree), str(tree.parent / "tesser-py")]),
+        },
+        capture_output=True,
+        text=True,
+    )
 
 
-def test_an_unregistered_directory_is_reported_through_the_stack(tmp_path: pathlib.Path) -> None:
+def test_a_consistent_repo_checks_clean_and_lists_its_app_trees(tmp_path: pathlib.Path) -> None:
+    _repo(tmp_path)
+    check = _host("srv.cli.check", tmp_path)
+    assert check.returncode == 0, check.stderr
+    assert "layout: 6 rows, 1 app trees" in check.stdout
+    assert check.stderr == ""
+    trees = _host("srv.cli.trees", tmp_path)
+    assert trees.returncode == 0, trees.stderr
+    assert trees.stdout == "appone\n"
+
+
+def test_a_drifted_repo_fails_the_check_and_names_each_problem(tmp_path: pathlib.Path) -> None:
     _repo(tmp_path)
     (tmp_path / "utils").mkdir()
-    check_layout_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.check_layout(repo_client.CheckLayoutRequest(repo_root=str(tmp_path)))
-    assert any("'utils' has no manifest.json row" in p for p in check_layout_response.problems)
-
-
-def test_trees_lists_app_rows_through_the_client(tmp_path: pathlib.Path) -> None:
-    list_trees_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.list_trees(repo_client.ListTreesRequest(repo_root=str(_repo(tmp_path))))
-    assert list_trees_response.trees == ("appone",)
-
-
-def test_a_malformed_manifest_is_one_message_not_a_crash(tmp_path: pathlib.Path) -> None:
-    _repo(tmp_path)
-    (tmp_path / "manifest.json").write_text("{ truncated")
-    check_layout_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.check_layout(repo_client.CheckLayoutRequest(repo_root=str(tmp_path)))
-    assert len(check_layout_response.problems) == 1
-    assert "manifest.json is unreadable" in check_layout_response.problems[0]
-
-
-def test_a_nonexistent_root_is_a_problem_not_a_crash(tmp_path: pathlib.Path) -> None:
-    check_layout_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.check_layout(
-        repo_client.CheckLayoutRequest(repo_root=str(tmp_path / "no-such-dir"))
-    )
-    assert len(check_layout_response.problems) == 1
-    assert "is not a directory" in check_layout_response.problems[0]
-
-
-def test_a_stale_python_floor_is_reported_through_the_stack(tmp_path: pathlib.Path) -> None:
-    _repo(tmp_path)
     (tmp_path / "appone" / "pyproject.toml").write_text(
         '[project]\nname = "appone"\nrequires-python = ">=3.11"\n'
     )
-    check_layout_response = repo_component.Repo(repo_component.Config(repo_component.Spec())).client.check_layout(repo_client.CheckLayoutRequest(repo_root=str(tmp_path)))
-    assert any("the Python floor is 3.12" in p for p in check_layout_response.problems), check_layout_response.problems
+    check = _host("srv.cli.check", tmp_path)
+    assert check.returncode == 1
+    assert check.stdout == ""
+    assert "directory 'utils' has no manifest.json row" in check.stderr
+    assert "the Python floor is 3.12" in check.stderr
+    trees = _host("srv.cli.trees", tmp_path)
+    assert trees.returncode == 1
+    assert trees.stdout == ""

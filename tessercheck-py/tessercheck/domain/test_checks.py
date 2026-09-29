@@ -5055,7 +5055,7 @@ def test_a_context_tier_test_reaches_its_whole_context_and_a_neighbours_applicat
     )
 
 
-def test_a_root_test_reaches_a_context_only_through_component_and_client() -> None:
+def test_a_root_test_reaches_the_app_only_through_a_host() -> None:
     findings = tuple(
                    f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
                    for v in domain.Codebase(_spec(sources=(
@@ -5073,6 +5073,7 @@ def test_a_root_test_reaches_a_context_only_through_component_and_client() -> No
                 "import shop.domain.thing as shop_thing\n"
                 "import shop.application.service as shop_service\n"
                 "import app.wire as app_wire\n"
+                "import protocol.cli as protocol_cli\n"
                 "import tests.support as support\n"
                 "def test_ok() -> None:\n    assert True\n",
                 False,
@@ -5084,24 +5085,25 @@ def test_a_root_test_reaches_a_context_only_through_component_and_client() -> No
                 False,
             ),
             ("app/component.py", "app.wire", "", False),
+            ("protocol/cli.py", "protocol.cli", "", False),
         ))).violations()
                )
     reach = (
-        "reaches a context only through its component and client; "
+        "reaches the app only through a running host, speaking protocol, "
+        "or through the tree's exported kernel; "
         "a test reaches only what its placement allows"
     )
+    for target in ("shop.client.client", "shop.component.component", "shop.domain.thing", "shop.application.service"):
+        assert any(
+            f"tests.test_app imports {target}, but a test placed in the root tests package {reach}" in f
+            for f in findings
+        )
     assert any(
-        "tests.test_app imports shop.domain.thing, but a test placed in "
-        "the root tests package reaches a context only through its component and client; "
-        "a test reaches only what its placement allows" in f
+        "tests.test_app imports app.wire, but a test placed in the root tests package "
+        "does not reach that package" in f
         for f in findings
     )
-    assert any(
-        "tests.test_app imports shop.application.service" in f and reach in f for f in findings
-    )
-    assert not any("tests.test_app imports shop.client.client" in f for f in findings)
-    assert not any("tests.test_app imports shop.component.component" in f for f in findings)
-    assert not any("tests.test_app imports app.wire" in f for f in findings)
+    assert not any("tests.test_app imports protocol" in f for f in findings)
     assert not any("tests.test_app imports tests.support" in f for f in findings)
     assert any(
         "tests.support is neither a test module nor conftest" in f for f in findings
@@ -5289,11 +5291,16 @@ def test_a_placed_conftest_carries_its_tier() -> None:
                )
     assert any(
         "tests.conftest imports shop.domain.thing, but a test placed in "
-        "the root tests package reaches a context only through its component and client; "
+        "the root tests package reaches the app only through a running host, speaking protocol, "
+        "or through the tree's exported kernel; "
         "a test reaches only what its placement allows" in f
         for f in findings
     )
-    assert not any("tests.conftest imports app.wire" in f for f in findings)
+    assert any(
+        "tests.conftest imports app.wire, but a test placed in the root tests package "
+        "does not reach that package" in f
+        for f in findings
+    )
     assert not any("shop.tests.conftest imports shop.domain.thing" in f for f in findings)
     assert any(
         "shop.tests.conftest imports srv.http, but a test placed in tests "

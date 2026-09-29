@@ -1,28 +1,29 @@
 from __future__ import annotations  # tesser:debt-file TB041
 
 import ast
+import http.client as http_client
+import json
+import os
 import pathlib
 
-import app as app
-import campaign.component as campaign_component
-import linkpolicy.component as linkpolicy_component
 import protocol as protocol
-import reports.component as reports_component
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 CONFIG_OWNERS = frozenset({"cfg", "config"})
 
 
-def app_config() -> app.AppConfig:
-    return app.AppConfig(
-        app.Spec(
-            campaign=campaign_component.Config(campaign_component.Spec("memory")),
-            linkpolicy=linkpolicy_component.Config(linkpolicy_component.Spec("memory")),
-            reports=reports_component.Config(reports_component.Spec()),
-            http=app.HttpConfig(app.HttpSpec("", 8080)),
-        )
-    )
+def call_host(method: str, path: str, body: dict[str, object] | None = None) -> tuple[int, dict[str, object]]:
+    conn = http_client.HTTPConnection(os.environ["PYTHON_APP_ADDRESS"], timeout=5)
+    try:
+        if body is None:
+            conn.request(method, path)
+        else:
+            conn.request(method, path, body=json.dumps(body), headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        return resp.status, json.loads(resp.read())
+    finally:
+        conn.close()
 
 
 def parse_module(path: pathlib.Path) -> ast.Module:
@@ -67,15 +68,6 @@ def clients_reached(tree: ast.Module, contexts: frozenset[str]) -> tuple[set[str
 
 def host_files(sub: str = "") -> list[pathlib.Path]:
     return sorted((ROOT / "srv" / sub).rglob("*.py"))
-
-
-class SpyApp:
-
-    def __init__(self) -> None:
-        self.closed = 0
-
-    def close(self) -> None:
-        self.closed += 1
 
 
 def route_ok(http_request: protocol.HttpRequest) -> protocol.HttpResponse:

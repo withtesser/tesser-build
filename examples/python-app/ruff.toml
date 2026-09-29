@@ -37,7 +37,10 @@ select = ["TID251", "PLR1722", "F401", "F823"]
 # `srv/*/main.py` is the only frame that may exit. Neither pattern crosses a
 # directory separator, so a deeper module never inherits the exemption. Bare
 # `exit`/`quit` stay banned everywhere via PLR1722 — they are site builtins,
-# never the edge's exit.
+# never the edge's exit. The root tests package is the user's side of a
+# running host, so `tests/support.py` reads the one thing the runner hands it:
+# the host's address.
 [lint.per-file-ignores]
 "app/app.py" = ["TID251"]
 "srv/*/main.py" = ["TID251"]
+"tests/support.py" = ["TID251"]

@@ -193,6 +193,30 @@ class TestTreeRendering:
             'person_name=1 "1" __int__ bigint;phone_number="+15555550100" 1 __str__ text;(3,)'
         )
 
+    def test_a_field_carries_its_argument_index_its_cli_reader_and_whether_the_acceptance_test_asserts_it(
+        self,
+    ) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                aggregate_fields=(("person_name", "int"), ("phone_number", "str")),
+                sample_values=(
+                    ("call_id", (("str", "call-1"), ("str", "call-2"))),
+                    ("person_name", (("int", "1"), ("int", "2"))),
+                    ("phone_number", (("str", "+15555550100"), ("str", "+15555550101"))),
+                ),
+                random_values=(("int", "3"),),
+                templates=(
+                    (
+                        "{{context}}/domain/{{aggregate}}.py.tmpl",
+                        "{{field_count}}:{{#fields}}{{index}} {{cli_arg}} {{sample_arg}}"
+                        "{{#is_asserted}} asserted{{/is_asserted}};{{/fields}}",
+                    ),
+                ),
+            )
+        )
+
+        assert str(tree.files()[0].content()) == '2:0 int_arg "1" asserted;1 arg "+15555550100";'
+
     def test_the_names_the_spec_gives_and_the_names_derived_from_them(self) -> None:
         tree = domain.Tree(
             tree_spec(
