@@ -1,56 +1,53 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import json
-import typing
 
 import tesser.adapters as ts
 
 import drafting.client as client
-import protocol as protocol
+import protocol
 
 
-class Handler(ts.Handler):
+class HttpHandler(ts.Handler):
 
     def __init__(self, drafting_client: client.DraftingClient) -> None:
         self._drafting_client = drafting_client
 
-    async def open_run(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
-        try:
-            open_run_response = await self._drafting_client.open_run(
-                client.OpenRunRequest(run_id=http_request.text("run_id"), job=http_request.text("job"))
+    async def submit_jtbd(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
+        submit_jtbd_response = await self._drafting_client.submit_jtbd(
+            client.SubmitJtbdRequest(
+                role=http_request.text("role"),
+                i_want=http_request.text("i_want"),
+                so_that=http_request.text("so_that"),
             )
-        except client.ERRORS as error:
-            match error:
-                case client.RunRejected():
-                    return protocol.HttpResponse.problem(422, error.message)
-                case client.RunNotFound():
-                    return protocol.HttpResponse.problem(404, error.message)
-                case _ as never:
-                    typing.assert_never(never)
-        return protocol.HttpResponse(status_code=202, body=json.dumps({"run_id": open_run_response.run_id}).encode())
+        )
+        return protocol.HttpResponse(
+            status_code=201,
+            body=json.dumps(
+                {
+                    "jtbd_id": submit_jtbd_response.jtbd_id,
+                    "status": submit_jtbd_response.status,
+                }
+            ).encode(),
+        )
 
-    async def get_run(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
-        try:
-            get_run_response = await self._drafting_client.get_run(
-                client.GetRunRequest(run_id=http_request.path_param("run_id"))
+    async def get_jtbd(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
+        get_jtbd_response = await self._drafting_client.get_jtbd(
+            client.GetJtbdRequest(
+                jtbd_id=http_request.path_param("jtbd_id"),
             )
-        except client.ERRORS as error:
-            match error:
-                case client.RunRejected():
-                    return protocol.HttpResponse.problem(422, error.message)
-                case client.RunNotFound():
-                    return protocol.HttpResponse.problem(404, error.message)
-                case _ as never:
-                    typing.assert_never(never)
+        )
         return protocol.HttpResponse(
             status_code=200,
             body=json.dumps(
                 {
-                    "run_id": get_run_response.run_id,
-                    "job": get_run_response.job,
-                    "stage": get_run_response.stage,
-                    "stories": list(get_run_response.stories),
-                    "accepted_stories": list(get_run_response.accepted_stories),
+                    "jtbd_id": get_jtbd_response.jtbd_id,
+                    "role": get_jtbd_response.role,
+                    "i_want": get_jtbd_response.i_want,
+                    "so_that": get_jtbd_response.so_that,
+                    "status": get_jtbd_response.status,
+                    "stories": [{"given": story.given, "when": story.when, "then": story.then, "state": story.state} for story in get_jtbd_response.stories],
                 }
             ).encode(),
         )

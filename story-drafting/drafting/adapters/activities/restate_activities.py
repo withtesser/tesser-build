@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import typing
@@ -12,85 +13,91 @@ import drafting.application.relays as relays
 _EMPTY_BODY: typing.Final[str] = "a message crosses the engine with a body"
 
 
-class RestateRecordRunRequestSerde(ts.Serde, restate_serde.Serde[relays.RecordRunRequest]):
+class RestateDraftStoriesRequestSerde(ts.Serde, restate_serde.Serde[relays.DraftStoriesRequest]):
 
-    def serialize(self, record_run_request: relays.RecordRunRequest | None) -> bytes:
-        if record_run_request is None:
+    def serialize(self, draft_stories_request: relays.DraftStoriesRequest | None) -> bytes:
+        if draft_stories_request is None:
             return b""
-        return relays.RecordRunRequestSnapshot().serialize(record_run_request)
+        return relays.DraftStoriesRequestSnapshot().serialize(draft_stories_request)
 
-    def deserialize(self, buf: bytes) -> relays.RecordRunRequest | None:
+    def deserialize(self, buf: bytes) -> relays.DraftStoriesRequest | None:
         if not buf:
             raise restate.TerminalError(_EMPTY_BODY, status_code=400)
-        return relays.RecordRunRequestSnapshot().deserialize(buf)
+        return relays.DraftStoriesRequestSnapshot().deserialize(buf)
 
 
-class RestateRecordRunResponseSerde(ts.Serde, restate_serde.Serde[relays.RecordRunResponse]):
+class RestateDraftStoriesResponseSerde(ts.Serde, restate_serde.Serde[relays.DraftStoriesResponse]):
 
-    def serialize(self, record_run_response: relays.RecordRunResponse | None) -> bytes:
-        if record_run_response is None:
+    def serialize(self, draft_stories_response: relays.DraftStoriesResponse | None) -> bytes:
+        if draft_stories_response is None:
             return b""
-        return relays.RecordRunResponseSnapshot().serialize(record_run_response)
+        return relays.DraftStoriesResponseSnapshot().serialize(draft_stories_response)
 
-    def deserialize(self, buf: bytes) -> relays.RecordRunResponse | None:
+    def deserialize(self, buf: bytes) -> relays.DraftStoriesResponse | None:
         if not buf:
             raise restate.TerminalError(_EMPTY_BODY, status_code=400)
-        return relays.RecordRunResponseSnapshot().deserialize(buf)
+        return relays.DraftStoriesResponseSnapshot().deserialize(buf)
 
 
-class RestateRecordRun(ts.Activity):
-
-    def __init__(self, run_actions_service: restate.Service, run_application_client: client.RunApplicationClient) -> None:
-        @run_actions_service.handler(
-            input_serde=RestateRecordRunRequestSerde(),
-            output_serde=RestateRecordRunResponseSerde(),
-        )
-        async def record_run(
-            restate_context: restate.Context, record_run_request: relays.RecordRunRequest
-        ) -> relays.RecordRunResponse:
-            return await run_application_client.record_run(record_run_request)
-
-        self.handler = record_run
-
-
-class RestateWriteStoriesRequestSerde(ts.Serde, restate_serde.Serde[relays.WriteStoriesRequest]):
-
-    def serialize(self, write_stories_request: relays.WriteStoriesRequest | None) -> bytes:
-        if write_stories_request is None:
-            return b""
-        return relays.WriteStoriesRequestSnapshot().serialize(write_stories_request)
-
-    def deserialize(self, buf: bytes) -> relays.WriteStoriesRequest | None:
-        if not buf:
-            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
-        return relays.WriteStoriesRequestSnapshot().deserialize(buf)
-
-
-class RestateWriteStoriesResponseSerde(ts.Serde, restate_serde.Serde[relays.WriteStoriesResponse]):
-
-    def serialize(self, write_stories_response: relays.WriteStoriesResponse | None) -> bytes:
-        if write_stories_response is None:
-            return b""
-        return relays.WriteStoriesResponseSnapshot().serialize(write_stories_response)
-
-    def deserialize(self, buf: bytes) -> relays.WriteStoriesResponse | None:
-        if not buf:
-            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
-        return relays.WriteStoriesResponseSnapshot().deserialize(buf)
-
-
-class RestateWriteStories(ts.Activity):
+class RestateDraftStories(ts.Activity):
 
     def __init__(
-        self, story_actions_service: restate.Service, story_application_client: client.StoryApplicationClient
+        self,
+        story_actions_service: restate.Service,
+        story_application_client: client.StoryApplicationClient,
     ) -> None:
         @story_actions_service.handler(
-            input_serde=RestateWriteStoriesRequestSerde(),
-            output_serde=RestateWriteStoriesResponseSerde(),
+            input_serde=RestateDraftStoriesRequestSerde(),
+            output_serde=RestateDraftStoriesResponseSerde(),
         )
-        async def write_stories(
-            restate_context: restate.Context, write_stories_request: relays.WriteStoriesRequest
-        ) -> relays.WriteStoriesResponse:
-            return await story_application_client.write_stories(write_stories_request)
+        async def draft_stories(
+            restate_context: restate.Context, draft_stories_request: relays.DraftStoriesRequest
+        ) -> relays.DraftStoriesResponse:
+            return await story_application_client.draft_stories(draft_stories_request)
 
-        self.handler = write_stories
+        self.handler = draft_stories
+
+
+class RestateRecordStoriesRequestSerde(ts.Serde, restate_serde.Serde[relays.RecordStoriesRequest]):
+
+    def serialize(self, record_stories_request: relays.RecordStoriesRequest | None) -> bytes:
+        if record_stories_request is None:
+            return b""
+        return relays.RecordStoriesRequestSnapshot().serialize(record_stories_request)
+
+    def deserialize(self, buf: bytes) -> relays.RecordStoriesRequest | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.RecordStoriesRequestSnapshot().deserialize(buf)
+
+
+class RestateRecordStoriesResponseSerde(ts.Serde, restate_serde.Serde[relays.RecordStoriesResponse]):
+
+    def serialize(self, record_stories_response: relays.RecordStoriesResponse | None) -> bytes:
+        if record_stories_response is None:
+            return b""
+        return relays.RecordStoriesResponseSnapshot().serialize(record_stories_response)
+
+    def deserialize(self, buf: bytes) -> relays.RecordStoriesResponse | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.RecordStoriesResponseSnapshot().deserialize(buf)
+
+
+class RestateRecordStories(ts.Activity):
+
+    def __init__(
+        self,
+        jtbd_actions_service: restate.Service,
+        jtbd_application_client: client.JtbdApplicationClient,
+    ) -> None:
+        @jtbd_actions_service.handler(
+            input_serde=RestateRecordStoriesRequestSerde(),
+            output_serde=RestateRecordStoriesResponseSerde(),
+        )
+        async def record_stories(
+            restate_context: restate.Context, record_stories_request: relays.RecordStoriesRequest
+        ) -> relays.RecordStoriesResponse:
+            return await jtbd_application_client.record_stories(record_stories_request)
+
+        self.handler = record_stories

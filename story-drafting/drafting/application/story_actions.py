@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import tesser.application as ts
@@ -6,23 +7,29 @@ import drafting.application.ports as ports
 import drafting.application.relays as relays
 
 
-class MapToPortWriteStoriesRequest(ts.Mapper, ports.WriteStoriesRequest):
+class MapToDraftStoriesRequest(ts.Mapper, ports.DraftStoriesRequest):
 
-    def __init__(self, write_stories_request: relays.WriteStoriesRequest) -> None:
-        super().__init__(job=write_stories_request.job)
+    def __init__(self, draft_stories_request: relays.DraftStoriesRequest) -> None:
+        super().__init__(
+            role=draft_stories_request.role,
+            i_want=draft_stories_request.i_want,
+            so_that=draft_stories_request.so_that,
+        )
 
 
-class MapToRelayWriteStoriesResponse(ts.Mapper, relays.WriteStoriesResponse):
+class MapToDraftStoriesResponse(ts.Mapper, relays.DraftStoriesResponse):
 
-    def __init__(self, write_stories_response: ports.WriteStoriesResponse) -> None:
-        super().__init__(stories=write_stories_response.stories)
+    def __init__(self, draft_stories_response: ports.DraftStoriesResponse) -> None:
+        super().__init__(
+            story_texts=tuple(relays.StoryText(given=story_text.given, when=story_text.when, then=story_text.then) for story_text in draft_stories_response.story_texts),
+        )
 
 
 class StoryActions(ts.Actions):
 
-    def __init__(self, story_writer: ports.StoryWriter) -> None:
-        self._story_writer = story_writer
+    def __init__(self, story_drafter: ports.StoryDrafter) -> None:
+        self._story_drafter = story_drafter
 
-    async def write_stories(self, write_stories_request: relays.WriteStoriesRequest) -> relays.WriteStoriesResponse:
-        write_stories_response = await self._story_writer.write_stories(MapToPortWriteStoriesRequest(write_stories_request))
-        return MapToRelayWriteStoriesResponse(write_stories_response)
+    async def draft_stories(self, draft_stories_request: relays.DraftStoriesRequest) -> relays.DraftStoriesResponse:
+        draft_stories_response = await self._story_drafter.draft_stories(MapToDraftStoriesRequest(draft_stories_request))
+        return MapToDraftStoriesResponse(draft_stories_response)

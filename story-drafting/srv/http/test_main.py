@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import json
@@ -10,32 +11,22 @@ import time
 import urllib.error as urllib_error
 import urllib.request as urllib_request
 
-import app as app
-
 
 class TestHttpHost:
 
-    def test_the_mounted_restate_endpoint_discovers_what_the_context_declared(self) -> None:
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("127.0.0.1", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_INGRESS="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_mounted_restate_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow(self) -> None:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
+        discover = urllib_request.Request(
+            f"http://127.0.0.1:{port}/restate/discover",
+            headers={"Accept": "application/vnd.restate.endpointmanifest.v4+json"},
+        )
+
+        manifest: dict[str, object] = {}
         try:
-            discover = urllib_request.Request(
-                f"http://127.0.0.1:{port}/restate/discover",
-                headers={"Accept": "application/vnd.restate.endpointmanifest.v4+json"},
-            )
-            manifest: dict[str, object] = {}
             for _ in range(100):
                 try:
                     with urllib_request.urlopen(discover, timeout=1) as answer:
@@ -50,48 +41,33 @@ class TestHttpHost:
             except subprocess.TimeoutExpired:
                 host.kill()
                 host.wait()
-        story_drafting_app = app.load()
-        try:
-            declared = {
-                story_drafting_app.drafting.run_actions_service.name: sorted(
-                    story_drafting_app.drafting.run_actions_service.handlers
-                ),
-                story_drafting_app.drafting.story_actions_service.name: sorted(
-                    story_drafting_app.drafting.story_actions_service.handlers
-                ),
-                story_drafting_app.drafting.run_orchestrator_workflow.name: sorted(
-                    story_drafting_app.drafting.run_orchestrator_workflow.handlers
-                ),
-            }
-        finally:
-            story_drafting_app.close()
+
         services = manifest["services"]
         assert isinstance(services, list)
-        assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == declared
+        assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == {
+            "StoryActions": ["draft_stories"],
+            "JtbdActions": ["record_stories"],
+            "JtbdOrchestrator": ["conduct_story_drafting"],
+        }
 
-    def test_the_runs_routes_answer_by_the_failure_they_meet(self) -> None:
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("127.0.0.1", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_INGRESS="http://127.0.0.1:9", PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_routes_answer_by_the_failure_they_meet(self) -> None:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        with socket.socket() as closed:
+            closed.bind(("127.0.0.1", 0))
+            unreachable = closed.getsockname()[1]
+        env = dict(
+            os.environ, RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path)
+        )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
+
         try:
             for method, path, body in (
-                ("POST", "/runs", b'{"run_id": "r1"}'),
-                ("POST", "/runs", b'{"run_id": "r1", "job": " "}'),
-                ("POST", "/runs", b'{"run_id": "r1", "job": "ship"}'),
-                ("GET", "/runs/r1", None),
-                ("GET", "/runs/..", None),
+                ("POST", "/jtbds", b"{}"),
+                ("POST", "/jtbds", b'{"role": "a traveller", "i_want": "one itinerary we all agreed on", "so_that": "I can book it"}'),
+                ("GET", "/jtbds/never-issued", None),
             ):
                 request = urllib_request.Request(
                     f"http://127.0.0.1:{port}{path}",
@@ -104,8 +80,8 @@ class TestHttpHost:
                         with urllib_request.urlopen(request, timeout=5) as answer:
                             answers.append(answer.status)
                         break
-                    except urllib_error.HTTPError as e:
-                        answers.append(e.code)
+                    except urllib_error.HTTPError as error:
+                        answers.append(error.code)
                         break
                     except OSError:
                         time.sleep(0.1)
@@ -116,4 +92,5 @@ class TestHttpHost:
             except subprocess.TimeoutExpired:
                 host.kill()
                 host.wait()
-        assert answers == [400, 422, 500, 404, 422]
+
+        assert answers == [400, 500, 500]
