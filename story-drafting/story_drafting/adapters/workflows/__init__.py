@@ -1,0 +1,1 @@
+from story_drafting.adapters.workflows.restate_begin_draft_process import RestateBeginDraftProcess as RestateBeginDraftProcess
