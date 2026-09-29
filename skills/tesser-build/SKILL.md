@@ -74,7 +74,16 @@ anatomy it walks are in `map.md`; the three steps:
    verified exemplar (`examples/minimal/`, named by each component doc's
    status note) outranks it, and a neighbor that agrees with the exemplar is
    the one to imitate.
-3. **Build only the gap**, each piece per its component doc (Mode 2).
+3. **Build only the gap**, each piece per its component doc (Mode 2). **When
+   the gap is a new app tree or a new context** — a use case that writes
+   through a durable workflow and reads back — **generate it first, then
+   change it**: write a generator spec (the TOML in `generator/specs/`; pick
+   `host = "cli" | "http"` and `storage = "postgres" | "memory"` to fit the
+   story) and run it — in tesser-build, `cd generator && PYTHONPATH=.:../tesser-py
+   python3 -m srv.cli.generate <spec.toml> <out>`. The output is conformant — every module with its sibling test,
+   every role `__init__` exporting exactly what is read — so the work left is
+   the story's own. Hand-building that structure is where most tessercheck
+   findings come from.
 
 **Behavior placement — "where does this line go?"** Most agent spaghetti is a
 placement failure, not a mis-picked noun:
