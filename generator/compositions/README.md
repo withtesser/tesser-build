@@ -23,11 +23,6 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 `mypy --strict`, and every test tier but the root. `library/` is the small
 worked example.
 
-**Not rendered yet** (a composition that uses one is refused, with the reason):
-`[shapes]`, `[messages]`, `[enums]`, list types, and `[aggregate.commands]`
-(with `commands` and `calls_on` on an action). Every read must be a spec field
-of the same type.
-
 ## Which file answers which question
 
 | File | Question | Written by |
@@ -48,13 +43,22 @@ operation, a PascalCase type) or a word the conventions derive (below).
 A field's type is one of:
 
 - `"str"` or `"int"`
+- an enum's name (declared in `[enums]`); it crosses every message as its string value
+- `"<Shape>[]"`: a list of a shape or message (declared in `[shapes]` or
+  `[messages]`). A shape's own fields are `str`, `int`, or enums, never lists.
+  A shape is never carried alone, only as a list.
 - the aggregate's snake_case name (`loan` for `Loan`), only in a port
   operation: the whole aggregate as its port record.
 
 **Where a field's type comes from.** A field is named by its bare name in
 every list (`request = ["loan_id", "borrower"]`). Its type is looked up, in
 order: the aggregate's `[aggregate.spec]`,
+each command's `takes`, a port annotation (`"story_texts: StoryText[]"` in a
+port operation's list),
 then `[aggregate.reads]`.
+A client operation's `response` looks in the reads first, so a read that
+differs from the spec field of the same name (`stories`: `StorySpec[]` in the
+spec, `StoryView[]` in the reads) answers the read's type.
 Every field named anywhere must get a type this way.
 
 ## 1 `language.toml`
@@ -122,16 +126,40 @@ borrower = "str"
 [aggregate.reads]                     # required: what the application reads off it
 loan_id = "str"
 borrower = "str"
+
+[aggregate.commands.record_stories]   # optional, any number
+takes = { story_texts = "StoryText[]" }                   # the command's input fields
+outcomes = ["recorded", "already_recorded", "none_given"] # required, at least one
 ```
 
 Only this contract is rendered in the domain: `<Name>Spec` with the spec's
 fields, the aggregate constructed from it,
+one method per command taking `<Command>Spec` (its `takes`) and answering
+`<Command>Outcome`,
 and one read per `[aggregate.reads]` entry. Everything else in the domain
 (value objects, validation, how a read is computed) is the agent's.
 
 The aggregate is saved by reading it back: a port record of the aggregate
 holds the spec's fields, filled from the reads of the same name, so every spec
 field needs a read of the same name.
+A list read's shape must hold every field it reads from the spec shape's.
+
+### `[shapes.<Name>]`, `[messages.<Name>]`, `[enums]` (optional)
+
+```toml
+[shapes.StorySpec]      # a shape: fields of str, int, or enums
+given = "str"
+state = "StoryState"
+
+[messages.StoryText]    # the same form; a message crosses ports and relays
+given = "str"
+
+[enums]
+StoryState = ["drafted", "accepted", "rejected"]
+```
+
+A shape named `...Spec` is the domain spec of that name; any other shape's
+domain spec is `<Name>Spec`.
 
 ### `[interfaces.http]` (required)
 
@@ -161,7 +189,7 @@ level-2 story it names. Its request fields are read from the path (a
 - `identity.<operation>` / `repository.<operation>`: call that port
   operation (looked up by operation name across `[ports]`). If its request
   names the aggregate, the aggregate is built first from what the earlier
-  steps hold (the request, the answers so far). If
+  steps hold (the request, the answers so far), with any list field empty. If
   its response is the aggregate, the aggregate is rebuilt from it.
 - `orchestrator.run_<operation>`: run the orchestrator operation and wait for
   its answer.
@@ -173,7 +201,8 @@ level-2 story it names. Its request fields are read from the path (a
 **Where each field comes from.** Every message a step sends (and the
 operation's answer) is filled field by field from what the method holds, newest
 first: the answers of the steps before it, then the aggregate's reads once it
-is built, then the request. A field nothing holds is a problem.
+is built, then the request. A field nothing holds is a problem, except a list
+field of the aggregate's spec, which starts empty.
 
 ### `[orchestrator.operations.<operation>]` — the workflow (exactly one)
 
@@ -209,15 +238,22 @@ calls = "save_loan"                   # required: the one port operation it call
 request = ["loan_id", "borrower", "title"]
 response = ["loan_id"]
 builds = "Loan"                       # optional: build the aggregate from the request
+commands = ["record_stories"]         # optional, needs builds: give it this one command...
+calls_on = ["recorded"]               # ...required with commands: the outcomes that make the call
 ```
 
 The class is `<Key>Actions`. An action calls its port once.
+With `commands`, it matches the command's outcome: the outcomes in `calls_on`
+make the call, the others answer without it.
 
 ### `[ports.<Port>]` — the contracts an implementation satisfies
 
 ```toml
 [ports.NoticeSender]
 operations.send_notice = { request = ["borrower", "title"], response = [] }
+
+[ports.StoryDrafter]
+operations.draft_stories = { request = ["role"], response = ["story_texts: StoryText[]"] }
 
 [ports.LoanRepository]
 operations.save_loan = { request = ["loan"], response = [] }
@@ -285,9 +321,16 @@ The implementation types:
 [sample_values]
 loan_id = ["loan-1", "loan-2"]           # two values per field
 borrower = ["Ada", "Grace"]
+story_texts = [                          # a list field: two lists of tables
+  [{ given = "...", when = "...", then = "..." }],
+  [{ given = "...", when = "...", then = "..." }],
+]
 ```
 
-Every field the generated tests need a value for must have one, listed here.
+Every field the generated tests need a value for must have one, listed here,
+or inside a listed list of tables (a shape's field found in another sample),
+or an enum (its members are used). A list field with no sample is built from
+its shape's fields.
 
 ## What is rendered, and who owns it
 
@@ -299,7 +342,8 @@ Every rendered file says on its first line who owns it:
   agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
   `test_<aggregate>.py`, and each `body = "agent"` implementation
   (`<context>/adapters/gateways/<class>.py` and its test). A stub answers
-  placeholders and never raises: a str read answers what the spec holds, a gateway
+  placeholders and never raises: a str read answers what the spec holds, a
+  command its last outcome, an enum read its first value, a gateway
   `""`, `0`, or an empty list for each field it answers.
 
 `.tesser-root` carries no marker: its lines are declarations only.

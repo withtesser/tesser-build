@@ -939,11 +939,6 @@ class Model(ts.Entity):
         self._reads = [(str(field), str(type_text)) for field, type_text in aggregate_table["reads"].items()]
         self._read_types = dict(self._reads)
         self._commands = dict(aggregate_table.get("commands", {}))
-        for table in ("shapes", "messages", "enums"):
-            if composition.get(table):
-                raise ValueError(f"[{table}] is not rendered yet")
-        if self._commands:
-            raise ValueError("[aggregate.commands] is not rendered yet")
         self._enums = {str(name): [str(member) for member in members] for name, members in composition.get("enums", {}).items()}
         shapes = dict(composition.get("shapes", {}))
         shapes.update(composition.get("messages", {}))
@@ -1380,6 +1375,7 @@ class Model(ts.Entity):
             mappers = Mappers(MappersSpec(module=str(Word(Actions).snake())))
             operations: list[dict[str, object]] = []
             tests: list[dict[str, object]] = []
+            commanded = False
             builds = False
             for operation_name, operation in table.get("operations", {}).items():
                 Operation = str(Word(operation_name).pascal())
@@ -1427,31 +1423,64 @@ class Model(ts.Entity):
                                           assign=assign, call=calls, argument=argument)
                 else:
                     call_statement = dict(blank, port_call=[{}], holder=holder, assign=assign, call=calls, argument=argument)
-                statements.append(call_statement)
-                if port_response.targets():
-                    sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Call}Response", kind="plain",
-                                                   prefix=local + ".", holds=tuple(self._fakes[("ports", Call + "Response1")].values()))))
-                ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
-                for target in response_record.targets():
-                    ask.target(target)
-                for held in sources.held():
-                    ask.source(held)
-                answered = mappers.map(ask)
-                answer = str(answered.call())
-                pairs = port_mapped.values()
-                fake = "fake_" + (str(Word(store).snake()) if store else str(Word(port_name).snake()))
-                if not store and port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
-                    reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
-                    expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
-                    checks.append({"check": f"[({reads},) for received in {fake}.{calls}_requests] == [({expected},)]"})
-                test_name = (f"{operation_name}_answers_for_the_{aggregate}_it_builds" if "builds" in operation
-                             else f"{operation_name}_asks_its_port_and_answers_what_it_said")
+                command_section: list[dict[str, object]] = []
+                answer = ""
+                commands = list(operation.get("commands", []))
+                if commands:
+                    if len(commands) != 1 or "builds" not in operation:
+                        raise ValueError(f"{operation_name} gives one command to the aggregate it builds, because an action decides once")
+                    commanded = True
+                    command = str(commands[0])
+                    if command not in self._commands:
+                        raise ValueError(f"{operation_name} gives {command}, which the aggregate does not declare")
+                    if "calls_on" not in operation:
+                        raise ValueError(f"actions.{key}.operations.{operation_name} matches the outcomes of {command} and does not say which of them calls {calls} (calls_on)")
+                    Command = str(Word(command).pascal())
+                    ask = Ask(AskSpec(name=f"MapTo{Command}Spec", target_ref=f"domain.{Command}Spec", allow_empty=False))
+                    for target in self._domain_targets[Command + "Spec"]:
+                        ask.target(target)
+                    for held in sources.held():
+                        ask.source(held)
+                    command_argument = str(mappers.map(ask).call())
+                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
+                    for target in response_record.targets():
+                        ask.target(target)
+                    for held in sources.held():
+                        ask.source(held)
+                    answered = mappers.map(ask)
+                    arms = [
+                        {"Outcome": Command + "Outcome", "MEMBER": str(outcome).upper(),
+                         "calls": [call_statement] if outcome in operation["calls_on"] else [], "answer": str(answered.call())}
+                        for outcome in self._commands[command]["outcomes"]
+                    ]
+                    command_section.append({"command": command, "command_argument": command_argument, "arms": arms})
+                    test_name = f"{operation_name}_answers_for_the_{aggregate}_it_builds"
+                else:
+                    statements.append(call_statement)
+                    if port_response.targets():
+                        sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Call}Response", kind="plain",
+                                                       prefix=local + ".", holds=tuple(self._fakes[("ports", Call + "Response1")].values()))))
+                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
+                    for target in response_record.targets():
+                        ask.target(target)
+                    for held in sources.held():
+                        ask.source(held)
+                    answered = mappers.map(ask)
+                    answer = str(answered.call())
+                    pairs = port_mapped.values()
+                    fake = "fake_" + (str(Word(store).snake()) if store else str(Word(port_name).snake()))
+                    if not store and port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
+                        reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
+                        expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
+                        checks.append({"check": f"[({reads},) for received in {fake}.{calls}_requests] == [({expected},)]"})
+                    test_name = (f"{operation_name}_answers_for_the_{aggregate}_it_builds" if "builds" in operation
+                                 else f"{operation_name}_asks_its_port_and_answers_what_it_said")
                 for target in response_record.targets():
                     value = str(answered.values().get(str(target.field())))
                     if value != UNKNOWN:
                         checks.append({"check": f"{operation_name}_response.{target.field()} == {Sample(value).literal(target)}"})
                 operations.append({"operation": operation_name, "Operation": Operation, "statements": statements,
-                                   "answer": answer})
+                                   "command": command_section, "answer": answer})
                 fake_local = "fake_" + holder
                 tests.append({
                     "name": test_name, "operation": operation_name, "Operation": Operation,
@@ -1475,7 +1504,7 @@ class Model(ts.Entity):
                              "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                              "args": [{"field": field, "expr": expr} for field, expr in made.args()]}
                             for made in mappers.defs()],
-                "builds": [{}] if builds else [], "operations": operations,
+                "commanded": [{}] if commanded else [], "builds": [{}] if builds else [], "operations": operations,
                 "fake_ports": fake_ports, "fake_stores": fake_stores, "fake_relays": [], "actions_tests": tests,
                 "stores_faked": [{}] if fake_stores else [],
                 "key": str(key), "Port": port_name,
@@ -1699,6 +1728,11 @@ class Model(ts.Entity):
         Aggregate = self._Aggregate
         aggregate = self._aggregate
         types = self._types
+        self._binding["enums"] = [
+            {"Enum": name, "enum_snake": str(Word(name).snake()),
+             "members": [{"MEMBER": member.upper(), "value": member} for member in members]}
+            for name, members in self._enums.items()
+        ]
         specs: list[dict[str, object]] = []
         seen: set[str] = set()
         wanted = [(Aggregate + "Spec", self._spec_fields)] + [
@@ -1725,7 +1759,21 @@ class Model(ts.Entity):
                     if str(types.kind(type_text)) == "array" else type_text)}
                 for field, type_text in fields]})
         self._binding["domain_specs"] = specs
+        commands: list[dict[str, object]] = []
+        for command, table in self._commands.items():
+            outcomes = [str(outcome) for outcome in table.get("outcomes", [])]
+            if not outcomes:
+                raise ValueError(f"command {command} names no outcomes")
+            Command = str(Word(str(command)).pascal())
+            targets = self._domain_targets[Command + "Spec"]
+            commands.append({
+                "command": str(command), "Spec": Command + "Spec", "Outcome": Command + "Outcome",
+                "outcomes": [{"MEMBER": outcome.upper()} for outcome in outcomes], "answer": outcomes[-1].upper(),
+                "command_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in targets),
+            })
+        self._binding["commands"] = commands
         spec_types = dict(self._spec_fields)
+        views: list[dict[str, object]] = []
         stored: list[dict[str, object]] = []
         read_checks: list[dict[str, object]] = []
         stored_names: set[str] = set()
@@ -1739,17 +1787,49 @@ class Model(ts.Entity):
                                     "expected": str(self._samples.value(Target(TargetSpec(
                                         field=field, type_text=type_text, kind=kind, package="domain", record="",
                                         element=(), members=()))))})
+            elif kind == "array" and read_type is not None and str(types.kind(read_type)) == "array":
+                view = str(types.element(read_type))
+                element = str(types.element(type_text))
+                element_types = dict(types.fields(element))
+                view_fields: list[dict[str, object]] = []
+                for view_field, _ in types.fields(view):
+                    if view_field not in element_types:
+                        raise ValueError(f"{view}.{view_field} is read, and {element} does not hold it")
+                    held = element_types[view_field]
+                    view_fields.append({"field": view_field,
+                                        "text_expr": f"spec.{view_field}.value" if str(types.kind(held)) == "enum" else f"spec.{view_field}"})
+                element_spec = element if element.endswith("Spec") else element + "Spec"
+                views.append({"View": view, "Spec": element_spec, "fields": view_fields})
+                var = str(Word(field).singular())
+                stored.append({"field": field, "stored_expr": f"tuple({view}({var}) for {var} in spec.{field})"})
+                stored_names.add(field)
+                sample = json.loads(str(self._samples.value(Target(TargetSpec(
+                    field=field, type_text=type_text, kind=kind, package="domain", record=element_spec,
+                    element=tuple(types.fields(element)), members=())))))
+                view_reads = ", ".join(f"str({var}.{entry['field']})" for entry in view_fields)
+                expected = ", ".join("(" + ", ".join(json.dumps(item[str(entry["field"])]) for entry in view_fields) + ",)" for item in sample)
+                read_checks.append({"actual": f"[({view_reads},) for {var} in {aggregate}.{field}]", "expected": f"[{expected}]"})
         if self._identity not in stored_names or spec_types.get(self._identity) != "str":
             raise ValueError(f"the aggregate's identity {self._identity} is a str its spec holds and it reads")
         reads: list[dict[str, object]] = []
         for read, read_type in self._reads:
-            if read not in stored_names:
-                raise ValueError(f"{read} is read, and only a read of a spec field of the same type is rendered yet")
-            reads.append({"read": read, "read_type": read_type, "read_expr": f"self._{read}"})
+            kind = str(types.kind(read_type))
+            if read in stored_names:
+                reads.append({"read": read, "read_type": f"tuple[{types.element(read_type)}, ...]" if kind == "array" else read_type,
+                              "read_expr": f"self._{read}"})
+            elif kind == "enum":
+                first = self._enums[read_type][0].upper()
+                reads.append({"read": read, "read_type": "Text", "read_expr": f"Text({read_type}.{first}.value)"})
+            elif kind == "array":
+                reads.append({"read": read, "read_type": f"tuple[{types.element(read_type)}, ...]", "read_expr": "()"})
+            else:
+                reads.append({"read": read, "read_type": "Text", "read_expr": 'Text("")'})
+        self._binding["views"] = views
         self._binding["stored"] = stored
         self._binding["reads"] = reads
         self._binding["identity_type"] = "str"
-        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs}
+        self._binding["stub_text"] = [{}] if views or any(r["read_type"] == "Text" for r in reads) else []
+        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._enums) | {str(c["Outcome"]) for c in commands}
         self._binding["domain_exports"] = [{"name": name} for name in sorted(exports)]
         spec_parts = []
         bare_parts = []
@@ -1759,6 +1839,10 @@ class Model(ts.Entity):
         self._binding["spec_sample"] = ", ".join(spec_parts)
         self._binding["spec_sample_bare"] = ", ".join(bare_parts)
         self._binding["read_checks"] = read_checks
+        self._binding["enum_reads"] = [
+            {"read": read, "Enum": read_type, "enum_snake": str(Word(read_type).snake())}
+            for read, read_type in self._reads if str(types.kind(read_type)) == "enum"
+        ]
 
     def engine(self) -> None:
         implementations = self._implementations

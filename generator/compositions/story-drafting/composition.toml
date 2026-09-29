@@ -127,6 +127,7 @@ port = "JtbdRepository"
 builds = "Jtbd"                        # from the request, as a JtbdSpec with no stories
 commands = ["record_stories"]          # then matches its outcome: recorded → save; already_recorded, none_given → answer so
 calls = "save_jtbd"                    # one port call
+calls_on = ["recorded"]                # the outcomes that make the call; the others answer without it
 request = ["jtbd_id", "role", "i_want", "so_that", "story_texts"]
 response = ["jtbd_id"]
 serves = ["s-2"]

@@ -28,6 +28,9 @@ body = "supported"
 
 [engine.restate]                       # implements composition's relays and signal: activities, workflows, dispatchers
 body = "supported"
+ingress_variable = "RESTATE_INGRESS"     # the variables below, by the part each plays for the engine
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
 
 # ---- environments -----------------------------------------------------------
 # gate: what scripts/verify and CI run. local: a developer's machine.
@@ -56,5 +59,6 @@ listen_port_variable = "STORY_DRAFTING_PORT"
 [variables]
 RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
 RESTATE_ADMIN = "the Restate admin URL the host registers its endpoint with"
+RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
 STORY_DRAFTING_PORT = "the port the HTTP host listens on"
 STORY_DRAFTING_HOST = "the served host's URL, read by the acceptance tests"
