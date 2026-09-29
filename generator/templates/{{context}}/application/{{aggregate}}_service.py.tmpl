@@ -34,9 +34,16 @@ class MapTo{{Conduct}}Request(ts.Mapper, relays.{{Conduct}}Request):
 
 
 class MapTo{{Write}}Response(ts.Mapper, client.{{Write}}Response):
+{{#calling_run}}
 
     def __init__(self, {{conduct}}_response: relays.{{Conduct}}Response) -> None:
         super().__init__({{identity}}={{conduct}}_response.{{identity}})
+{{/calling_run}}
+{{#calling_start}}
+
+    def __init__(self, start_{{conduct}}_response: relays.Start{{Conduct}}Response) -> None:
+        super().__init__({{identity}}=start_{{conduct}}_response.{{identity}})
+{{/calling_start}}
 
 
 class MapTo{{Load}}Request(ts.Mapper, ports.{{Load}}Request):
@@ -72,8 +79,16 @@ class {{Aggregate}}Service(ts.ApplicationService):
     async def {{write}}(self, {{write}}_request: client.{{Write}}Request) -> client.{{Write}}Response:
         {{issue}}_response = await self._{{aggregate}}_identity_repository.{{issue}}(ports.{{Issue}}Request())
         {{aggregate}} = domain.{{Aggregate}}(MapTo{{Aggregate}}Spec({{write}}_request, {{issue}}_response))
+{{#calling_run}}
         {{conduct}}_response = await self._{{aggregate}}_orchestrator_relay.run_{{conduct}}(MapTo{{Conduct}}Request({{aggregate}}))
         return MapTo{{Write}}Response({{conduct}}_response)
+{{/calling_run}}
+{{#calling_start}}
+        start_{{conduct}}_response = await self._{{aggregate}}_orchestrator_relay.start_{{conduct}}(
+            MapTo{{Conduct}}Request({{aggregate}})
+        )
+        return MapTo{{Write}}Response(start_{{conduct}}_response)
+{{/calling_start}}
 
     async def {{read}}(self, {{read}}_request: client.{{Read}}Request) -> client.{{Read}}Response:
         {{identity}} = domain.{{Identity}}({{read}}_request.{{identity}})

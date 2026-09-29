@@ -24,6 +24,8 @@ STORAGES: typing.Final[tuple[str, ...]] = ("postgres", "memory")
 
 HOSTS: typing.Final[tuple[str, ...]] = ("cli", "http")
 
+CALLING_MODES: typing.Final[tuple[str, ...]] = ("run", "start")
+
 IDENTITY_TYPE: typing.Final[str] = "str"
 
 SAMPLE_COUNT: typing.Final[int] = 2
@@ -292,6 +294,7 @@ class TreeSpec(ts.Spec):
         read_operation_name: str,
         read_response_fields: tuple[str, ...],
         orchestrator_operation_name: str,
+        orchestrator_calling_mode: str,
         action_operation_name: str,
         save_operation_name: str,
         load_operation_name: str,
@@ -324,6 +327,7 @@ class TreeSpec(ts.Spec):
         self.read_operation_name = read_operation_name
         self.read_response_fields = read_response_fields
         self.orchestrator_operation_name = orchestrator_operation_name
+        self.orchestrator_calling_mode = orchestrator_calling_mode
         self.action_operation_name = action_operation_name
         self.save_operation_name = save_operation_name
         self.load_operation_name = load_operation_name
@@ -348,6 +352,7 @@ class Tree(ts.AggregateRoot):
         sampled = dict(spec.sample_values)
         storage = spec.storage or STORAGES[0]
         host = spec.host or HOSTS[0]
+        calling_mode = spec.orchestrator_calling_mode or CALLING_MODES[0]
         if spec.state == MISSING:
             found.append(Text(f"there is no spec file at {spec.note}"))
         elif spec.state == UNREADABLE:
@@ -434,6 +439,13 @@ class Tree(ts.AggregateRoot):
                 found.append(Text(f"storage '{storage}' has no templates; a storage is one of {', '.join(STORAGES)}"))
             if host not in HOSTS:
                 found.append(Text(f"host '{host}' has no templates; a host is one of {', '.join(HOSTS)}"))
+            if calling_mode not in CALLING_MODES:
+                found.append(
+                    Text(
+                        f"orchestrator.calling_mode '{calling_mode}' has no templates; "
+                        f"a calling mode is one of {', '.join(CALLING_MODES)}"
+                    )
+                )
             if storage == "memory" and host == "cli":
                 found.append(
                     Text(
@@ -650,6 +662,8 @@ class Tree(ts.AggregateRoot):
             ("storage_memory", "true" if storage == "memory" else ""),
             ("host_cli", "true" if host == "cli" else ""),
             ("host_http", "true" if host == "http" else ""),
+            ("calling_run", "true" if calling_mode == "run" else ""),
+            ("calling_start", "true" if calling_mode == "start" else ""),
             ("asserts", spec.asserted_field),
             ("field_count", str(len(field_names))),
             ("random_choices", "(" + ", ".join(choices) + ("," if len(choices) == 1 else "") + ")"),

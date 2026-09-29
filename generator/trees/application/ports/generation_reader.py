@@ -62,6 +62,7 @@ class SpecRecord(ts.Response):
         read_operation_name: str,
         read_response_fields: tuple[str, ...],
         orchestrator_operation_name: str,
+        orchestrator_calling_mode: str,
         action_operation_name: str,
         save_operation_name: str,
         load_operation_name: str,
@@ -91,6 +92,7 @@ class SpecRecord(ts.Response):
         self.read_operation_name = read_operation_name
         self.read_response_fields = read_response_fields
         self.orchestrator_operation_name = orchestrator_operation_name
+        self.orchestrator_calling_mode = orchestrator_calling_mode
         self.action_operation_name = action_operation_name
         self.save_operation_name = save_operation_name
         self.load_operation_name = load_operation_name

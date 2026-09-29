@@ -70,6 +70,7 @@ class TestFilesystemGenerationReader:
             read_operation_name="get_call",
             read_response_fields=("call_id", "person_name"),
             orchestrator_operation_name="conduct_call",
+            orchestrator_calling_mode="",
             action_operation_name="record_call",
             save_operation_name="save_call",
             load_operation_name="load_call",
@@ -99,6 +100,19 @@ class TestFilesystemGenerationReader:
             read_generation_response.spec.host_url_variable,
             read_generation_response.spec.unknown_keys,
         ) == ("memory", "http", "VOICE_HOST", ())
+
+    def test_the_calling_mode_is_read_from_the_orchestrator_table(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "spec.toml").write_text('[orchestrator]\noperation_name = "conduct_call"\ncalling_mode = "start"\n')
+        filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path / "templates"))
+
+        read_generation_response = filesystem_generation_reader.read_generation(
+            ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert (
+            read_generation_response.spec.orchestrator_calling_mode,
+            read_generation_response.spec.unknown_keys,
+        ) == ("start", ())
 
     def test_every_key_the_spec_does_not_take_is_named_by_its_path(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "spec.toml").write_text(

@@ -61,8 +61,22 @@ class {{Conduct}}ResponseSnapshot(ts.Serde):
         if not (isinstance(snapshot, dict) and isinstance(snapshot.get("{{identity}}"), str)):
             raise errors.invalid("invalid_snapshot", "a {{conduct_words}} response is a {{identity}}")
         return {{Conduct}}Response({{identity}}=snapshot["{{identity}}"])
+{{#calling_start}}
+
+
+class Start{{Conduct}}Response(ts.Response):
+
+    def __init__(self, {{identity}}: str) -> None:
+        self.{{identity}} = {{identity}}
+{{/calling_start}}
 
 
 class {{Aggregate}}OrchestratorRelay(ts.Relay, typing.Protocol):
+{{#calling_run}}
 
     async def run_{{conduct}}(self, {{conduct}}_request: {{Conduct}}Request) -> {{Conduct}}Response: ...
+{{/calling_run}}
+{{#calling_start}}
+
+    async def start_{{conduct}}(self, {{conduct}}_request: {{Conduct}}Request) -> Start{{Conduct}}Response: ...
+{{/calling_start}}

@@ -42,6 +42,7 @@ two words, a verb and a noun (`place_call`).
 | `client.read_operation_name` | operation | the client's read |
 | `client.read_response_fields` | identity and field names | what the read answers, in order |
 | `orchestrator.operation_name` | operation | the workflow's operation |
+| `orchestrator.calling_mode` | `"run"` (default) or `"start"` | how the service calls the orchestrator relay: `run_<operation>` or `start_<operation>` |
 | `action.operation_name` | operation | the one action the orchestrator runs |
 | `repository.save_operation_name`, `.load_operation_name` | operation | the repository port's two operations |
 | `repository.load_response_collection_name` | snake_case | the collection name (the table, and the http route `/<collection>`) |
@@ -76,9 +77,25 @@ two words, a verb and a noun (`place_call`).
   an unknown identity answers 500.
 - The Restate endpoint at `/restate`, in the same process.
 
-The write waits for the workflow to finish (the service calls the
-orchestrator relay's `run_` operation), so a read right after the write sees
-the saved aggregate.
+With `orchestrator.calling_mode = "run"` (the default), the write waits for
+the workflow to finish (the service calls the orchestrator relay's `run_`
+operation), so a read right after the write sees the saved aggregate. With
+`"start"`, the write answers as soon as the workflow is started, and a read
+right after it can answer 500 until the action has saved the aggregate.
+
+## Picking a calling mode
+
+- **`run`**: the write answers after the workflow finishes, so a read right
+  after the write sees the aggregate. Pick it when the workflow finishes
+  quickly and on its own.
+- **`start`**: the write answers once the workflow is started. Pick it for a
+  workflow that goes on without the caller, like one that waits on a person or
+  a durable promise, where a write that waited would not return. The client
+  comes back to read later. The relay's operation is `start_<operation>`,
+  answered by a `Start<Operation>Response` that carries the identity; the
+  Restate dispatcher sends with `workflow_send` instead of `workflow_call`;
+  and the root acceptance test retries its read until it answers (30 seconds,
+  0.2 seconds apart).
 
 ## Example: HTTP over memory
 

@@ -22,6 +22,7 @@ SCALARS: typing.Final[tuple[tuple[str, str, str], ...]] = (
     ("write_operation_name", "client", "write_operation_name"),
     ("read_operation_name", "client", "read_operation_name"),
     ("orchestrator_operation_name", "orchestrator", "operation_name"),
+    ("orchestrator_calling_mode", "orchestrator", "calling_mode"),
     ("action_operation_name", "action", "operation_name"),
     ("save_operation_name", "repository", "save_operation_name"),
     ("load_operation_name", "repository", "load_operation_name"),

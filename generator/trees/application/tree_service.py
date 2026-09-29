@@ -56,6 +56,7 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
             read_operation_name=read_generation_response.spec.read_operation_name,
             read_response_fields=read_generation_response.spec.read_response_fields,
             orchestrator_operation_name=read_generation_response.spec.orchestrator_operation_name,
+            orchestrator_calling_mode=read_generation_response.spec.orchestrator_calling_mode,
             action_operation_name=read_generation_response.spec.action_operation_name,
             save_operation_name=read_generation_response.spec.save_operation_name,
             load_operation_name=read_generation_response.spec.load_operation_name,

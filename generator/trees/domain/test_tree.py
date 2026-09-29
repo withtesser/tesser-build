@@ -32,6 +32,7 @@ def tree_spec(
     read_operation_name: str = "get_call",
     read_response_fields: tuple[str, ...] = ("call_id", "person_name"),
     orchestrator_operation_name: str = "conduct_call",
+    orchestrator_calling_mode: str = "run",
     action_operation_name: str = "record_call",
     save_operation_name: str = "save_call",
     load_operation_name: str = "load_call",
@@ -65,6 +66,7 @@ def tree_spec(
         read_operation_name=read_operation_name,
         read_response_fields=read_response_fields,
         orchestrator_operation_name=orchestrator_operation_name,
+        orchestrator_calling_mode=orchestrator_calling_mode,
         action_operation_name=action_operation_name,
         save_operation_name=save_operation_name,
         load_operation_name=load_operation_name,
@@ -334,6 +336,36 @@ class TestTreeRendering:
         assert tree.health() is domain.Health.CLEAN
         assert str(tree.files()[0].content()) == "memory VOICE_HOST memory http"
 
+    def test_an_absent_calling_mode_is_run(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                orchestrator_calling_mode="",
+                templates=(
+                    (
+                        "{{context}}/domain/{{aggregate}}.py.tmpl",
+                        "{{#calling_run}}run{{/calling_run}}{{#calling_start}}start{{/calling_start}}",
+                    ),
+                ),
+            )
+        )
+
+        assert str(tree.files()[0].content()) == "run"
+
+    def test_the_start_calling_mode_opens_its_sections_and_closes_the_run_ones(self) -> None:
+        tree = domain.Tree(
+            tree_spec(
+                orchestrator_calling_mode="start",
+                templates=(
+                    (
+                        "{{context}}/domain/{{aggregate}}.py.tmpl",
+                        "{{#calling_run}}run{{/calling_run}}{{#calling_start}}start{{/calling_start}}",
+                    ),
+                ),
+            )
+        )
+
+        assert str(tree.files()[0].content()) == "start"
+
 
 class TestTreeProblems:
 
@@ -357,6 +389,13 @@ class TestTreeProblems:
         tree = domain.Tree(tree_spec(host="grpc"))
 
         assert [str(text) for text in tree.problems()] == ["host 'grpc' has no templates; a host is one of cli, http"]
+
+    def test_a_calling_mode_without_templates_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(orchestrator_calling_mode="await"))
+
+        assert [str(text) for text in tree.problems()] == [
+            "orchestrator.calling_mode 'await' has no templates; a calling mode is one of run, start"
+        ]
 
     def test_a_memory_store_behind_a_cli_host_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(storage="memory", host="cli", storage_url_variable=""))
