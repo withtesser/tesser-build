@@ -46,7 +46,11 @@ a `stdlib <module>` directive adding a stdlib module to the pure stdlib the
 domain role and kernels may import (`docs/design-kernels.md`). This is where repo-specific configuration lives:
 **the analyzer carries nothing specific to any repo** (maintainer ruling
 2026-08-14) — tessercheck-py's own fixture directory is skipped by *its*
-declaration, not by a hardcoded name in the reader. The universal skip set
+declaration, not by a hardcoded name in the reader. A `skip` line is added
+only with the user's explicit permission (maintainer ruling 2026-09-29): a
+skipped directory is outside every norm, so a skip is how a double or any
+other non-conforming code leaves the analyzer's sight without a debt marker
+to show for it. The universal skip set
 (`.git`, `__pycache__`, venvs, caches, `build`/`dist`) stays in the reader
 because it is universal, not repo-specific.
 
