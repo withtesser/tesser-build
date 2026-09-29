@@ -63,14 +63,11 @@ cat >"$out/run.json" <<JSON
 {"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 
-# A red trial is shown generated trees, rendered from gated specs by the
-# worktree's own generator (library: http over memory, waiting on the
-# workflow; helpdesk: starting it), so the prompt can carry what a generated
-# host and its root test look like before the trial generates its own.
-for example in library helpdesk; do
-  (cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
-    "specs/$example.toml" "$out/example/$example" >/dev/null)
-done
+# A red trial is shown a generated tree, rendered from a gated spec by the
+# worktree's own generator (library: http over memory), so the prompt can
+# carry what a generated host answers before the trial generates its own.
+(cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
+  specs/library.toml "$out/example/library" >/dev/null)
 
 # The prompt is a template. {name} is a run value; {{FILE:path}} is a file
 # from the trial's worktree at its base commit and {{EXAMPLE:path}} a file of

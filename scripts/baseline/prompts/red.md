@@ -24,7 +24,7 @@ The work is two decisions, and the rest is mechanical:
 2. **The acceptance test.** Decide how the user story's *then* shows over the
    host's protocol — what the read answers, and when — and write it as the
    root test `story-drafting/tests/test_acceptance.py`, replacing the one the
-   generator wrote.
+   generator wrote (the generate command prints it for you).
 
 Done means all of these hold:
 
@@ -50,26 +50,10 @@ Done means all of these hold:
 
 {{FILE:generator/README.md}}
 
-## What a generated http tree answers
+## What a generated http handler answers
 
-The generated root test and handler are the examples below with your spec's
-names; you don't need to read them after you generate. The `library` spec
-above (`calling_mode` left at `"run"`) generates this root test,
-`tests/test_acceptance.py`:
-
-```python
-{{EXAMPLE:library/tests/test_acceptance.py}}
-```
-
-With `calling_mode = "start"` (the `helpdesk` spec), the write answers before
-the workflow has saved, so the generated root test reads back like this:
-
-```python
-{{EXAMPLE:helpdesk/tests/test_acceptance.py}}
-```
-
-Either way, this is the handler behind the routes
-(`loans/adapters/handlers/http.py` for `library`):
+The `library` spec above generates this handler behind its routes,
+`loans/adapters/handlers/http.py`; yours is the same with your spec's names:
 
 ```python
 {{EXAMPLE:library/loans/adapters/handlers/http.py}}
@@ -81,9 +65,11 @@ Either way, this is the handler behind the routes
   "RESTATE_INGRESS"` and `host_url = "STORY_DRAFTING_HOST"`; use
   `host = "http"` and `storage = "memory"`.
 - Generate with
-  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting`.
-  It prints the path of every file it wrote. The README already in
-  `story-drafting/` stays.
+  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting --print tests/test_acceptance.py`.
+  It prints the path of every file it wrote, then the generated root test
+  `tests/test_acceptance.py` verbatim — the file you replace with your
+  acceptance test, so you have it without reading it back. The README
+  already in `story-drafting/` stays.
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh
