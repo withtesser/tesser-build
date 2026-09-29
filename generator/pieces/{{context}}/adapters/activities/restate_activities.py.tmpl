@@ -1,0 +1,49 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import typing
+
+import tesser.adapters as ts
+import restate
+import restate.serde as restate_serde
+
+import {{context}}.application.client as client
+import {{context}}.application.relays as relays
+
+_EMPTY_BODY: typing.Final[str] = "a message crosses the engine with a body"
+{{#activities}}
+{{#serdes}}
+
+
+class Restate{{Message}}Serde(ts.Serde, restate_serde.Serde[relays.{{Message}}]):
+
+    def serialize(self, {{message}}: relays.{{Message}} | None) -> bytes:
+        if {{message}} is None:
+            return b""
+        return relays.{{Message}}Snapshot().serialize({{message}})
+
+    def deserialize(self, buf: bytes) -> relays.{{Message}} | None:
+        if not buf:
+            raise restate.TerminalError(_EMPTY_BODY, status_code=400)
+        return relays.{{Message}}Snapshot().deserialize(buf)
+{{/serdes}}
+
+
+class {{Activity}}(ts.Activity):
+
+    def __init__(
+        self,
+        {{container_attr}}: restate.Service,
+        {{application_client}}: client.{{ApplicationClient}},
+    ) -> None:
+        @{{container_attr}}.handler(
+            input_serde=Restate{{Operation}}RequestSerde(),
+            output_serde=Restate{{Operation}}ResponseSerde(),
+        )
+        async def {{operation}}(
+            restate_context: restate.Context, {{operation}}_request: relays.{{Operation}}Request
+        ) -> relays.{{Operation}}Response:
+            return await {{application_client}}.{{operation}}({{operation}}_request)
+
+        self.handler = {{operation}}
+{{/activities}}

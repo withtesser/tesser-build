@@ -1,0 +1,32 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import typing
+import urllib.parse as urllib_parse
+
+import tesser.adapters as ts
+import httpx
+import restate.client as restate_client
+
+import {{context}}.adapters.workflows as workflows
+import {{context}}.application.relays as relays
+
+_READ_TIMEOUT_SECONDS: typing.Final[float] = 30.0
+_START_TIMEOUT: typing.Final[httpx.Timeout] = httpx.Timeout(5.0, read=_READ_TIMEOUT_SECONDS)
+
+
+class {{Dispatcher}}(ts.Dispatcher):
+
+    def __init__(self, ingress: str, {{workflow_param}}: workflows.{{Workflow}}) -> None:
+        self._ingress = ingress
+        self._{{workflow_param}} = {{workflow_param}}
+{{#run_methods}}
+
+    async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
+        async with httpx.AsyncClient(base_url=self._ingress, timeout=_START_TIMEOUT) as async_client:
+            return await restate_client.Client(async_client).workflow_call(
+                self._{{workflow_param}}.handler,
+                key=urllib_parse.quote({{param}}.{{identity}}, safe=""),
+                arg={{param}},
+            )
+{{/run_methods}}

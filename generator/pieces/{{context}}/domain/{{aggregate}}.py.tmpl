@@ -1,0 +1,32 @@
+# pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here
+from __future__ import annotations
+
+import tesser.domain as ts
+{{#domain_specs}}
+
+
+class {{Spec}}(ts.Spec):
+
+    def __init__(self{{#fields}}, {{field}}: {{spec_type}}{{/fields}}) -> None:
+{{#fields}}
+        self.{{field}} = {{field}}
+{{/fields}}
+{{/domain_specs}}
+
+
+class {{Aggregate}}(ts.AggregateRoot):
+
+    def __init__(self, spec: {{Aggregate}}Spec) -> None:
+{{#stored}}
+        self._{{field}} = {{stored_expr}}
+{{/stored}}
+
+    @property
+    def identity(self) -> {{identity_type}}:
+        return self._{{identity}}
+{{#reads}}
+
+    @property
+    def {{read}}(self) -> {{read_type}}:
+        return {{read_expr}}
+{{/reads}}

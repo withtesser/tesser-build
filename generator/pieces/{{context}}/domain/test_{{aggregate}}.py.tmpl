@@ -1,0 +1,16 @@
+# pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here
+from __future__ import annotations
+
+import {{context}}.domain as domain
+
+
+class Test{{Aggregate}}:
+
+    def test_a_{{aggregate}}_constructs_from_its_spec(self) -> None:
+        {{aggregate}}_spec = domain.{{Aggregate}}Spec({{spec_sample}})
+
+        {{aggregate}} = domain.{{Aggregate}}({{aggregate}}_spec)
+
+{{#read_checks}}
+        assert {{actual}} == {{expected}}
+{{/read_checks}}
