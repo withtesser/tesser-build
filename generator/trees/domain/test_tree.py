@@ -495,6 +495,19 @@ class TestTreeProblems:
             "relay operations (TB085); name the operation without it"
         ]
 
+    def test_a_test_class_with_a_one_letter_word_is_not_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(test_class_name="TestSubmittingAJtbd"))
+
+        assert tree.health() == domain.Health.CLEAN
+
+    def test_a_test_class_that_is_not_pascal_case_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(test_class_name="Testplacing_calls"))
+
+        assert [str(text) for text in tree.problems()] == [
+            "acceptance_test.test_class_name 'Testplacing_calls' is not a Test-prefixed PascalCase class name, "
+            "like TestPlacingCalls"
+        ]
+
     def test_an_operation_of_one_word_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(write_operation_name="place"))
 

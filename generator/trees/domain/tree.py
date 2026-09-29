@@ -64,7 +64,7 @@ PASCAL: typing.Final[re.Pattern[str]] = re.compile(r"(?:[A-Z][a-z0-9]+)+")
 
 ENVIRONMENT: typing.Final[re.Pattern[str]] = re.compile(r"[A-Z][A-Z0-9_]*")
 
-TEST_CLASS: typing.Final[re.Pattern[str]] = re.compile(r"Test(?:[A-Z][a-z0-9]+)+")
+TEST_CLASS: typing.Final[re.Pattern[str]] = re.compile(r"Test(?:[A-Z][a-z0-9]*)+")
 
 TEST_METHOD: typing.Final[re.Pattern[str]] = re.compile(r"test(?:_[a-z0-9]+)+")
 
