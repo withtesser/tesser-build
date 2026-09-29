@@ -186,8 +186,14 @@ file says *how*, and it is the cross-cutting layer they assume.
        a stubber, an official test double. It is trustworthy because its author
        builds it against the same model the real client uses.
     3. **One written as a separate package, outside this repo's purview** —
-       its own distribution, or an in-repo directory the analyzer does not
-       govern (a `skip` line in `.tesser-root`).
+       its own distribution. Not an in-repo directory the analyzer does not
+       govern: a `skip` line in `.tesser-root` is added only with the user's
+       explicit permission, because a skipped directory is outside every
+       norm, not only this one.
+
+    When none of the three exists — a vendor with no emulator and no
+    published double — ask the user how the adapter is to be tested; do not
+    write the double into the tree.
 
     **So no double of an external dependency is defined in an adapter's test
     module.** A fake of a *tesser* contract — an application port, a client —
@@ -385,6 +391,10 @@ is ruled.
   particular way. It cannot notice when the SDK changes — the same defect as
   the mock above, in a class you wrote yourself. Exercise the dependency
   instead (rule 10).
+- **The skipped double.** A hand-written stand-in for a vendor's API put in a
+  directory the tree's `.tesser-root` skips, so the analyzer never reads it.
+  It is the foreign double above, moved out of sight — and the skip line
+  takes the user's explicit permission (rule 10).
 - **Asserting the fixture.** `assert money.currency == "USD"` when the test
   never set a currency — the helper's default leaked into the claim.
 - **The re-tested layer.** Proving invalid input is rejected at the aggregate
