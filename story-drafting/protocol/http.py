@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import collections.abc as collections_abc
@@ -21,13 +22,25 @@ class HttpRequest(ts.Request):
     def text(self, name: str) -> str:
         try:
             data = json.loads(self.body)
-        except ValueError as e:
-            raise BadRequest(f"malformed JSON: {e}") from e
+        except ValueError as error:
+            raise BadRequest(f"malformed JSON: {error}") from error
         if not isinstance(data, dict):
             raise BadRequest("expected a JSON object")
         value = data.get(name)
         if not isinstance(value, str):
             raise BadRequest(f"{name} must be a string")
+        return value
+
+    def integer(self, name: str) -> int:
+        try:
+            data = json.loads(self.body)
+        except ValueError as error:
+            raise BadRequest(f"malformed JSON: {error}") from error
+        if not isinstance(data, dict):
+            raise BadRequest("expected a JSON object")
+        value = data.get(name)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise BadRequest(f"{name} must be an integer")
         return value
 
     def path_param(self, name: str) -> str:

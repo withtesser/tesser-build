@@ -1,2 +1,2 @@
-from drafting.adapters.gateways.anthropic_story_writer import AnthropicStoryWriter as AnthropicStoryWriter
-from drafting.adapters.gateways.canned_story_writer import CannedStoryWriter as CannedStoryWriter
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from drafting.adapters.gateways.template_story_drafter import TemplateStoryDrafter as TemplateStoryDrafter

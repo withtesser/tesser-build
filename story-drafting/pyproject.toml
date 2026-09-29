@@ -1,4 +1,5 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 [tool.pytest.ini_options]
-testpaths = ["protocol", "drafting", "app", "srv"]
+testpaths = ["app", "drafting", "protocol", "srv"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

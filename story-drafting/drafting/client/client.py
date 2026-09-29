@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import typing
@@ -5,62 +6,49 @@ import typing
 import tesser.context as ts
 
 
-class OpenRunRequest(ts.Request):
+class SubmitJtbdRequest(ts.Request):
 
-    def __init__(self, run_id: str, job: str) -> None:
-        self.run_id = run_id
-        self.job = job
-
-
-class OpenRunResponse(ts.Response):
-
-    def __init__(self, run_id: str) -> None:
-        self.run_id = run_id
+    def __init__(self, role: str, i_want: str, so_that: str) -> None:
+        self.role = role
+        self.i_want = i_want
+        self.so_that = so_that
 
 
-class GetRunRequest(ts.Request):
+class SubmitJtbdResponse(ts.Response):
 
-    def __init__(self, run_id: str) -> None:
-        self.run_id = run_id
+    def __init__(self, jtbd_id: str, status: str) -> None:
+        self.jtbd_id = jtbd_id
+        self.status = status
 
 
-class GetRunResponse(ts.Response):
+class GetJtbdRequest(ts.Request):
 
-    def __init__(
-        self,
-        run_id: str,
-        job: str,
-        stage: str,
-        stories: tuple[str, ...],
-        accepted_stories: tuple[str, ...],
-    ) -> None:
-        self.run_id = run_id
-        self.job = job
-        self.stage = stage
+    def __init__(self, jtbd_id: str) -> None:
+        self.jtbd_id = jtbd_id
+
+
+class StoryView(ts.Response):
+
+    def __init__(self, given: str, when: str, then: str, state: str) -> None:
+        self.given = given
+        self.when = when
+        self.then = then
+        self.state = state
+
+
+class GetJtbdResponse(ts.Response):
+
+    def __init__(self, jtbd_id: str, role: str, i_want: str, so_that: str, status: str, stories: tuple[StoryView, ...]) -> None:
+        self.jtbd_id = jtbd_id
+        self.role = role
+        self.i_want = i_want
+        self.so_that = so_that
+        self.status = status
         self.stories = stories
-        self.accepted_stories = accepted_stories
-
-
-class RunRejected(ts.Error):
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-
-class RunNotFound(ts.Error):
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-
-ERRORS: typing.Final[tuple[type[RunRejected], type[RunNotFound]]] = (RunRejected, RunNotFound)
 
 
 class DraftingClient(ts.Client, typing.Protocol):
 
-    async def open_run(self, open_run_request: OpenRunRequest) -> OpenRunResponse: ...
+    async def submit_jtbd(self, submit_jtbd_request: SubmitJtbdRequest) -> SubmitJtbdResponse: ...
 
-    async def get_run(self, get_run_request: GetRunRequest) -> GetRunResponse: ...
+    async def get_jtbd(self, get_jtbd_request: GetJtbdRequest) -> GetJtbdResponse: ...

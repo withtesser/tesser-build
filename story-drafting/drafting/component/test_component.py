@@ -1,75 +1,70 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
-import pytest
-
 import drafting.component as component
-import tesser.errors as errors
 
 
 class TestConfig:
 
-    def test_a_config_carries_its_spec(self) -> None:
-        spec = component.Spec(ingress="http://localhost:8080", story_writer="anthropic", anthropic_api_key="key")
+    def test_a_config_carries_the_engine_ingress(self) -> None:
+        spec = component.Spec(ingress="http://localhost:8080", identity_seed=7)
+
         config = component.Config(spec)
-        assert (config.ingress, config.story_writer, config.anthropic_api_key) == (
-            spec.ingress,
-            spec.story_writer,
-            spec.anthropic_api_key,
-        )
+
+        assert config.ingress == spec.ingress
+
+    def test_a_config_carries_the_seed_its_identity_repository_is_built_with(self) -> None:
+        spec = component.Spec(ingress="http://localhost:8080", identity_seed=7)
+
+        config = component.Config(spec)
+
+        assert config.identity_seed == spec.identity_seed
 
 
 class TestDrafting:
 
-    def test_only_the_workflow_faces_the_ingress_and_each_container_holds_its_handlers(self) -> None:
-        drafting = component.Drafting(
-            component.Config(component.Spec(ingress="http://localhost:8080", story_writer="canned", anthropic_api_key=""))
+    async def test_the_component_publishes_the_engine_containers_it_registered_into(self) -> None:
+        config = component.Config(
+            component.Spec(ingress="http://localhost:8080", identity_seed=7)
         )
-        try:
-            declared = [
-                (registered.name, registered.ingress_private, sorted(registered.handlers))
-                for registered in (
-                    drafting.run_actions_service,
-                    drafting.story_actions_service,
-                    drafting.run_orchestrator_workflow,
-                )
-            ]
-        finally:
-            drafting.close()
-        assert declared == [
-            ("RunActions", True, ["record_run"]),
-            ("StoryActions", True, ["write_stories"]),
-            ("RunOrchestrator", None, ["draft_stories"]),
+
+        drafting = component.Drafting(config)
+        registered = {
+            drafting.story_actions_service.name: sorted(drafting.story_actions_service.handlers),
+            drafting.jtbd_actions_service.name: sorted(drafting.jtbd_actions_service.handlers),
+            drafting.jtbd_orchestrator_workflow.name: sorted(drafting.jtbd_orchestrator_workflow.handlers),
+        }
+        await drafting.close()
+
+        assert registered == {
+            "StoryActions": ["draft_stories"],
+            "JtbdActions": ["record_stories"],
+            "JtbdOrchestrator": ["conduct_story_drafting"],
+        }
+
+    async def test_every_container_bounds_its_retries_and_only_the_workflow_faces_the_ingress(self) -> None:
+        config = component.Config(
+            component.Spec(ingress="http://localhost:8080", identity_seed=7)
+        )
+
+        drafting = component.Drafting(config)
+        declared = [
+            (
+                registered.name,
+                registered.ingress_private,
+                registered.invocation_retry_policy.max_attempts if registered.invocation_retry_policy else None,
+                registered.invocation_retry_policy.on_max_attempts if registered.invocation_retry_policy else None,
+            )
+            for registered in (
+                drafting.story_actions_service,
+                drafting.jtbd_actions_service,
+                drafting.jtbd_orchestrator_workflow,
+            )
         ]
+        await drafting.close()
 
-    def test_the_anthropic_coordinate_builds_with_a_key(self) -> None:
-        drafting = component.Drafting(
-            component.Config(
-                component.Spec(ingress="http://localhost:8080", story_writer="anthropic", anthropic_api_key="key")
-            )
-        )
-        drafting.close()
-        assert sorted(drafting.story_actions_service.handlers) == ["write_stories"]
-
-    def test_an_absent_story_writer_coordinate_is_refused_by_name(self) -> None:
-        with pytest.raises(errors.DomainError) as caught:
-            component.Drafting(
-                component.Config(component.Spec(ingress="http://localhost:8080", story_writer="", anthropic_api_key=""))
-            )
-        assert caught.value.code == "missing_coordinate"
-
-    def test_an_unknown_story_writer_is_refused_by_name(self) -> None:
-        with pytest.raises(errors.DomainError) as caught:
-            component.Drafting(
-                component.Config(component.Spec(ingress="http://localhost:8080", story_writer="gpt", anthropic_api_key=""))
-            )
-        assert caught.value.code == "unknown_story_writer"
-        assert "gpt" in caught.value.message
-
-    def test_the_anthropic_story_writer_without_a_key_is_refused(self) -> None:
-        with pytest.raises(errors.DomainError) as caught:
-            component.Drafting(
-                component.Config(
-                    component.Spec(ingress="http://localhost:8080", story_writer="anthropic", anthropic_api_key="")
-                )
-            )
-        assert caught.value.code == "missing_api_key"
+        assert declared == [
+            ("StoryActions", True, 5, "pause"),
+            ("JtbdActions", True, 5, "pause"),
+            ("JtbdOrchestrator", None, 5, "pause"),
+        ]

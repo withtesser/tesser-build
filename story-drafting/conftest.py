@@ -1,3 +1,4 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 import os
 import sys
 
@@ -8,5 +9,3 @@ for _rel in (("..",), ("..", ".."), ("..", "..", "..")):
     if os.path.isdir(_candidate):
         sys.path.insert(0, _candidate)
         break
-else:
-    raise RuntimeError(f"no tesser-py at ../, ../../ or ../../../ from {_root}")

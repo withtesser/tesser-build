@@ -1,10 +1,11 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import os
 
 import tesser.testing as ts
 
-import app as app
+import app
 import drafting.component as drafting_component
 
 
@@ -12,54 +13,45 @@ import drafting.component as drafting_component
 class FakeConfigRepository(app.AppConfigRepository):
 
     def get(self) -> app.AppConfig:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
-        return app.AppConfig(spec)
+        ingress = os.environ["RESTATE_INGRESS"]
+        return app.AppConfig(
+            app.Spec(drafting_component.Config(drafting_component.Spec(ingress, 7)))
+        )
 
 
 class TestAppConfig:
 
-    def test_a_config_carries_the_component_config(self) -> None:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
+    def test_a_config_carries_the_drafting_config(self) -> None:
+        spec = app.Spec(
+            drafting_component.Config(
+                drafting_component.Spec("http://localhost:8080", 7)
+            )
+        )
+
         app_config = app.AppConfig(spec)
+
         assert app_config.drafting is spec.drafting
 
 
 class TestEnvConfigRepository:
 
-    def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
+    def test_the_environment_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
-        assert (app_config.drafting.ingress, app_config.drafting.story_writer) == (
-            os.environ["RESTATE_INGRESS"],
-            os.environ["STORY_WRITER"],
-        )
 
+        assert app_config.drafting.ingress == os.environ["RESTATE_INGRESS"]
 
-class TestStoryDraftingApp:
+    def test_each_read_draws_a_new_identity_seed(self) -> None:
+        env_config_repository = app.EnvConfigRepository()
 
-    def test_the_app_wires_drafting(self) -> None:
-        spec = app.Spec(drafting_component.Config(drafting_component.Spec("http://localhost:8080", "canned", "")))
-        story_drafting_app = app.StoryDraftingApp(app.AppConfig(spec))
-        try:
-            declared = [
-                story_drafting_app.drafting.run_actions_service.name,
-                story_drafting_app.drafting.story_actions_service.name,
-                story_drafting_app.drafting.run_orchestrator_workflow.name,
-            ]
-        finally:
-            story_drafting_app.close()
-        assert declared == ["RunActions", "StoryActions", "RunOrchestrator"]
+        first = env_config_repository.get()
+        second = env_config_repository.get()
+
+        assert first.drafting.identity_seed != second.drafting.identity_seed
 
 
 class TestAppLoader:
 
-    def test_the_loader_builds_an_app_from_its_repository(self) -> None:
+    def test_the_loader_builds_an_app_that_publishes_the_drafting_client(self) -> None:
         story_drafting_app = app.AppLoader(FakeConfigRepository()).load()
-        try:
-            declared = [
-                sorted(story_drafting_app.drafting.run_actions_service.handlers),
-                sorted(story_drafting_app.drafting.story_actions_service.handlers),
-                sorted(story_drafting_app.drafting.run_orchestrator_workflow.handlers),
-            ]
-        finally:
-            story_drafting_app.close()
-        assert declared == [["record_run"], ["write_stories"], ["draft_stories"]]
+
+        assert story_drafting_app.drafting.client is not None

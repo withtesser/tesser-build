@@ -1,12 +1,16 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
 import os
+import secrets
 import typing
 
 import tesser.app as ts
 
 import drafting.component as drafting_component
 import tesser.errors as errors
+
+_IDENTITY_SEED_BITS: typing.Final[int] = 128
 
 
 class Spec(ts.Spec):
@@ -26,8 +30,11 @@ class StoryDraftingApp(ts.App):
     def __init__(self, app_config: AppConfig) -> None:
         self.drafting = drafting_component.Drafting(app_config.drafting)
 
-    def close(self) -> None:
-        self.drafting.close()
+    async def open(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        await self.drafting.close()
 
 
 class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
@@ -41,16 +48,12 @@ class EnvConfigRepository(AppConfigRepository):
         ingress = os.environ.get("RESTATE_INGRESS")
         if ingress is None:
             raise errors.invalid("missing_env", "RESTATE_INGRESS is required")
-        story_writer = os.environ.get("STORY_WRITER")
-        if story_writer is None:
-            raise errors.invalid("missing_env", "STORY_WRITER is required")
         return AppConfig(
             Spec(
                 drafting=drafting_component.Config(
                     drafting_component.Spec(
                         ingress=ingress,
-                        story_writer=story_writer,
-                        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+                        identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
                     )
                 )
             )
