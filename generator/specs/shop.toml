@@ -2,7 +2,7 @@ app_name = "shop"
 bounded_context_name = "orders"
 aggregate_root_class_name = "PurchaseOrder"
 durable_execution_engine = "restate"
-database = "postgres"
+storage = "postgres"
 identity_field_name = "order_id"
 identity_port_operation_name = "issue_order_id"
 

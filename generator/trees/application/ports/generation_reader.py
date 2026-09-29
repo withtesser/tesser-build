@@ -51,7 +51,8 @@ class SpecRecord(ts.Response):
         bounded_context_name: str,
         aggregate_root_class_name: str,
         durable_execution_engine: str,
-        database: str,
+        storage: str,
+        host: str,
         identity_field_name: str,
         identity_port_operation_name: str,
         aggregate_fields: tuple[FieldRecord, ...],
@@ -70,6 +71,7 @@ class SpecRecord(ts.Response):
         random_values: tuple[ValueRecord, ...],
         storage_url_variable: str,
         restate_ingress_url_variable: str,
+        host_url_variable: str,
     ) -> None:
         self.state = state
         self.note = note
@@ -78,7 +80,8 @@ class SpecRecord(ts.Response):
         self.bounded_context_name = bounded_context_name
         self.aggregate_root_class_name = aggregate_root_class_name
         self.durable_execution_engine = durable_execution_engine
-        self.database = database
+        self.storage = storage
+        self.host = host
         self.identity_field_name = identity_field_name
         self.identity_port_operation_name = identity_port_operation_name
         self.aggregate_fields = aggregate_fields
@@ -97,6 +100,7 @@ class SpecRecord(ts.Response):
         self.random_values = random_values
         self.storage_url_variable = storage_url_variable
         self.restate_ingress_url_variable = restate_ingress_url_variable
+        self.host_url_variable = host_url_variable
 
 
 class TargetRecord(ts.Response):

@@ -12,10 +12,12 @@ import {{context}}.component as {{context}}_component
 class FakeConfigRepository(app.AppConfigRepository):
 
     def get(self) -> app.AppConfig:
+{{#storage_postgres}}
         {{context}}_storage = os.environ["{{storage_env}}"]
+{{/storage_postgres}}
         ingress = os.environ["{{ingress_env}}"]
         return app.AppConfig(
-            app.Spec({{context}}_component.Config({{context}}_component.Spec({{context}}_storage, ingress, 7)))
+            app.Spec({{context}}_component.Config({{context}}_component.Spec({{#storage_postgres}}{{context}}_storage, {{/storage_postgres}}ingress, 7)))
         )
 
 
@@ -24,7 +26,7 @@ class TestAppConfig:
     def test_a_config_carries_the_{{context}}_config(self) -> None:
         spec = app.Spec(
             {{context}}_component.Config(
-                {{context}}_component.Spec("postgres://a@b/{{context}}", "http://localhost:8080", 7)
+                {{context}}_component.Spec({{#storage_postgres}}"postgres://a@b/{{context}}", {{/storage_postgres}}"http://localhost:8080", 7)
             )
         )
 
@@ -38,7 +40,9 @@ class TestEnvConfigRepository:
     def test_the_environment_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
 
+{{#storage_postgres}}
         assert app_config.{{context}}.storage == os.environ["{{storage_env}}"]
+{{/storage_postgres}}
         assert app_config.{{context}}.ingress == os.environ["{{ingress_env}}"]
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:

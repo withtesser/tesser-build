@@ -33,7 +33,8 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
             bounded_context_name=read_generation_response.spec.bounded_context_name,
             aggregate_root_class_name=read_generation_response.spec.aggregate_root_class_name,
             durable_execution_engine=read_generation_response.spec.durable_execution_engine,
-            database=read_generation_response.spec.database,
+            storage=read_generation_response.spec.storage,
+            host=read_generation_response.spec.host,
             identity_field_name=read_generation_response.spec.identity_field_name,
             identity_port_operation_name=read_generation_response.spec.identity_port_operation_name,
             aggregate_fields=tuple(
@@ -63,6 +64,7 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
             ),
             storage_url_variable=read_generation_response.spec.storage_url_variable,
             restate_ingress_url_variable=read_generation_response.spec.restate_ingress_url_variable,
+            host_url_variable=read_generation_response.spec.host_url_variable,
             templates=tuple(
                 (template_record.path, template_record.text)
                 for template_record in read_generation_response.templates

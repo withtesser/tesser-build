@@ -20,15 +20,17 @@ OCCUPIED: typing.Final[str] = "occupied"
 
 ENGINE: typing.Final[str] = "restate"
 
-DATABASE: typing.Final[str] = "postgres"
+STORAGES: typing.Final[tuple[str, ...]] = ("postgres", "memory")
+
+HOSTS: typing.Final[tuple[str, ...]] = ("cli", "http")
 
 IDENTITY_TYPE: typing.Final[str] = "str"
 
 SAMPLE_COUNT: typing.Final[int] = 2
 
-TYPES: typing.Final[dict[str, tuple[str, str, str, str]]] = {
-    "str": ("text", "canonical_str", "__str__", "arg"),
-    "int": ("bigint", "canonical_int", "__int__", "int_arg"),
+TYPES: typing.Final[dict[str, tuple[str, str, str, str, str]]] = {
+    "str": ("text", "canonical_str", "__str__", "arg", "text"),
+    "int": ("bigint", "canonical_int", "__int__", "int_arg", "integer"),
 }
 
 RESERVED: typing.Final[frozenset[str]] = frozenset(
@@ -69,6 +71,8 @@ IDENTITY_TEXT: typing.Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9._~-]+")
 WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 
 TAG: typing.Final[re.Pattern[str]] = re.compile(r"\{\{([#^/]?)([A-Za-z_][A-Za-z0-9_]*)\}\}")
+
+GUARD: typing.Final[re.Pattern[str]] = re.compile(r"\{\{([#^])([A-Za-z_][A-Za-z0-9_]*)\}\}")
 
 TEMPLATE_SUFFIX: typing.Final[str] = ".tmpl"
 
@@ -148,6 +152,18 @@ class Template(ts.ValueObject):
 
     def __str__(self) -> str:
         return serialization.canonical_str(self._value)
+
+    def place(self, scope: Scope) -> tuple[Text, ...]:
+        kept: list[str] = []
+        for segment in self._value.split("/"):
+            guard = GUARD.fullmatch(segment)
+            if guard is None:
+                kept.append(segment)
+                continue
+            opened = scope.enter(guard.group(2)) if guard.group(1) == "#" else scope.skip(guard.group(2))
+            if not opened:
+                return ()
+        return (Template("/".join(kept)).render(scope),)
 
     def render(self, scope: Scope) -> Text:
         text = self._value
@@ -263,7 +279,8 @@ class TreeSpec(ts.Spec):
         bounded_context_name: str,
         aggregate_root_class_name: str,
         durable_execution_engine: str,
-        database: str,
+        storage: str,
+        host: str,
         identity_field_name: str,
         identity_port_operation_name: str,
         aggregate_fields: tuple[tuple[str, str], ...],
@@ -282,6 +299,7 @@ class TreeSpec(ts.Spec):
         random_values: tuple[tuple[str, str], ...],
         storage_url_variable: str,
         restate_ingress_url_variable: str,
+        host_url_variable: str,
         templates: tuple[tuple[str, str], ...],
     ) -> None:
         self.state = state
@@ -292,7 +310,8 @@ class TreeSpec(ts.Spec):
         self.bounded_context_name = bounded_context_name
         self.aggregate_root_class_name = aggregate_root_class_name
         self.durable_execution_engine = durable_execution_engine
-        self.database = database
+        self.storage = storage
+        self.host = host
         self.identity_field_name = identity_field_name
         self.identity_port_operation_name = identity_port_operation_name
         self.aggregate_fields = aggregate_fields
@@ -311,6 +330,7 @@ class TreeSpec(ts.Spec):
         self.random_values = random_values
         self.storage_url_variable = storage_url_variable
         self.restate_ingress_url_variable = restate_ingress_url_variable
+        self.host_url_variable = host_url_variable
         self.templates = templates
 
 
@@ -322,6 +342,8 @@ class Tree(ts.AggregateRoot):
         kinds = {identity: IDENTITY_TYPE, **dict(spec.aggregate_fields)}
         field_names = tuple(name for name, _ in spec.aggregate_fields)
         sampled = dict(spec.sample_values)
+        storage = spec.storage or STORAGES[0]
+        host = spec.host or HOSTS[0]
         if spec.state == MISSING:
             found.append(Text(f"there is no spec file at {spec.note}"))
         elif spec.state == UNREADABLE:
@@ -375,23 +397,28 @@ class Tree(ts.AggregateRoot):
                 ),
                 ("acceptance_test.asserted_field", spec.asserted_field, SNAKE, "a snake_case field name"),
                 (
-                    "environment_variables.storage_url",
-                    spec.storage_url_variable,
-                    ENVIRONMENT,
-                    "an upper-case environment variable name",
-                ),
-                (
                     "environment_variables.restate_ingress_url",
                     spec.restate_ingress_url_variable,
                     ENVIRONMENT,
                     "an upper-case environment variable name",
                 ),
             )
+            stated_variables = (
+                ("environment_variables.storage_url", spec.storage_url_variable, storage == "postgres", "a postgres store"),
+                ("environment_variables.host_url", spec.host_url_variable, host == "http", "an http host"),
+            )
             for key, value, shape, described in shaped:
                 if not value:
                     found.append(Text(f"the spec names no {key}"))
                 elif shape.fullmatch(value) is None:
                     found.append(Text(f"{key} '{value}' is not {described}"))
+            for key, value, needed, reader in stated_variables:
+                if needed and not value:
+                    found.append(Text(f"the spec names no {key}, which {reader} reads"))
+                elif not needed and value:
+                    found.append(Text(f"the spec names {key}, which only {reader} reads"))
+                elif value and ENVIRONMENT.fullmatch(value) is None:
+                    found.append(Text(f"{key} '{value}' is not an upper-case environment variable name"))
             if spec.durable_execution_engine != ENGINE:
                 found.append(
                     Text(
@@ -399,9 +426,16 @@ class Tree(ts.AggregateRoot):
                         f"the one engine is '{ENGINE}'"
                     )
                 )
-            if spec.database != DATABASE:
+            if storage not in STORAGES:
+                found.append(Text(f"storage '{storage}' has no templates; a storage is one of {', '.join(STORAGES)}"))
+            if host not in HOSTS:
+                found.append(Text(f"host '{host}' has no templates; a host is one of {', '.join(HOSTS)}"))
+            if storage == "memory" and host == "cli":
                 found.append(
-                    Text(f"database '{spec.database}' has no templates; the one database is '{DATABASE}'")
+                    Text(
+                        "storage 'memory' needs host 'http': a cli host reads in a process of its own, "
+                        "so it never sees the store the served Restate endpoint writes"
+                    )
                 )
             if spec.bounded_context_name in RESERVED:
                 found.append(
@@ -521,7 +555,7 @@ class Tree(ts.AggregateRoot):
         }
         items: dict[str, tuple[tuple[str, str], ...]] = {}
         for name, kind in kinds.items():
-            sql_type, canonical, dunder, cli_arg = TYPES[kind]
+            sql_type, canonical, dunder, cli_arg, http_arg = TYPES[kind]
             items[name] = (
                 ("field", name),
                 ("Field", classes[name]),
@@ -530,6 +564,7 @@ class Tree(ts.AggregateRoot):
                 ("canonical", canonical),
                 ("dunder", dunder),
                 ("cli_arg", cli_arg),
+                ("http_arg", http_arg),
                 ("sample", literals[name][0]),
                 ("sample2", literals[name][1]),
                 ("sample_arg", f'"{sampled[name][0][1]}"'),
@@ -596,6 +631,12 @@ class Tree(ts.AggregateRoot):
             ("collection", spec.load_response_collection_name),
             ("storage_env", spec.storage_url_variable),
             ("ingress_env", spec.restate_ingress_url_variable),
+            ("host_env", spec.host_url_variable),
+            ("storage", storage),
+            ("storage_postgres", "true" if storage == "postgres" else ""),
+            ("storage_memory", "true" if storage == "memory" else ""),
+            ("host_cli", "true" if host == "cli" else ""),
+            ("host_http", "true" if host == "http" else ""),
             ("asserts", spec.asserted_field),
             ("field_count", str(len(field_names))),
             ("random_choices", "(" + ", ".join(choices) + ("," if len(choices) == 1 else "") + ")"),
@@ -608,11 +649,12 @@ class Tree(ts.AggregateRoot):
                 (
                     GeneratedFile(
                         GeneratedFileSpec(
-                            path=str(Template(path).render(scope)).removesuffix(TEMPLATE_SUFFIX),
+                            path=str(placed).removesuffix(TEMPLATE_SUFFIX),
                             content=str(Template(text).render(scope)),
                         )
                     )
                     for path, text in spec.templates
+                    for placed in Template(path).place(scope)
                 ),
                 key=str,
             )

@@ -2,7 +2,7 @@ app_name = "clinic"
 bounded_context_name = "visits"
 aggregate_root_class_name = "Visit"
 durable_execution_engine = "restate"
-database = "postgres"
+storage = "postgres"
 identity_field_name = "visit_id"
 identity_port_operation_name = "issue_visit_id"
 
