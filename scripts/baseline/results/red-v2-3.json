@@ -1,0 +1,411 @@
+{
+  "run": {
+    "phase": "red",
+    "name": "red-v2-3",
+    "slot": 3,
+    "base_ref": "baseline/story-drafting",
+    "base_sha": "31b3a461542b95c8b6f2b56ad810a6de296250ae",
+    "branch": "baseline/runs/red-v2-3",
+    "restate_ingress": "http://localhost:38380",
+    "restate_admin": "http://localhost:39370",
+    "host_port": 9330,
+    "prepared": "2026-09-28T22:57:58Z"
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 554.3,
+    "api_requests": 55,
+    "tokens": {
+      "input": 110,
+      "cache_read": 9448904,
+      "cache_write": 244112
+    },
+    "tool_calls_total": 55,
+    "tool_calls": {
+      "Bash": 50,
+      "Read": 3,
+      "ToolSearch": 1,
+      "SendMessage": 1
+    },
+    "guidance": [
+      "bash:SKILL.md",
+      "bash:python.md"
+    ],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo> && cat story-drafting/pyproject.toml story-drafting/.tesser-root story-drafting/requirements-dev.txt; grep -n \"story\" m",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && find examples/durable-execution -type f | grep -v __pycache__ | sort; grep -n \"run_durable_execution()\" -A60 scripts",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/generator && cat specs/shop.toml; ls templates trees srv srv/* app tests; grep -n \"run_generator()\" -A40 ../scripts/ver",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/examples/minimal && find . -type f | grep -v __pycache__ | sort; cat .tesser-root pyproject.toml; grep -n \"run_minimal(",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && grep -n \"tessercheck_tree()\" -A12 scripts/verify",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/tessercheck-py && source <repo>/.venv/bin/activate && PYTHONPATH=.:../tesser-py",
+        "findings": 16,
+        "by_code": {
+          "TB042": 7,
+          "TB082": 4,
+          "TB085": 1,
+          "TB074": 3,
+          "TB081": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > srv/http/main.py <<'EOF'\nfrom __future__ import annotations\n\nimport asyncio\nimport sys\nimport t",
+        "findings": 9,
+        "by_code": {
+          "TB042": 1,
+          "TB074": 8
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/tests/test_drafting.py <<'EOF'\nfrom __future__ import annotations\n\nimport asyncio\nimpo",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/tessercheck-py && source <repo>/.venv/bin/activate && PYTHONPATH=.:../tesser-py",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && python3 - <<'EOF'\nimport pathlib\np=pathlib.Path(\"scripts/verify\")\ns=p.read_text()\nold='''  local port=\"${STORY_DRAFT",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && source <repo>/.venv/bin/activate && RESTATE_INGRESS=http://localhost:38380 R",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 11,
+    "final_message": "The red acceptance test is written, and the `story-drafting` gate fails only at its root-tier pytest step. The test fails on the run's stage, which is where the story's behavior begins. Everything is committed as `98d4ac8` on `baseline/runs/red-v2-3`.\n\n**The test:** `<repo>/story-drafting/tests/test_story_drafting.py::TestStartingTheStoryDraftingSkill::test_a_started_run_waits_for_the_pick_with_drafted_stories_and_none_accepted`\n\nIt reaches the app only through the host the gate serves. It starts a run with `POST /runs`, which answers 202, then reads it back with `GET /runs/{run_id}`, retrying until the run is readable. It fails with:\n```\nAssertionError: assert 'drafting' == 'awaiting_pick'   (tests/test_story_drafting.py:45)\n```\nBefore that line, it has already confirmed the 202, the run id, and that the host read the run back with its id and job. After it, it checks that there are drafted stories and none accepted.\n\n**Gate results** (`RESTATE_INGRESS=http://localhost:38380 RESTATE_ADMIN=http://localhost:39370 STORY_DRAFTING_PORT=9330 scripts/verify story-drafting`):\n- **tessercheck:** zero findings. One finding carries a debt marker instead of a fix: `RunService.get_run` matches on the repository's found/not-found answer, which tessercheck flags, and I marked it the way the durable-execution example does.\n- **mypy --strict:** clean.\n- **Every tier but the root:** 52 passed, including tests against the real Restate server.\n- **Root tier:** 1 failed, the failure above.\n\n**What's built:** a `drafting` context with its client and service, the durable workflow on Restate, and an action that saves the run with stage \"drafting\" to an in-memory store. There is also an HTTP host (`srv/http/main.py`) that serves the API and the Restate endpoint in one process, plus the component and app wiring. Drafting, the durable promise and the pick are not built.\n\n**Changes to `scripts/verify`:** only `run_story_dra"
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "98d4ac814cf31d5417fa8d4b04846b9ad80f356f",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 61,
+    "lines_added": 2134,
+    "lines_removed": 3,
+    "py_impl_files": 38,
+    "py_impl_lines": 1046,
+    "py_test_files": 21,
+    "py_test_lines": 1057,
+    "files_outside_tree": [
+      "scripts/verify"
+    ]
+  },
+  "gate": {
+    "verify_exit": 1,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "pytest every tier but the root (no host served; Restate at http://localhost:38380)",
+      "serve the HTTP host and its Restate endpoint on :9330 and register it at http://localhost:39370",
+      "pytest the root tier (against the host on :9330)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_string_field_is_read_from_the_body",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_path_parameter_is_read_by_its_name",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_path_parameter_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_field_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_non_string_field_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_malformed_json_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_non_object_body_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpResponse::test_a_problem_carries_its_status_and_a_json_detail",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/activities/test_restate_activities.py::TestRestateKeepRun::test_restate_serves_keep_run_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/dispatchers/test_restate_http_run_orchestrator_relay.py::TestRestateHttpRunOrchestratorRelay::test_starting_sends_the_workflow_keyed_by_the_run_id_and_the_engine_keeps_the_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHandler::test_beginning_a_run_answers_202_with_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHandler::test_reading_a_run_answers_200_with_the_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHandler::test_a_rejected_run_answers_422",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHandler::test_a_run_not_found_answers_404",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_run_repository.py::TestMemoryRunRepository::test_a_saved_run_is_found_with_what_it_was_saved_with",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_run_repository.py::TestMemoryRunRepository::test_a_run_never_saved_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_run_repository.py::TestMemoryRunRepository::test_saving_a_run_again_keeps_the_first",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_run_repository.py::TestMemoryRunRepository::test_a_closed_repository_holds_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/workflows/test_restate_draft_stories.py::TestRestateDraftStories::test_draft_stories_keeps_the_run_through_the_engine_and_a_foreign_key_ends_terminally",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/orchestrators/test_run_orchestrator.py::TestRunOrchestrator::test_drafting_stories_keeps_the_run_and_answers_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_run_actions_relay.py::TestKeepRunSnapshots::test_each_message_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_run_orchestrator_relay.py::TestDraftStoriesSnapshots::test_each_message_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_run_orchestrator_relay.py::TestDraftStoriesSnapshots::test_the_request_carries_the_run_id_and_the_job_by_name",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_actions.py::TestRunActions::test_keeping_saves_the_run_once_as_drafting_and_answers_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_service.py::TestRunService::test_beginning_a_run_starts_drafting_stories_for_its_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_service.py::TestRunService::test_a_run_with_a_blank_job_is_rejected_and_never_started",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_service.py::TestRunService::test_a_kept_run_is_read_back_as_it_was_kept",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_service.py::TestRunService::test_a_run_never_kept_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_run_service.py::TestRunService::test_reading_an_empty_run_id_is_rejected",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/client/test_client.py::TestRunRejected::test_a_rejected_run_carries_its_code_and_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/client/test_client.py::TestRunNotFound::test_a_run_not_found_carries_its_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/client/test_client.py::TestErrors::test_the_declared_set_names_every_error_the_client_raises",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestConfig::test_a_config_carries_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestDrafting::test_only_the_workflow_faces_the_ingress_and_each_container_holds_its_handlers",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRun::test_a_run_constructs_from_its_spec_and_starts_drafting",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRun::test_an_empty_run_id_refuses_the_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRun::test_a_dot_run_id_refuses_the_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRun::test_a_blank_job_refuses_the_run",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRunId::test_a_run_id_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestRunId::test_string_is_the_canonical_exit",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestJob::test_a_job_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_run.py::TestJob::test_string_is_the_canonical_exit",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/tests/test_drafting.py::TestDraftingContext::test_a_run_the_domain_refuses_is_the_situation_of_that_name",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/tests/test_drafting.py::TestDraftingContext::test_a_run_never_begun_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/tests/test_drafting.py::TestDraftingThroughTheEngine::test_a_begun_run_is_read_back_with_its_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestAppConfig::test_a_config_carries_the_component_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_the_environment_the_runner_supplied_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_each_read_returns_its_own_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestStoryDraftingApp::test_the_app_wires_drafting",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestAppLoader::test_the_loader_builds_an_app_from_its_repository",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_mounted_restate_endpoint_discovers_what_the_context_declared",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_runs_routes_answer_by_the_failure_they_meet",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests/test_story_drafting.py::TestStartingTheStoryDraftingSkill::test_a_started_run_waits_for_the_pick_with_drafted_stories_and_none_accepted",
+        "outcome": "failed",
+        "message": ""
+      }
+    ],
+    "test_outcomes": {
+      "passed": 52,
+      "failed": 1
+    },
+    "impl_coverage_pct": 87.2,
+    "impl_statements": 617
+  }
+}
