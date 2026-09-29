@@ -29,6 +29,10 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
             note=read_generation_response.spec.note,
             unknown_keys=read_generation_response.spec.unknown_keys,
             target=read_generation_response.target.state.value,
+            existing=tuple(
+                (existing_file_record.path, existing_file_record.text)
+                for existing_file_record in read_generation_response.target.files
+            ),
             app_name=read_generation_response.spec.app_name,
             bounded_context_name=read_generation_response.spec.bounded_context_name,
             aggregate_root_class_name=read_generation_response.spec.aggregate_root_class_name,

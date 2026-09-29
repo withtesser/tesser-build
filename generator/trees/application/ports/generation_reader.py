@@ -17,6 +17,7 @@ class TargetState(enum.Enum):
     ABSENT = "absent"
     EMPTY = "empty"
     OCCUPIED = "occupied"
+    NOT_DIRECTORY = "not_directory"
 
 
 class FieldRecord(ts.Response):
@@ -103,10 +104,18 @@ class SpecRecord(ts.Response):
         self.host_url_variable = host_url_variable
 
 
+class ExistingFileRecord(ts.Response):
+
+    def __init__(self, path: str, text: str) -> None:
+        self.path = path
+        self.text = text
+
+
 class TargetRecord(ts.Response):
 
-    def __init__(self, state: TargetState) -> None:
+    def __init__(self, state: TargetState, files: tuple[ExistingFileRecord, ...]) -> None:
         self.state = state
+        self.files = files
 
 
 class TemplateRecord(ts.Response):

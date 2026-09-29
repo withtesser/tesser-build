@@ -1,3 +1,4 @@
+from trees.application.ports.generation_reader import ExistingFileRecord as ExistingFileRecord
 from trees.application.ports.generation_reader import FieldRecord as FieldRecord
 from trees.application.ports.generation_reader import GenerationReader as GenerationReader
 from trees.application.ports.generation_reader import ReadGenerationRequest as ReadGenerationRequest

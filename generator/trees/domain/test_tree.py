@@ -13,6 +13,7 @@ def tree_spec(
     note: str = "spec.toml",
     unknown_keys: tuple[str, ...] = (),
     target: str = "absent",
+    existing: tuple[tuple[str, str], ...] = (),
     app_name: str = "voice",
     bounded_context_name: str = "calls",
     aggregate_root_class_name: str = "Call",
@@ -49,6 +50,7 @@ def tree_spec(
         note=note,
         unknown_keys=unknown_keys,
         target=target,
+        existing=existing,
         app_name=app_name,
         bounded_context_name=bounded_context_name,
         aggregate_root_class_name=aggregate_root_class_name,
@@ -413,10 +415,31 @@ class TestTreeProblems:
 
         assert [str(text) for text in tree.problems()] == ["there is no spec file at spec.toml"]
 
-    def test_an_occupied_output_directory_is_a_problem(self) -> None:
-        tree = domain.Tree(tree_spec(target="occupied"))
+    def test_an_output_path_that_is_not_a_directory_is_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(target="not_directory"))
 
-        assert [str(text) for text in tree.problems()] == ["the output directory is not empty"]
+        assert [str(text) for text in tree.problems()] == ["the output path is not a directory"]
+
+    def test_a_file_the_tree_does_not_write_is_kept_beside_it(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("README.md", "# voice\n"),)))
+
+        assert (tree.health(), [str(generated_file.path()) for generated_file in tree.files()]) == (
+            domain.Health.CLEAN,
+            ["calls/domain/call.py"],
+        )
+
+    def test_a_file_the_tree_writes_the_same_is_not_a_problem(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("calls/domain/call.py", "class Call:\n"),)))
+
+        assert tree.health() == domain.Health.CLEAN
+
+    def test_a_file_the_tree_would_write_differently_is_a_problem_and_nothing_is_written(self) -> None:
+        tree = domain.Tree(tree_spec(target="occupied", existing=(("calls/domain/call.py", "class Other:\n"),)))
+
+        assert ([str(text) for text in tree.problems()], tree.files()) == (
+            ["the output directory already has calls/domain/call.py, which the generator would write differently"],
+            (),
+        )
 
     def test_an_operation_named_twice_is_a_problem(self) -> None:
         tree = domain.Tree(tree_spec(write_operation_name="record_call", action_operation_name="record_call"))

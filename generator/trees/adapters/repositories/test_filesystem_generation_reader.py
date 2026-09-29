@@ -138,7 +138,7 @@ class TestFilesystemGenerationReader:
             ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
         )
 
-        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.ABSENT)
+        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.ABSENT, files=())
 
     def test_an_output_directory_with_nothing_in_it_is_empty(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "out").mkdir()
@@ -148,18 +148,35 @@ class TestFilesystemGenerationReader:
             ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
         )
 
-        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.EMPTY)
+        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.EMPTY, files=())
 
-    def test_an_output_directory_with_a_file_in_it_is_occupied(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / "out").mkdir()
+    def test_an_output_directory_with_files_in_it_is_occupied_by_them(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "out" / "docs").mkdir(parents=True)
         (tmp_path / "out" / "kept.txt").write_text("kept\n")
+        (tmp_path / "out" / "docs" / "notes.md").write_text("notes\n")
         filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path))
 
         read_generation_response = filesystem_generation_reader.read_generation(
             ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
         )
 
-        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.OCCUPIED)
+        assert read_generation_response.target == ports.TargetRecord(
+            state=ports.TargetState.OCCUPIED,
+            files=(
+                ports.ExistingFileRecord(path="docs/notes.md", text="notes\n"),
+                ports.ExistingFileRecord(path="kept.txt", text="kept\n"),
+            ),
+        )
+
+    def test_an_output_path_that_is_a_file_is_not_a_directory(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "out").write_text("a file\n")
+        filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path))
+
+        read_generation_response = filesystem_generation_reader.read_generation(
+            ports.ReadGenerationRequest(spec_path=str(tmp_path / "spec.toml"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert read_generation_response.target == ports.TargetRecord(state=ports.TargetState.NOT_DIRECTORY, files=())
 
     def test_a_missing_spec_file_is_missing_and_names_its_path(self, tmp_path: pathlib.Path) -> None:
         filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path))

@@ -16,7 +16,7 @@ UNREADABLE: typing.Final[str] = "unreadable"
 
 MALFORMED: typing.Final[str] = "malformed"
 
-OCCUPIED: typing.Final[str] = "occupied"
+NOT_DIRECTORY: typing.Final[str] = "not_directory"
 
 ENGINE: typing.Final[str] = "restate"
 
@@ -277,6 +277,7 @@ class TreeSpec(ts.Spec):
         note: str,
         unknown_keys: tuple[str, ...],
         target: str,
+        existing: tuple[tuple[str, str], ...],
         app_name: str,
         bounded_context_name: str,
         aggregate_root_class_name: str,
@@ -308,6 +309,7 @@ class TreeSpec(ts.Spec):
         self.note = note
         self.unknown_keys = unknown_keys
         self.target = target
+        self.existing = existing
         self.app_name = app_name
         self.bounded_context_name = bounded_context_name
         self.aggregate_root_class_name = aggregate_root_class_name
@@ -536,12 +538,12 @@ class Tree(ts.AggregateRoot):
                             f"relay operations (TB085); name the operation without it"
                         )
                     )
-            if spec.target == OCCUPIED:
-                found.append(Text("the output directory is not empty"))
+            if spec.target == NOT_DIRECTORY:
+                found.append(Text("the output path is not a directory"))
             if not spec.templates:
                 found.append(Text("no templates were found"))
-        self._problems = tuple(found)
         if found:
+            self._problems = tuple(found)
             self._files: tuple[GeneratedFile, ...] = ()
             return
         classes = {
@@ -655,7 +657,7 @@ class Tree(ts.AggregateRoot):
             ("test_method", spec.test_method_name),
         )
         scope = Scope(ScopeSpec(values=values, sections=sections))
-        self._files = tuple(
+        rendered = tuple(
             sorted(
                 (
                     GeneratedFile(
@@ -670,6 +672,13 @@ class Tree(ts.AggregateRoot):
                 key=str,
             )
         )
+        existing = dict(spec.existing)
+        self._problems = tuple(
+            Text(f"the output directory already has {generated_file.path()}, which the generator would write differently")
+            for generated_file in rendered
+            if existing.get(str(generated_file.path()), str(generated_file.content())) != str(generated_file.content())
+        )
+        self._files = () if self._problems else rendered
 
     def health(self) -> Health:
         return Health.PROBLEMS if self._problems else Health.CLEAN

@@ -115,8 +115,10 @@ def spec_record(
 
 
 @ts.helper
-def target_record(state: ports.TargetState = ports.TargetState.ABSENT) -> ports.TargetRecord:
-    return ports.TargetRecord(state=state)
+def target_record(
+    state: ports.TargetState = ports.TargetState.ABSENT, files: tuple[ports.ExistingFileRecord, ...] = ()
+) -> ports.TargetRecord:
+    return ports.TargetRecord(state=state, files=files)
 
 
 @ts.helper
@@ -192,10 +194,18 @@ class TestTreeService:
         )
         assert generate_tree_response.paths == ()
 
-    def test_an_occupied_output_directory_writes_nothing(self) -> None:
+    def test_a_file_the_tree_would_write_differently_writes_nothing(self) -> None:
         fake_tree_writer = FakeTreeWriter()
         tree_service = application.TreeService(
-            FakeGenerationReader(read_generation_response(target=target_record(state=ports.TargetState.OCCUPIED))), fake_tree_writer
+            FakeGenerationReader(
+                read_generation_response(
+                    target=target_record(
+                        state=ports.TargetState.OCCUPIED,
+                        files=(ports.ExistingFileRecord(path="calls/domain/call.py", text="class Other:\n"),),
+                    )
+                )
+            ),
+            fake_tree_writer,
         )
 
         generate_tree_response = tree_service.generate_tree(
@@ -203,7 +213,9 @@ class TestTreeService:
         )
 
         assert fake_tree_writer.written == []
-        assert generate_tree_response.problems == ("the output directory is not empty",)
+        assert generate_tree_response.problems == (
+            "the output directory already has calls/domain/call.py, which the generator would write differently",
+        )
 
     def test_a_missing_spec_file_is_answered_as_a_problem(self) -> None:
         tree_service = application.TreeService(

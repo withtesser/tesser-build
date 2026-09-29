@@ -130,6 +130,11 @@ a root acceptance test that reaches the served host through
 `environment_variables.host_url`. `specs/library.toml` is HTTP over memory,
 `specs/helpdesk.toml` HTTP over Postgres.
 
+The output directory may already hold files. A file the generator does not
+write (a `README.md`, say) is kept beside the tree, and a file it would write
+the same is fine; a file it would write differently is a problem, and then
+nothing is written.
+
 ## Working on this repo
 
 ```sh
