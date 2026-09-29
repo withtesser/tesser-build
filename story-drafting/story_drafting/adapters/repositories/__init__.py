@@ -1,0 +1,2 @@
+from story_drafting.adapters.repositories.memory import MemoryJobToBeDoneStore as MemoryJobToBeDoneStore
+from story_drafting.adapters.repositories.uuid_job_to_be_done_identity_repository import UuidJobToBeDoneIdentityRepository as UuidJobToBeDoneIdentityRepository
