@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import typing
+
+import tesser.context as ts
+
+
+class LinkBody(ts.Request):
+
+    def __init__(self, slug: str, target_url: str) -> None:
+        self.slug = slug
+        self.target_url = target_url
+
+
+class CreateCampaignRequest(ts.Request):
+
+    def __init__(
+        self,
+        campaign_id: str,
+        window_start: str,
+        window_end: str,
+        links: tuple[LinkBody, ...],
+    ) -> None:
+        self.campaign_id = campaign_id
+        self.window_start = window_start
+        self.window_end = window_end
+        self.links = links
+
+
+class GetCampaignRequest(ts.Request):
+
+    def __init__(self, campaign_id: str) -> None:
+        self.campaign_id = campaign_id
+
+
+class AddLinkRequest(ts.Request):
+
+    def __init__(self, campaign_id: str, slug: str, target_url: str) -> None:
+        self.campaign_id = campaign_id
+        self.slug = slug
+        self.target_url = target_url
+
+
+class DeactivateLinkRequest(ts.Request):
+
+    def __init__(self, campaign_id: str, slug: str) -> None:
+        self.campaign_id = campaign_id
+        self.slug = slug
+
+
+class Campaign(ts.Response):
+
+    def __init__(self, campaign_id: str, links: tuple[str, ...]) -> None:
+        self.campaign_id = campaign_id
+        self.links = links
+
+
+class Problem(ts.Response):
+
+    def __init__(self, code: str, field: str, message: str) -> None:
+        self.code = code
+        self.field = field
+        self.message = message
+
+
+class Rejection(ts.Response):
+
+    def __init__(
+        self, code: str, message: str, field: str, problems: tuple[Problem, ...]
+    ) -> None:
+        self.code = code
+        self.message = message
+        self.field = field
+        self.problems = problems
+
+
+class CampaignRejected(ts.Error):
+
+    def __init__(self, rejection: Rejection) -> None:
+        super().__init__(rejection.message)
+        self.rejection = rejection
+
+
+class CampaignNotFound(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class LinkNotAdded(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class LinkNotDeactivated(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+ERRORS: typing.Final[
+    tuple[
+        type[CampaignRejected],
+        type[CampaignNotFound],
+        type[LinkNotAdded],
+        type[LinkNotDeactivated],
+    ]
+] = (CampaignRejected, CampaignNotFound, LinkNotAdded, LinkNotDeactivated)
+
+
+class CreateCampaignResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class GetCampaignResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class AddLinkResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class DeactivateLinkResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class CampaignClient(ts.Client, typing.Protocol):
+
+    def create_campaign(
+        self, create_campaign_request: CreateCampaignRequest
+    ) -> CreateCampaignResponse: ...
+
+    def get_campaign(
+        self, get_campaign_request: GetCampaignRequest
+    ) -> GetCampaignResponse: ...
+
+    def add_link(self, add_link_request: AddLinkRequest) -> AddLinkResponse: ...
+
+    def deactivate_link(
+        self, deactivate_link_request: DeactivateLinkRequest
+    ) -> DeactivateLinkResponse: ...

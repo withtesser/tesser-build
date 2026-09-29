@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+#
+# Cut a red scaffold: an orphan root commit carrying HEAD's tree with the
+# story-drafting app reduced to its README.md and scripts/verify's
+# run_story_drafting arm replaced by scripts/baseline/scaffold-arm.bash, then
+# tag it.
+#
+#   scripts/baseline/scaffold story-drafting-scaffold-v4
+#
+# Orphan, so a trial's `git log` shows one commit and nothing of the history
+# that built the tools it is measured with. The arm serves srv/http/main.py
+# when the trial generates one, so a red trial writes no harness code.
+#
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: scripts/baseline/scaffold <tag>" >&2
+  exit 2
+fi
+tag=$1
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "baseline: tag $tag exists" >&2; exit 1; }
+
+tmp=$(mktemp -d)
+trap 'git worktree remove --force "$tmp/tree" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+git worktree add -q --detach "$tmp/tree" HEAD
+(
+  cd "$tmp/tree"
+  git ls-files story-drafting | grep -v '^story-drafting/README.md$' | xargs git rm -q --
+  python3 - "$HERE/scaffold-arm.bash" <<'PY'
+import re, sys
+arm = open(sys.argv[1]).read()
+text = open("scripts/verify").read()
+start = text.index("run_story_drafting() {\n")
+end = text.index("\n}\n", start) + 3
+open("scripts/verify", "w").write(text[:start] + arm + text[end:])
+PY
+  git add scripts/verify
+  tree=$(git write-tree)
+  commit=$(git commit-tree "$tree" -m "story-drafting red scaffold")
+  git tag -a "$tag" "$commit" -m "Red scaffold: story-drafting holds only its README"
+  echo "$tag $commit"
+)
