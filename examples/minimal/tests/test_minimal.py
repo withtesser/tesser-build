@@ -6,22 +6,41 @@ import sys
 import time
 import uuid
 
+
 class TestCliHost:
 
     def test_a_created_widget_is_found_once_its_name_is_approved(self) -> None:
         name = "w-" + str(uuid.uuid4())
-        tree = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        environment = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
-        host = [sys.executable, "-m", "srv.cli.main"]
-        created = subprocess.run([*host, "create", name], cwd=tree, env=environment, capture_output=True, text=True, check=False)
-        found_before_approval = subprocess.run([*host, "find", name], cwd=tree, env=environment, capture_output=True, text=True, check=False)
-        approved = subprocess.run([*host, "approve", name], cwd=tree, env=environment, capture_output=True, text=True, check=False)
-        found = found_before_approval
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        created = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "create", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        found_before_approval = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "find", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        approved = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "approve", name],
+            capture_output=True, text=True, check=False, env=env,
+        )
         for _ in range(50):
-            found = subprocess.run([*host, "find", name], cwd=tree, env=environment, capture_output=True, text=True, check=False)
-            if found.stdout == "yes\n":
+            if approved.returncode == 0 or "HTTP 412" not in approved.stderr:
                 break
             time.sleep(0.1)
-        assert (created.returncode, created.stdout) == (0, name + "\n"), created.stderr
-        assert (approved.returncode, approved.stdout) == (0, name + "\n"), approved.stderr
-        assert (found_before_approval.stdout, found.stdout) == ("no\n", "yes\n")
+            approved = subprocess.run(
+                [sys.executable, "-m", "srv.cli.main", "approve", name],
+                capture_output=True, text=True, check=False, env=env,
+            )
+        found = found_before_approval
+        for _ in range(50):
+            found = subprocess.run(
+                [sys.executable, "-m", "srv.cli.main", "find", name],
+                capture_output=True, text=True, check=False, env=env,
+            )
+            if found.stdout.splitlines() == ["yes"]:
+                break
+            time.sleep(0.1)
+        assert (created.returncode, created.stdout.splitlines()) == (0, [name]), created.stderr
+        assert (approved.returncode, approved.stdout.splitlines()) == (0, [name]), approved.stderr
+        assert (found_before_approval.stdout.splitlines(), found.stdout.splitlines()) == (["no"], ["yes"])

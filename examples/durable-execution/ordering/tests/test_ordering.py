@@ -79,15 +79,12 @@ class TestOrderingThroughTheEngine:
         ordering = component.Ordering(
             component.Config(component.Spec(ingress=os.environ["RESTATE_INGRESS"]))
         )
-        suffix = uuid.uuid4().hex
         containers: list[restate.Service | restate.Workflow] = [
             ordering.order_actions_service,
             ordering.order_orchestrator_workflow,
             ordering.purchase_actions_service,
             ordering.purchase_orchestrator_workflow,
         ]
-        for container in containers:
-            container.service_tag.name = f"{container.name}{suffix}"
         with socket.socket() as probe:
             probe.bind(("0.0.0.0", 0))
             port = probe.getsockname()[1]

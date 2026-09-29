@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pathlib
 import subprocess
 import sys
 
@@ -9,51 +8,43 @@ import sys
 class TestCliHost:
 
     def test_no_command_is_answered_with_the_usage_on_exit_two(self) -> None:
-        result = subprocess.run(
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
             [sys.executable, "-m", "srv.cli.main"],
-            cwd=pathlib.Path(__file__).resolve().parents[2],
-            env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
 
-        assert (result.returncode, result.stdout) == (2, "")
-        assert result.stderr.startswith("usage: python -m srv.cli.main <command> [args]\n")
+        assert (completed.returncode, completed.stdout) == (2, "")
+        assert completed.stderr.startswith("usage: python -m srv.cli.main <command> [args]\n")
 
     def test_an_unknown_command_is_answered_with_the_usage_on_exit_two(self) -> None:
-        result = subprocess.run(
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
             [sys.executable, "-m", "srv.cli.main", "nope"],
-            cwd=pathlib.Path(__file__).resolve().parents[2],
-            env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
 
-        assert (result.returncode, result.stdout) == (2, "")
-        assert "  {{read}} <{{identity}}>" in result.stderr
+        assert (completed.returncode, completed.stdout) == (2, "")
+        assert "  {{read}} <{{identity}}>" in completed.stderr
 
     def test_a_missing_argument_is_a_usage_error_on_exit_two(self) -> None:
-        result = subprocess.run(
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
             [sys.executable, "-m", "srv.cli.main", "{{read}}"],
-            cwd=pathlib.Path(__file__).resolve().parents[2],
-            env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
 
-        assert (result.returncode, result.stdout, result.stderr) == (
+        assert (completed.returncode, completed.stdout, completed.stderr) == (
             2,
             "",
             "missing argument <{{identity}}>\nusage: {{read}} <{{identity}}>\n",
         )
 
     def test_a_{{read}}_of_an_unknown_{{identity}}_exits_one_without_leaking_the_failure(self) -> None:
-        result = subprocess.run(
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
             [sys.executable, "-m", "srv.cli.main", "{{read}}", "never-issued"],
-            cwd=pathlib.Path(__file__).resolve().parents[2],
-            env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
-            capture_output=True,
-            text=True,
+            capture_output=True, text=True, check=False, env=env,
         )
 
-        assert (result.returncode, result.stdout, result.stderr) == (1, "", "unexpected error\n")
+        assert (completed.returncode, completed.stdout, completed.stderr) == (1, "", "unexpected error\n")

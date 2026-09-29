@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import http.client as http_client
 import json
-import os
 import urllib.parse as urllib_parse
+
+import tesser.testing as ts
 
 import protocol as protocol
 
@@ -11,7 +12,7 @@ import protocol as protocol
 class TestAddStoryEndToEnd:
 
     def test_a_post_to_a_jtbds_stories_answers_the_storys_id_level_and_position(self) -> None:
-        address = urllib_parse.urlsplit(os.environ["SPECS_APP_URL"])
+        address = urllib_parse.urlsplit(ts.served("SPECS_APP_URL"))
         conn = http_client.HTTPConnection(address.hostname or "", address.port, timeout=5)
         conn.request(
             "POST",
