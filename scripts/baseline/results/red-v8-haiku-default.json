@@ -11,6 +11,18 @@
     "host_port": 9350,
     "prepared": "2026-09-29T19:39:25Z"
   },
+  "conditions": {
+    "effort": [],
+    "spawn": {
+      "agent_type": "red-v8-haiku-default",
+      "task_kind": "in_process_teammate",
+      "model_requested": "haiku"
+    },
+    "system_prompt": {
+      "chars": 8750,
+      "sha256": "cc716fd1a1796fee"
+    }
+  },
   "agent": {
     "models": [
       "claude-haiku-4-5-20251001"

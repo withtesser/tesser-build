@@ -11,6 +11,20 @@
     "host_port": 9330,
     "prepared": "2026-09-29T19:09:09Z"
   },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "red-v6-3",
+      "task_kind": "in_process_teammate",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 8750,
+      "sha256": "cc716fd1a1796fee"
+    }
+  },
   "agent": {
     "models": [
       "claude-opus-5-5"

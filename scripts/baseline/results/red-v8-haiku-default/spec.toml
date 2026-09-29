@@ -1,0 +1,43 @@
+app_name = "story_drafting"
+bounded_context_name = "jtbd"
+aggregate_root_class_name = "Jtbd"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "jtbd_id"
+identity_port_operation_name = "issue_jtbd_id"
+
+[aggregate_fields]
+description = "str"
+status = "str"
+
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+description = ["design-feature", "refactor-code"]
+status = ["drafting", "pending"]
+
+[client]
+write_operation_name = "submit_jtbd"
+read_operation_name = "check_jtbd_status"
+read_response_fields = ["jtbd_id", "description", "status"]
+
+[orchestrator]
+operation_name = "draft_for_jtbd"
+
+[action]
+operation_name = "mark_jtbd_drafting"
+
+[repository]
+save_operation_name = "save_jtbd"
+load_operation_name = "load_jtbd"
+load_response_collection_name = "jbtds"
+
+[acceptance_test]
+test_class_name = "TestSubmitJtbd"
+test_method_name = "test_submitted_jtbd_is_drafting"
+asserted_field = "status"
+random_values = ["drafting", "pending"]
+
+[environment_variables]
+restate_ingress_url = "RESTATE_INGRESS"
+host_url = "STORY_DRAFTING_HOST"

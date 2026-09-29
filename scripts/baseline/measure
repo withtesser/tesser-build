@@ -21,6 +21,7 @@ MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 out="$MAIN/.baseline-runs/$name"
 [ -f "$out/run.json" ] || { echo "baseline: no prepared run '$name'" >&2; exit 1; }
 cp "$transcript" "$out/transcript.jsonl"
+if [ -f "${transcript%.jsonl}.meta.json" ]; then cp "${transcript%.jsonl}.meta.json" "$out/transcript.meta.json"; fi
 
 wt=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["worktree"])' "$out/run.json")
 base=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["base_sha"])' "$out/run.json")
