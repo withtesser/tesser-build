@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Record a measured run in the repo: scripts/baseline/results/<run>.json, and
 beside it scripts/baseline/results/<run>/ holding what the trial decided —
-its generator spec (spec.toml) and its root tests (tests/test_*.py) —
+its generator spec (spec.toml), or the composition, implementations, and
+generator specs it wrote into story-drafting/specs/, and its root tests
+(tests/test_*.py) —
 so a later grader can rescore it from the repo alone.
 
 The full metrics.json stays in .baseline-runs/ (gitignored). The recorded copy
@@ -43,6 +45,13 @@ def main() -> None:
     spec_path = main_checkout / ".baseline-runs" / name / "spec.toml"
     decisions = {"spec.toml": spec_path.read_text()} if spec_path.is_file() else {}
     head = metrics["diff"]["head"]
+    for filename in ("composition.toml", "implementations.toml", "generator.toml"):
+        shown = subprocess.run(
+            ["git", "show", f"{head}:story-drafting/specs/{filename}"],
+            capture_output=True, text=True, cwd=main_checkout,
+        )
+        if shown.returncode == 0:
+            decisions[filename] = shown.stdout
     listed = subprocess.run(
         ["git", "ls-tree", "--name-only", f"{head}:story-drafting/tests"],
         capture_output=True, text=True, cwd=main_checkout,

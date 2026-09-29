@@ -4,6 +4,7 @@
 # subagent to work one phase of the story-drafting build in.
 #
 #   scripts/baseline/prepare red   story-drafting-scaffold-v2 <run-name> <slot>
+#   scripts/baseline/prepare red-specs story-drafting-scaffold-s1 <run-name> <slot>
 #   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
 #
 # The worktree is .claude/worktrees/run-<run-name> on branch
@@ -23,7 +24,7 @@
 set -euo pipefail
 
 if [ $# -ne 4 ]; then
-  echo "usage: scripts/baseline/prepare red|green <base-ref> <run-name> <slot>" >&2
+  echo "usage: scripts/baseline/prepare red|red-specs|green <base-ref> <run-name> <slot>" >&2
   exit 2
 fi
 phase=$1
@@ -66,8 +67,15 @@ JSON
 # A red trial is shown a generated tree, rendered from a gated spec by the
 # worktree's own generator (library: http over memory), so the prompt can
 # carry what a generated host answers before the trial generates its own.
-(cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
-  specs/library.toml "$out/example/library" >/dev/null)
+# A red-specs trial writes the five-spec formats instead, so it is shown the
+# library composition's rendered tree (generator/compositions/library/).
+if [ "$phase" = red-specs ]; then
+  (cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.render \
+    compositions/library "$out/example/library" >/dev/null)
+else
+  (cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
+    specs/library.toml "$out/example/library" >/dev/null)
+fi
 
 # The prompt is a template. {name} is a run value; {{FILE:path}} is a file
 # from the trial's worktree at its base commit and {{EXAMPLE:path}} a file of

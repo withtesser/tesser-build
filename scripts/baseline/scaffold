@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Cut a red scaffold: an orphan root commit carrying HEAD's tree with the
-# story-drafting app reduced to its README.md and scripts/verify's
+# story-drafting app reduced to its README.md and the specs a trial starts from
+# (story-drafting/specs/language.toml and story.toml, when HEAD has them), and scripts/verify's
 # run_story_drafting arm replaced by scripts/baseline/scaffold-arm.bash, then
 # tag it.
 #
@@ -26,7 +27,7 @@ trap 'git worktree remove --force "$tmp/tree" >/dev/null 2>&1 || true; rm -rf "$
 git worktree add -q --detach "$tmp/tree" HEAD
 (
   cd "$tmp/tree"
-  git ls-files story-drafting | grep -v '^story-drafting/README.md$' | xargs git rm -q --
+  git ls-files story-drafting | grep -v -E '^story-drafting/(README\.md|specs/(language|story)\.toml)$' | xargs git rm -q --
   python3 - "$HERE/scaffold-arm.bash" <<'PY'
 import re, sys
 arm = open(sys.argv[1]).read()
