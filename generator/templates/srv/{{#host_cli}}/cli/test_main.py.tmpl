@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import tesser.testing as ts
+
+
+class TestCliHost:
+
+    def test_no_command_is_answered_with_the_usage_on_exit_two(self) -> None:
+        cli = ts.Cli("srv.cli.main")
+        cli_answer = cli.run()
+
+        assert (cli_answer.exit_code, cli_answer.stdout) == (2, "")
+        assert cli_answer.stderr.startswith("usage: python -m srv.cli.main <command> [args]\n")
+
+    def test_an_unknown_command_is_answered_with_the_usage_on_exit_two(self) -> None:
+        cli = ts.Cli("srv.cli.main")
+        cli_answer = cli.run("nope")
+
+        assert (cli_answer.exit_code, cli_answer.stdout) == (2, "")
+        assert "  {{read}} <{{identity}}>" in cli_answer.stderr
+
+    def test_a_missing_argument_is_a_usage_error_on_exit_two(self) -> None:
+        cli = ts.Cli("srv.cli.main")
+        cli_answer = cli.run("{{read}}")
+
+        assert (cli_answer.exit_code, cli_answer.stdout, cli_answer.stderr) == (
+            2,
+            "",
+            "missing argument <{{identity}}>\nusage: {{read}} <{{identity}}>\n",
+        )
+
+    def test_a_{{read}}_of_an_unknown_{{identity}}_exits_one_without_leaking_the_failure(self) -> None:
+        cli = ts.Cli("srv.cli.main")
+        cli_answer = cli.run("{{read}}", "never-issued")
+
+        assert (cli_answer.exit_code, cli_answer.stdout, cli_answer.stderr) == (1, "", "unexpected error\n")
