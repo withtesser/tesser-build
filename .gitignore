@@ -25,3 +25,10 @@ build/
 # the mode/kill-switch conf, the change log, and per-session guidance records.
 # Never committed: the log carries an actor email and machine-local paths.
 .tesser/
+
+# Claude Code worktrees (one branch per change set, CLAUDE.md).
+.claude/worktrees/
+
+# Baseline run outputs (scripts/baseline/run): transcripts and hook logs
+# carry machine-local paths and an actor email.
+.baseline-runs/

@@ -378,6 +378,34 @@ jobs:
       - name: specs-app — tessercheck + mypy --strict + pytest
         run: scripts/verify specs-app
 
+  story-drafting:
+    # Gates the story-drafting app at the same bar: tessercheck zero findings
+    # + mypy --strict + pytest against Restate. A two-step agent skill backed
+    # by a durable workflow, and the baseline for measuring how agents build a
+    # tesser app from one user story.
+    name: story-drafting app (tessercheck + mypy --strict + pytest against Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r story-drafting/requirements-dev.txt
+      - name: story-drafting — tessercheck + mypy --strict + pytest against Restate
+        env:
+          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+        run: scripts/verify story-drafting
+
   tessercheck-py:
     # The merged analyzer (the sigcheck engine, graduated): self-check over its
     # own tree, the RULES.md drift gate, mypy --strict, pytest, and the import

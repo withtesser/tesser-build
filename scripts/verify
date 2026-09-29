@@ -392,6 +392,71 @@ run_specs_app() {
   return "$status"
 }
 
+# The story-drafting app: a two-step agent skill backed by a durable
+# workflow — the agent drafts user stories from a job, and the run waits on
+# Restate until the developer picks. It is also the repo's baseline for
+# measuring how agents build a tesser app from one user story (red acceptance
+# test, then green; runs start from the story-drafting-scaffold-v2 tag, and
+# this tree is the chosen green run). The arm runs the tiers in the
+# runner's order (docs/design-test-tiers.md): every tier but the root with no
+# host served, then the hosts the root tier drives, then the root tier. Extend
+# the middle step with the hosts the tree needs (serving and registering the
+# Restate endpoint, as run_durable_execution does). Everything machine-specific
+# comes from the environment, so baseline runs can go side by side: the
+# Restate server (RESTATE_INGRESS / RESTATE_ADMIN) and the first of ten ports
+# the arm may serve hosts on (STORY_DRAFTING_PORT). Locally, a Restate server
+# of its own on 38080/39070:
+#
+#   docker run -d --name tesser-story-drafting-restate -p 38080:8080 -p 39070:9070 \
+#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+run_story_drafting() {
+  cd "$ROOT/story-drafting" || return 1
+  local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:39070}"
+  local port="${STORY_DRAFTING_PORT:-9300}"
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  local targets=()
+  local d
+  for d in */; do
+    if [ -f "$d/__init__.py" ]; then targets+=("${d%/}"); fi
+  done
+  if [ -f conftest.py ]; then targets+=(conftest.py); fi
+  if [ ${#targets[@]} -gt 0 ]; then
+    step "mypy --strict"
+    MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
+  fi
+  local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  step "pytest every tier but the root (no host served; Restate at $ingress)"
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" STORY_DRAFTING_PORT="$port" \
+    STORY_DRAFTING_CALLBACK_HOST="$callback_host" STORY_WRITER=canned pytest -q --ignore=tests || return 1
+  step "serve the HTTP host and its Restate endpoint on :$port and register it at $admin"
+  (exec env RESTATE_INGRESS="$ingress" STORY_WRITER=canned PYTHONPATH=.:../tesser-py \
+    python3 -m srv.http.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"http://$callback_host:$port/restate\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest the root tier (against the host on :$port)"
+  STORY_DRAFTING_HOST="http://127.0.0.1:$port" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
+}
+
 # The voice example: one context (calls) whose root-tier test places a call
 # for a person through the CLI host (srv.cli.main place-call, run as a
 # subprocess) and reads the person's name back by the call id through the same
@@ -584,6 +649,7 @@ run_tree() {
     errorspy)       run_errorspy ;;
     tesser-py)      run_tesser_py ;;
     specs-app)      run_specs_app ;;
+    story-drafting) run_story_drafting ;;
     voice)          run_voice ;;
     layout)         run_layout ;;
     generator)      run_generator ;;
