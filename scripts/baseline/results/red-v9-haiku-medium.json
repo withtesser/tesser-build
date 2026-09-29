@@ -11,6 +11,18 @@
     "host_port": 9350,
     "prepared": "2026-09-29T19:59:56Z"
   },
+  "conditions": {
+    "effort": [],
+    "spawn": {
+      "agent_type": "tesser-red-trial-medium",
+      "task_kind": "subagent",
+      "model_requested": "haiku"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
   "agent": {
     "models": [
       "claude-haiku-4-5-20251001"

@@ -1,0 +1,47 @@
+app_name = "story_drafting_skill"
+bounded_context_name = "story_drafting"
+aggregate_root_class_name = "JobToBeDone"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "jtbd_id"
+identity_port_operation_name = "issue_jtbd_id"
+
+[aggregate_fields]
+statement = "str"
+step = "str"
+draft_count = "int"
+picked_draft = "str"
+
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+statement = ["When I plan a trip I want an itinerary", "When I refactor I want a safety net"]
+step = ["drafting", "pick"]
+draft_count = [1, 3]
+picked_draft = ["As a traveller I want an itinerary", "As a developer I want a safety net"]
+
+[client]
+write_operation_name = "submit_jtbd"
+read_operation_name = "come_back_to_jtbd"
+read_response_fields = ["jtbd_id", "statement", "step", "draft_count", "picked_draft"]
+
+[orchestrator]
+operation_name = "work_through_jtbd"
+
+[action]
+operation_name = "record_jtbd"
+
+[repository]
+save_operation_name = "save_jtbd"
+load_operation_name = "load_jtbd"
+load_response_collection_name = "jtbds"
+
+[acceptance_test]
+test_class_name = "TestSubmittingJobsToBeDone"
+test_method_name = "test_a_submitted_jtbd_stops_at_the_pick_once_drafted"
+asserted_field = "statement"
+random_values = ["When I plan a trip I want an itinerary", "When I refactor I want a safety net", "When I onboard I want a checklist"]
+
+[environment_variables]
+restate_ingress_url = "RESTATE_INGRESS"
+host_url = "STORY_DRAFTING_HOST"

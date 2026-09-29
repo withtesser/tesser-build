@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime
+import hashlib
 import json
 import os
 import pathlib
@@ -124,6 +125,38 @@ def transcript_metrics(rows: list[dict]) -> dict:
     }
 
 
+def run_conditions(rows: list[dict], meta: dict) -> dict:
+    """What the trial ran under, read from its own transcript rather than from
+    what it was asked to run under: the effort each request recorded (a named
+    teammate ignores an agent definition's effort, so the ask and the record
+    can differ), how it was spawned, and which system prompt it got."""
+    efforts = sorted({row["effort"] for row in rows if row.get("type") == "assistant" and row.get("effort")})
+    snapshot = next(
+        (
+            row["attachment"]
+            for row in rows
+            if row.get("type") == "attachment"
+            and isinstance(row.get("attachment"), dict)
+            and row["attachment"].get("type") == "prompt_snapshot"
+        ),
+        None,
+    )
+    system_prompt = None
+    if snapshot is not None:
+        parts = snapshot.get("systemPrompt")
+        text = "\n".join(parts) if isinstance(parts, list) else str(parts)
+        system_prompt = {"chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest()[:16]}
+    return {
+        "effort": efforts,
+        "spawn": {
+            "agent_type": meta.get("agentType"),
+            "task_kind": meta.get("taskKind", "subagent") if meta else None,
+            "model_requested": meta.get("model"),
+        },
+        "system_prompt": system_prompt,
+    }
+
+
 def hook_metrics(rows: list[dict]) -> dict:
     writes = [row for row in rows if row.get("source") == "write" and row.get("placement") == "governed"]
     codes: collections.Counter[str] = collections.Counter()
@@ -224,9 +257,13 @@ def main() -> None:
     args = parser.parse_args()
 
     run = json.loads((args.out / "run.json").read_text())
+    transcript = read_jsonl(args.out / "transcript.jsonl")
+    meta_path = args.out / "transcript.meta.json"
+    meta = json.loads(meta_path.read_text()) if meta_path.is_file() else {}
     metrics = {
         "run": run,
-        "agent": transcript_metrics(read_jsonl(args.out / "transcript.jsonl")),
+        "conditions": run_conditions(transcript, meta),
+        "agent": transcript_metrics(transcript),
         "hook": hook_metrics(read_jsonl(args.out / "hook-changes.jsonl")),
         "diff": diff_metrics(args.worktree, args.base),
         "gate": gate_metrics(args.worktree, args.out),

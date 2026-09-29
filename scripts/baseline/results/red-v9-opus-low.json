@@ -11,6 +11,20 @@
     "host_port": 9370,
     "prepared": "2026-09-29T19:59:59Z"
   },
+  "conditions": {
+    "effort": [
+      "low"
+    ],
+    "spawn": {
+      "agent_type": "tesser-red-trial-low",
+      "task_kind": "subagent",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
   "agent": {
     "models": [
       "claude-opus-5-5"
