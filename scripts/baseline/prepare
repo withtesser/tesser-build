@@ -3,12 +3,13 @@
 # Prepare one baseline run: a fresh worktree and a fresh Restate server for a
 # subagent to work one phase of the story-drafting build in.
 #
-#   scripts/baseline/prepare red   <base-ref>        <run-name> <slot>
+#   scripts/baseline/prepare red   story-drafting-scaffold-v2 <run-name> <slot>
 #   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
 #
 # The worktree is .claude/worktrees/run-<run-name> on branch
 # baseline/runs/<run-name>, cut from <base-ref>, so every run of a phase
-# starts from the same commit. The slot (0-9) gives the run its own Restate
+# starts from the same commit: a red run from the empty scaffold tag (the
+# story-drafting tree on the branch is a finished green run, not a start). The slot (0-9) gives the run its own Restate
 # container (tesser-story-drafting-restate-<slot>, ingress 38080+100*slot,
 # admin 39070+100*slot) and ten host ports from 9300+10*slot, so runs in
 # different slots go side by side; the container is replaced, so a run never
