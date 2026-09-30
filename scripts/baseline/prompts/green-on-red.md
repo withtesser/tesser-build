@@ -112,7 +112,7 @@ Every file in the tree that carries no generated mark, outside the acceptance te
 - Run the gate like this, keeping its whole output:
 
   ```sh
-  cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  source {venv}/bin/activate && cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 

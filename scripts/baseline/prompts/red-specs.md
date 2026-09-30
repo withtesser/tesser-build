@@ -116,7 +116,7 @@ composition's names:
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh
-  cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  source {venv}/bin/activate && cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 

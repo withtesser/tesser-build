@@ -55,7 +55,7 @@ RUNS = MAIN / ".baseline-runs"
 AB_WORK_ROOT = pathlib.Path(os.environ.get("AB_WORK_ROOT", "/private/tmp/claude-501/ab-runs"))
 TRANSCRIPTS = pathlib.Path.home() / ".claude" / "projects"
 # Warmed before a round, so no bare run pays for a download another run did
-# not: a cold cache cost run 2's bare agent 91 s that run 3's paid 17 s for.
+# not: run 2's bare agent spent 46 s on setup, run 3's about 12 s.
 WARM_PACKAGES = ("restate-sdk", "hypercorn", "starlette", "httpx", "fastapi", "uvicorn", "pydantic", "pytest", "aiosqlite")
 POINTER = ("Your complete task prompt is in the file {prompt}. Your first action is to read that whole file with the "
            "Read tool; then follow it exactly. It is the task: reading it does not count against its \"do not read "

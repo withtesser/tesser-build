@@ -21,9 +21,9 @@ agents ran together).
 | Agent time | 237.6 + 122.1 = **359.7 s** | **245.5 s** | 120.6 + 75.8 = **196.4 s** | **41.0 s** |
 | Model's own time | 156.7 + 97.7 = 254.4 s | 163.1 s | 68.0 + 45.0 = 113.0 s | 22.6 s |
 | Checking (gate, tests, analyzer) | 46.4 + 16.2 = 62.6 s | 10.3 s | 38.4 + 17.3 = 55.7 s | 0 s |
-| Setup (venv, installs) | 6.2 s | 17.6 s | 0 s | 17.0 s |
-| Probing by hand (curl, main.py) | 11.3 s | 11.3 s | 0 s | 1.4 s |
-| Other tool calls | 17.1 + 8.2 = 25.3 s | 43.3 s | 14.1 + 13.5 = 27.6 s | 0 s |
+| Setup (venv, installs) | 5.1 s | 12.6 s | 0 s | 11.5 s |
+| Probing by hand (curl, main.py) | 11.3 s | 11.3 s | 0 s | 6.8 s |
+| Other tool calls | 26.3 s | 48.3 s | 27.6 s | 0 s |
 | Tool calls | 14 + 12 = 26 | 29 | 9 + 6 = 15 | 5 |
 | Shared check: submit, read, read after restart | pass, pass, pass | pass, pass, pass | pass, pass, pass | pass, pass, pass |
 | Automated tests | 67 (gate), 88.2% impl coverage | 5 unit + an e2e script | 70 (gate), 89.6% impl coverage | none |
@@ -42,9 +42,9 @@ agents ran together).
   about 114 s faster (246 s against 360 s), and 91 s of that is the model's
   own time. For Sonnet it was about 155 s faster (41 s against 196 s): five calls, no tests, and no restart
   test of its own. It passed the shared check anyway. Run 2's "arm A is about 12% faster" does
-  not hold here. In run 2 most of that lead was arm B's 91 s of setup;
-  here arm B's setup was about 17 s, probably a warm pip cache from the earlier
-  runs (not controlled).
+  not hold here. Run 2's lead was not setup either: re-split with the
+  corrected setup pattern (below), run 2's arm B spent 46 s on setup and 74 s
+  running its own service by hand; here its setup was about 12 s.
 - **What arm A buys is still tests and conformance, not speed.** It has 67–70
   gated tests, about 88–90% implementation coverage, and 0 tessercheck
   findings. Arm B has 5 unit tests (Opus) or none (Sonnet).
@@ -79,6 +79,14 @@ agents ran together).
 4. **Opus red's first gate run failed on "connection refused" to its served
    host** and it ran verify again, which accounts for part of its 238 s. The
    cause is unconfirmed (nothing was listening on its ports afterwards).
+
+## Correction (made in run 4)
+
+The first split counted any command containing `venv` as setup, so running
+`.venv/bin/python main.py` read as setup rather than probing. The numbers
+above are re-split from the transcripts with the corrected pattern (setup is
+creating a virtualenv, installs, and containers). Run 2's "91 s of setup" was
+46 s of setup and the rest running its service.
 
 ## Caveats
 

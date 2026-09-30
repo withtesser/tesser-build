@@ -7,9 +7,9 @@
 | Agent time, s | 359.7 | 245.5 | 196.4 | 41.0 |
 | Model's own time, s | 254.4 | 163.1 | 113.0 | 22.6 |
 | Checking, s | 62.6 | 10.3 | 55.7 | 0.0 |
-| Setup, s | 6.2 | 17.6 | 0.0 | 17.0 |
-| Probing by hand, s | 11.3 | 11.3 | 0.0 | 1.4 |
-| Other tool calls, s | 25.3 | 43.3 | 27.6 | 0.0 |
+| Setup, s | 5.1 | 12.6 | 0.0 | 11.5 |
+| Probing by hand, s | 11.3 | 11.3 | 0.0 | 6.8 |
+| Other tool calls, s | 26.3 | 48.3 | 27.6 | 0.0 |
 | Tool calls | 26 | 29 | 15 | 5 |
 | API requests | 26 | 25 | 15 | 4 |
 | Cache-read tokens | 2230297 | 1732329 | 1052346 | 177439 |
