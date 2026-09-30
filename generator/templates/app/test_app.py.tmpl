@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import tesser.testing as ts
 
 import app
@@ -12,12 +10,12 @@ import {{context}}.component as {{context}}_component
 class FakeConfigRepository(app.AppConfigRepository):
 
     def get(self) -> app.AppConfig:
-{{#storage_postgres}}
-        {{context}}_storage = os.environ["{{storage_env}}"]
-{{/storage_postgres}}
-        engine_url = os.environ["{{engine_url_env}}"]
         return app.AppConfig(
-            app.Spec({{context}}_component.Config({{context}}_component.Spec({{#storage_postgres}}{{context}}_storage, {{/storage_postgres}}engine_url, 7)))
+            app.Spec(
+                {{context}}_component.Config(
+                    {{context}}_component.Spec({{#storage_postgres}}"postgres://a@b/{{context}}", {{/storage_postgres}}"http://engine.invalid:8080", 7)
+                )
+            )
         )
 
 
@@ -38,15 +36,29 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
+        app_config = app.EnvConfigRepository(
+            {
+{{#storage_postgres}}
+                "{{storage_env}}": "postgres://a@b/{{context}}",
+{{/storage_postgres}}
+                "{{engine_url_env}}": "http://engine.invalid:8080",
+            }
+        ).get()
 
 {{#storage_postgres}}
-        assert app_config.{{context}}.storage == os.environ["{{storage_env}}"]
+        assert app_config.{{context}}.storage == "postgres://a@b/{{context}}"
 {{/storage_postgres}}
-        assert app_config.{{context}}.engine_url == os.environ["{{engine_url_env}}"]
+        assert app_config.{{context}}.engine_url == "http://engine.invalid:8080"
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:
-        env_config_repository = app.EnvConfigRepository()
+        env_config_repository = app.EnvConfigRepository(
+            {
+{{#storage_postgres}}
+                "{{storage_env}}": "postgres://a@b/{{context}}",
+{{/storage_postgres}}
+                "{{engine_url_env}}": "http://engine.invalid:8080",
+            }
+        )
 
         first = env_config_repository.get()
         second = env_config_repository.get()

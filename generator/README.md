@@ -104,6 +104,30 @@ right after it can answer 500 until the action has saved the aggregate.
   and the root acceptance test retries its read until it answers (30 seconds,
   0.2 seconds apart).
 
+## Testing a generated tree
+
+A plain `pytest` from the generated tree's root runs every tier, the root
+acceptance test included, with nothing served beforehand and nothing read
+from the environment (`docs/design-test-tiers.md`, "The tests own their
+infrastructure"). It needs Docker. The generated root `conftest.py` owns the
+infrastructure as session fixtures a test asks for by name; there is no
+`tests/conftest.py`, and `tests` is in `testpaths`:
+
+| Fixture | What it is |
+|---|---|
+| `engine_url`, `engine_admin_url`, `engine_callback_host` | a private Restate engine (`restate.harness`), started on first use, for the adapter tests |
+| `free_port` | a port the OS just handed out, for a test that serves an endpoint |
+| `storage_url` | postgres only: a private Postgres 16 in a container, started on first use; a plain `postgres://` DSN to a database named for the context |
+| `host` | `host = "http"`: a second private engine and `srv.http.main` served on a free port and registered with it; the host's base URL. `pytest --host <url>` points the root tier at a host already running, and then nothing is served |
+| `host_engine_url` | `host = "cli"`: a second private engine with `srv.restate.main` served on a free port and registered with it; the engine's URL. The root test runs `srv.cli.main` per command with the spec's `engine_url` variable set to it and its `storage_url` variable set to `storage_url` |
+
+Every container and served process has a watchdog child that removes it if
+pytest dies without cleaning up. Each fixture is synchronous and yields a
+plain string, so no session resource belongs to one test's event loop. A test
+that starts a host as a subprocess builds its environment explicitly from
+fixtures. `app.EnvConfigRepository` takes the environment it reads (`load()`
+passes `os.environ`), so its test hands it a dict.
+
 ## Example: HTTP over memory
 
 `specs/library.toml`:

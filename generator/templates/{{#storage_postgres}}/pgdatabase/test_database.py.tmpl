@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import time
 
 import asyncpg
@@ -103,8 +102,8 @@ class TestDatabase:
         assert dsn not in str(caught.value)
         assert "nowhere" not in str(caught.value)
 
-    async def test_open_connects_and_acquire_reuses_the_pool(self) -> None:
-        db = database.Database(database.DatabaseRequest(os.environ["{{storage_env}}"]))
+    async def test_open_connects_and_acquire_reuses_the_pool(self, storage_url: str) -> None:
+        db = database.Database(database.DatabaseRequest(storage_url))
         await db.open()
         async with db.acquire() as first:
             first_pid = await first.fetchval("SELECT pg_backend_pid()")
@@ -113,8 +112,8 @@ class TestDatabase:
         await db.close()
         assert first_pid == second_pid
 
-    async def test_open_is_idempotent(self) -> None:
-        db = database.Database(database.DatabaseRequest(os.environ["{{storage_env}}"]))
+    async def test_open_is_idempotent(self, storage_url: str) -> None:
+        db = database.Database(database.DatabaseRequest(storage_url))
         await db.open()
         await db.open()
         async with db.acquire() as connection:
@@ -122,8 +121,8 @@ class TestDatabase:
         await db.close()
         assert value == 1
 
-    async def test_concurrent_opens_build_one_pool_and_orphan_nothing(self) -> None:
-        dsn = os.environ["{{storage_env}}"]
+    async def test_concurrent_opens_build_one_pool_and_orphan_nothing(self, storage_url: str) -> None:
+        dsn = storage_url
         db = database.Database(database.DatabaseRequest(dsn), min_size=2, max_size=2)
         baseline = await backends(dsn)
         await asyncio.gather(db.open(), db.open(), db.open())
@@ -133,8 +132,8 @@ class TestDatabase:
         assert opened == baseline + 2
         assert settled == baseline
 
-    async def test_a_close_that_races_an_open_closes_the_pool_that_open_built(self) -> None:
-        dsn = os.environ["{{storage_env}}"]
+    async def test_a_close_that_races_an_open_closes_the_pool_that_open_built(self, storage_url: str) -> None:
+        dsn = storage_url
         db = database.Database(database.DatabaseRequest(dsn), min_size=2, max_size=2)
         baseline = await backends(dsn)
         await asyncio.gather(db.open(), db.close())
@@ -149,15 +148,15 @@ class TestDatabase:
         with pytest.raises(OSError):
             await db.open()
 
-    async def test_close_before_open_is_a_no_op_and_close_is_idempotent(self) -> None:
-        db = database.Database(database.DatabaseRequest(os.environ["{{storage_env}}"]))
+    async def test_close_before_open_is_a_no_op_and_close_is_idempotent(self, storage_url: str) -> None:
+        db = database.Database(database.DatabaseRequest(storage_url))
         await db.close()
         await db.open()
         await db.close()
         await db.close()
 
-    async def test_a_cancelled_query_releases_its_connection(self) -> None:
-        db = database.Database(database.DatabaseRequest(os.environ["{{storage_env}}"]), min_size=1, max_size=1)
+    async def test_a_cancelled_query_releases_its_connection(self, storage_url: str) -> None:
+        db = database.Database(database.DatabaseRequest(storage_url), min_size=1, max_size=1)
         await db.open()
 
         async def slow() -> None:
@@ -186,8 +185,8 @@ class TestDatabases:
         assert databases.database(shared) is databases.database(database.DatabaseRequest("postgres://a@b/one"))
         assert databases.database(other) is not databases.database(shared)
 
-    async def test_open_and_close_reach_every_database(self) -> None:
-        request = database.DatabaseRequest(os.environ["{{storage_env}}"])
+    async def test_open_and_close_reach_every_database(self, storage_url: str) -> None:
+        request = database.DatabaseRequest(storage_url)
         databases = database.Databases(request)
         await databases.open()
         db = databases.database(request)
@@ -200,8 +199,8 @@ class TestDatabases:
                 pass
         assert value == 1
 
-    async def test_an_open_that_fails_part_way_closes_what_it_opened(self) -> None:
-        dsn = os.environ["{{storage_env}}"]
+    async def test_an_open_that_fails_part_way_closes_what_it_opened(self, storage_url: str) -> None:
+        dsn = storage_url
         reachable = database.DatabaseRequest(dsn)
         unreachable = database.DatabaseRequest("postgres://nobody@127.0.0.1:1/none")
         databases = database.Databases(reachable, unreachable)

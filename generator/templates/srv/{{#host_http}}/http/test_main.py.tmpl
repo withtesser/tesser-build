@@ -13,11 +13,16 @@ import urllib.request as urllib_request
 
 class TestHttpHost:
 
-    def test_the_mounted_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_mounted_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self{{#storage_postgres}}, storage_url: str{{/storage_postgres}}, free_port: int) -> None:
+        port = free_port
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "{{engine_url_env}}": "http://127.0.0.1:9",
+{{#storage_postgres}}
+            "{{storage_env}}": storage_url,
+{{/storage_postgres}}
+        }
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         discover = urllib_request.Request(
             f"http://127.0.0.1:{port}/restate/discover",
@@ -48,16 +53,19 @@ class TestHttpHost:
             "{{Aggregate}}Orchestrator": ["{{conduct}}"],
         }
 
-    def test_the_{{collection}}_routes_answer_by_the_failure_they_meet(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_{{collection}}_routes_answer_by_the_failure_they_meet(self{{#storage_postgres}}, storage_url: str{{/storage_postgres}}, free_port: int) -> None:
+        port = free_port
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
-        env = dict(
-            os.environ, {{engine_url_env}}=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path)
-        )
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "{{engine_url_env}}": f"http://127.0.0.1:{unreachable}",
+{{#storage_postgres}}
+            "{{storage_env}}": storage_url,
+{{/storage_postgres}}
+        }
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
 
