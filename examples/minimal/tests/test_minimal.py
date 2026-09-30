@@ -9,9 +9,9 @@ import uuid
 
 class TestCliHost:
 
-    def test_a_created_widget_is_found_once_its_name_is_approved(self) -> None:
+    def test_a_created_widget_is_found_once_its_name_is_approved(self, host_engine_url: str, storage_url: str) -> None:
         name = "w-" + str(uuid.uuid4())
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "RESTATE_URL": host_engine_url, "ALPHA_STORAGE": storage_url, "BETA_KEY": "k"}
         created = subprocess.run(
             [sys.executable, "-m", "srv.cli.main", "create", name],
             capture_output=True, text=True, check=False, env=env,

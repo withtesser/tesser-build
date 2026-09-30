@@ -8,8 +8,8 @@ import sys
 class TestLivekitAgentServer:
 
     def test_the_entrypoint_loads_and_rejects_missing_configuration_before_connecting(self) -> None:
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
-        env.pop("CALLS_STORAGE", None)
+        env = {name: value for name, value in os.environ.items() if name != "CALLS_STORAGE"}
+        env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
         completed = subprocess.run(
             [sys.executable, "-m", "srv.livekit.agent_server"],

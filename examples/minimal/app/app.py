@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import typing
 
@@ -49,14 +50,17 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
-        storage = os.environ.get("ALPHA_STORAGE")
+        storage = self._environ.get("ALPHA_STORAGE")
         if storage is None:
             raise errors.invalid("missing_env", "ALPHA_STORAGE is required")
-        engine_url = os.environ.get("RESTATE_URL")
+        engine_url = self._environ.get("RESTATE_URL")
         if engine_url is None:
             raise errors.invalid("missing_env", "RESTATE_URL is required")
-        key = os.environ.get("BETA_KEY")
+        key = self._environ.get("BETA_KEY")
         if key is None:
             raise errors.invalid("missing_env", "BETA_KEY is required")
         return AppConfig(
@@ -78,4 +82,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> MinimalApp:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -11,11 +10,20 @@ import urllib.request as urllib_request
 
 
 class TestRestateHost:
-    def test_the_served_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_served_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(
+        self, storage_url: str, engine_url: str, free_port: int
+    ) -> None:
+        port = free_port
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "CALLS_STORAGE": storage_url,
+            "RESTATE_URL": engine_url,
+            "LIVEKIT_URL": "ws://livekit.invalid",
+            "LIVEKIT_API_KEY": "unused",
+            "LIVEKIT_API_SECRET": "unused",
+            "LIVEKIT_AGENT_NAME": "caller",
+        }
         host = subprocess.Popen([sys.executable, "-m", "srv.restate.main", f"127.0.0.1:{port}"], env=env)
         discover = urllib_request.Request(
             f"http://127.0.0.1:{port}/discover",

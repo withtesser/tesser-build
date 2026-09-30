@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -63,17 +61,13 @@ class FakePurchaseApplicationClient(client.PurchaseApplicationClient):
 
 class TestRestatePriceProduct:
 
-    async def test_restate_serves_price_product_and_a_call_made_with_its_handler_reaches_the_application_client(
-        self,
-    ) -> None:
+    async def test_restate_serves_price_product_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         order_actions_service = restate.Service(f"OrderActions{uuid.uuid4().hex}")
         fake_ordering_application_client = FakeOrderingApplicationClient()
         restate_price_product = activities.RestatePriceProduct(
             order_actions_service, fake_ordering_application_client
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -84,13 +78,13 @@ class TestRestatePriceProduct:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -98,7 +92,7 @@ class TestRestatePriceProduct:
             assert registered.is_success, registered.text
 
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_URL"], timeout=30.0
+                base_url=engine_url, timeout=30.0
             ) as async_client:
                 price_product_response = await restate_client.Client(async_client).service_call(
                     restate_price_product.handler, relays.PriceProductRequest(sku="gadget")
@@ -126,17 +120,13 @@ class TestRestatePriceProduct:
 
 class TestRestateTakePayment:
 
-    async def test_restate_serves_take_payment_and_a_call_made_with_its_handler_reaches_the_application_client(
-        self,
-    ) -> None:
+    async def test_restate_serves_take_payment_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         purchase_actions_service = restate.Service(f"PurchaseActions{uuid.uuid4().hex}")
         fake_purchase_application_client = FakePurchaseApplicationClient()
         restate_take_payment = activities.RestateTakePayment(
             purchase_actions_service, fake_purchase_application_client
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -147,13 +137,13 @@ class TestRestateTakePayment:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -161,7 +151,7 @@ class TestRestateTakePayment:
             assert registered.is_success, registered.text
 
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_URL"], timeout=30.0
+                base_url=engine_url, timeout=30.0
             ) as async_client:
                 take_payment_response = await restate_client.Client(async_client).service_call(
                     restate_take_payment.handler,
@@ -187,12 +177,10 @@ class TestRestateTakePayment:
 
 class TestRestateEngineRefusals:
 
-    async def test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried(self) -> None:
+    async def test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         order_actions_service = restate.Service(f"OrderActions{uuid.uuid4().hex}")
         restate_price_product = activities.RestatePriceProduct(order_actions_service, FakeOrderingApplicationClient())
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -203,20 +191,20 @@ class TestRestateEngineRefusals:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).generic_call(
                         order_actions_service.name, restate_price_product.handler.__name__,
@@ -235,12 +223,10 @@ class TestRestateEngineRefusals:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(self) -> None:
+    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         order_actions_service = restate.Service(f"OrderActions{uuid.uuid4().hex}", ingress_private=True)
         restate_price_product = activities.RestatePriceProduct(order_actions_service, FakeOrderingApplicationClient())
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -251,20 +237,20 @@ class TestRestateEngineRefusals:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).service_call(restate_price_product.handler, relays.PriceProductRequest(sku="gadget"))
 

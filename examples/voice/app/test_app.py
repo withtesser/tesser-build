@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import tesser.testing as ts
 
 import app
@@ -12,7 +10,7 @@ import calls.component as calls_component
 @ts.helper
 def calls_spec(
     storage: str = "postgres://a@b/calls",
-    restate_url: str = "http://localhost:8080",
+    engine_url: str = "http://localhost:8080",
     livekit_url: str = "ws://livekit",
     livekit_api_key: str = "key",
     livekit_api_secret: str = "secret",
@@ -20,7 +18,7 @@ def calls_spec(
 ) -> calls_component.Spec:
     return calls_component.Spec(
         storage=storage,
-        restate_url=restate_url,
+        engine_url=engine_url,
         livekit_url=livekit_url,
         livekit_api_key=livekit_api_key,
         livekit_api_secret=livekit_api_secret,
@@ -31,13 +29,13 @@ def calls_spec(
 @ts.fake
 class FakeConfigRepository(app.AppConfigRepository):
 
+    def __init__(self, storage: str, engine_url: str) -> None:
+        self._storage = storage
+        self._engine_url = engine_url
+
     def get(self) -> app.AppConfig:
         return app.AppConfig(
-            app.Spec(
-                calls_component.Config(
-                    calls_spec(storage=os.environ["CALLS_STORAGE"], restate_url=os.environ["RESTATE_URL"])
-                )
-            )
+            app.Spec(calls_component.Config(calls_spec(storage=self._storage, engine_url=self._engine_url)))
         )
 
 
@@ -54,18 +52,29 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
+        app_config = app.EnvConfigRepository(
+            {
+                "CALLS_STORAGE": "postgres://a@b/calls",
+                "RESTATE_URL": "http://engine.invalid:8080",
+                "LIVEKIT_URL": "ws://livekit.invalid",
+                "LIVEKIT_API_KEY": "key",
+                "LIVEKIT_API_SECRET": "secret",
+                "LIVEKIT_AGENT_NAME": "caller",
+            }
+        ).get()
 
-        assert app_config.calls.storage == os.environ["CALLS_STORAGE"]
-        assert app_config.calls.restate_url == os.environ["RESTATE_URL"]
-        assert app_config.calls.livekit_url == os.environ["LIVEKIT_URL"]
-        assert app_config.calls.livekit_agent_name == os.environ["LIVEKIT_AGENT_NAME"]
+        assert app_config.calls.storage == "postgres://a@b/calls"
+        assert app_config.calls.engine_url == "http://engine.invalid:8080"
+        assert app_config.calls.livekit_url == "ws://livekit.invalid"
+        assert app_config.calls.livekit_agent_name == "caller"
 
 
 class TestAppLoader:
 
-    async def test_the_loader_builds_an_app_whose_client_can_look_up_a_call(self) -> None:
-        voice_app = app.AppLoader(FakeConfigRepository()).load()
+    async def test_the_loader_builds_an_app_whose_client_can_look_up_a_call(
+        self, storage_url: str, engine_url: str
+    ) -> None:
+        voice_app = app.AppLoader(FakeConfigRepository(storage_url, engine_url)).load()
         await voice_app.open()
 
         raised: list[calls_client.CallNotFound] = []

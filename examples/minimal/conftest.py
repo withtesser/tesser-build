@@ -1,5 +1,17 @@
+import contextlib
 import os
+import pathlib
+import signal
+import socket
+import subprocess
 import sys
+import time
+import typing
+
+import httpx
+import pytest
+import restate.harness as restate_harness
+import testcontainers.core.container as testcontainers_container
 
 _root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _root)
@@ -10,3 +22,142 @@ for _rel in (("..",), ("..", ".."), ("..", "..", "..")):
         break
 else:
     raise RuntimeError(f"no tesser-py at ../, ../../ or ../../../ from {_root}")
+
+RESTATE_IMAGE: typing.Final[str] = "docker.io/restatedev/restate:1.7"
+POSTGRES_IMAGE: typing.Final[str] = "docker.io/library/postgres:16"
+POSTGRES_USER: typing.Final[str] = "tesser"
+POSTGRES_DB: typing.Final[str] = "alpha"
+DEADLINE_SECONDS: typing.Final[float] = 30.0
+
+
+@pytest.fixture(scope="session")
+def engine() -> typing.Iterator[restate_harness.RestateContainer]:
+    with private_engine() as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def engine_url(engine: restate_harness.RestateContainer) -> str:
+    return f"http://{engine.get_container_host_ip()}:{engine.get_exposed_port(8080)}"
+
+
+@pytest.fixture(scope="session")
+def engine_admin_url(engine: restate_harness.RestateContainer) -> str:
+    return f"http://{engine.get_container_host_ip()}:{engine.get_exposed_port(9070)}"
+
+
+@pytest.fixture(scope="session")
+def engine_callback_host() -> str:
+    return "host.docker.internal"
+
+
+@pytest.fixture(scope="session")
+def storage_url() -> typing.Iterator[str]:
+    with private_postgres() as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def host_engine_url(storage_url: str) -> typing.Iterator[str]:
+    with private_engine() as host_engine:
+        url = f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(8080)}"
+        port = unused_port()
+        served = subprocess.Popen(
+            [sys.executable, "-m", "srv.restate.main", f"0.0.0.0:{port}"],
+            cwd=pathlib.Path(__file__).resolve().parent,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(sys.path),
+                "RESTATE_URL": url,
+                "ALPHA_STORAGE": storage_url,
+                "BETA_KEY": "k",
+            },
+            start_new_session=True,
+        )
+        with watchdog(["kill", "-KILL", f"-{served.pid}"]):
+            try:
+                register(
+                    served,
+                    f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(9070)}",
+                    f"http://host.docker.internal:{port}",
+                )
+                yield url
+            finally:
+                os.killpg(served.pid, signal.SIGKILL)
+                served.wait()
+
+
+@pytest.fixture
+def free_port() -> int:
+    return unused_port()
+
+
+def unused_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("0.0.0.0", 0))
+        return int(probe.getsockname()[1])
+
+
+def register(served: subprocess.Popen[bytes], admin_url: str, uri: str) -> None:
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    answer = ""
+    while time.monotonic() < deadline:
+        if served.poll() is not None:
+            pytest.fail(f"the host exited with {served.returncode} before it could be registered")
+        try:
+            registered = httpx.post(f"{admin_url}/deployments", json={"uri": uri}, timeout=5.0)
+        except httpx.HTTPError as not_yet:
+            answer = repr(not_yet)
+        else:
+            if registered.is_success:
+                return
+            answer = registered.text
+        time.sleep(0.2)
+    pytest.fail(f"could not register {uri} at {admin_url} within {DEADLINE_SECONDS}s: {answer}")
+
+
+@contextlib.contextmanager
+def private_engine() -> typing.Iterator[restate_harness.RestateContainer]:
+    with restate_harness.create_restate_container(restate_image=RESTATE_IMAGE) as container:
+        with watchdog(["docker", "rm", "-f", str(container.get_wrapped_container().id)]):
+            yield container
+
+
+@contextlib.contextmanager
+def private_postgres() -> typing.Iterator[str]:
+    container = (
+        testcontainers_container.DockerContainer(POSTGRES_IMAGE)
+        .with_env("POSTGRES_USER", POSTGRES_USER)
+        .with_env("POSTGRES_DB", POSTGRES_DB)
+        .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .with_exposed_ports(5432)
+    )
+    with container:
+        with watchdog(["docker", "rm", "-f", str(container.get_wrapped_container().id)]):
+            deadline = time.monotonic() + DEADLINE_SECONDS
+            ready = container.exec(["pg_isready", "--host", "127.0.0.1", "--username", POSTGRES_USER])
+            while ready.exit_code != 0 and time.monotonic() < deadline:
+                time.sleep(0.2)
+                ready = container.exec(["pg_isready", "--host", "127.0.0.1", "--username", POSTGRES_USER])
+            if ready.exit_code != 0:
+                pytest.fail(f"postgres was not ready within {DEADLINE_SECONDS}s: {ready.output!r}")
+            yield (
+                f"postgres://{POSTGRES_USER}@{container.get_container_host_ip()}:"
+                f"{container.get_exposed_port(5432)}/{POSTGRES_DB}"
+            )
+
+
+@contextlib.contextmanager
+def watchdog(command: list[str]) -> typing.Iterator[None]:
+    guard = subprocess.Popen(
+        ["sh", "-c", 'cat >/dev/null; exec "$@"', "watchdog", *command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        yield
+    finally:
+        guard.kill()
+        guard.wait()

@@ -15,28 +15,27 @@ transcription received by the person in the room. It does not independently
 transcribe the agent's audio. The simulated person is instructed to provide
 their name only when asked.
 
-Start the local Postgres and Restate services described in `scripts/verify`.
-Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` for a test project,
-then run from the repository root:
+A plain `pytest` from `examples/voice` runs every tier, including this one,
+with nothing served beforehand: the root `conftest.py` starts a private
+Postgres and private Restate engines (containers, so Docker is needed) and
+removes them at the end. This tier's tests skip unless `VOICE_EVALS=1`,
+because they use paid LiveKit/model APIs, and a normal run starts nothing for
+them. To run them, set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and
+`LIVEKIT_API_SECRET` for a test project and a unique `LIVEKIT_AGENT_NAME`,
+then run from `examples/voice`:
 
 ```sh
-VOICE_EVALS=1 LIVEKIT_AGENT_NAME=caller-acceptance scripts/verify voice
+VOICE_EVALS=1 LIVEKIT_AGENT_NAME=caller-acceptance pytest tests
 ```
 
-Use an agent name not served by another worker. The verification script runs
-in three steps: first every tier but this one (`pytest --ignore=tests`, which works because `testpaths` leaves `tests` out) with no
-host served; then it starts the production Restate HTTP host and registers it
-with Restate (forcing over whatever the context tests registered), and with
-`VOICE_EVALS=1` also starts the production LiveKit agent server
-(`srv.livekit.agent_server`) under that agent name; last it runs this tier
-(`pytest tests`). The tests are clients of both hosts, and each one runs the
-CLI host (`subprocess.run` of `python -m srv.cli.main`) once per command: it places a call
-through `place-call` while a simulated person
-(`simulated/person.py`, a directory the analyzer does not govern) watches
-LiveKit for the room the agent was dispatched into, joins it as `person`, and
-answers either when asked or over the question.
-
-Defaults are Postgres at `localhost:5434` and Restate (calls/admin) at
-`localhost:28080`/`localhost:29070`. Override them with `CALLS_STORAGE`,
-`RESTATE_URL`, and `RESTATE_ADMIN`. This test uses paid LiveKit/model APIs
-and is skipped unless `VOICE_EVALS=1`.
+Use an agent name not served by another worker. For this tier the fixtures
+start a second private Restate engine (the context tests register the
+component's own names on the first), serve the production Restate host
+(`srv.restate.main`) as a subprocess registered with it, and serve the
+production LiveKit agent server (`srv.livekit.agent_server`) under that agent
+name. The tests are clients of both hosts, and each one runs the CLI host
+(`subprocess.run` of `python -m srv.cli.main`) once per command, with an
+environment built from the fixtures: it places a call through `place-call`
+while a simulated person (`simulated/person.py`, a directory the analyzer does
+not govern) watches LiveKit for the room the agent was dispatched into, joins
+it as `person`, and answers either when asked or over the question.

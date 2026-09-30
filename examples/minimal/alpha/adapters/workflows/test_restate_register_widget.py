@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -36,7 +34,7 @@ class FakeWidgetApplicationClient(client.WidgetApplicationClient):
 
 class TestRestateRegisterWidget:
 
-    async def test_register_widget_waits_on_the_promise_the_relays_name_before_it_keeps_anything(self) -> None:
+    async def test_register_widget_waits_on_the_promise_the_relays_name_before_it_keeps_anything(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         name = str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         widget_actions_service = restate.Service(f"WidgetActions{suffix}")
@@ -46,9 +44,7 @@ class TestRestateRegisterWidget:
             widget_orchestrator_workflow,
             activities.RestateKeepWidget(widget_actions_service, fake_widget_application_client),
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -59,20 +55,20 @@ class TestRestateRegisterWidget:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['MINIMAL_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 sent = await restate_client.Client(async_client).workflow_send(
                     restate_register_widget.handler, key=name, arg=relays.RegisterWidgetRequest(name=domain.Name(name))
                 )
@@ -105,7 +101,7 @@ class TestRestateRegisterWidget:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_a_registration_its_key_does_not_name_or_whose_name_the_domain_refuses_ends_terminally(self) -> None:
+    async def test_a_registration_its_key_does_not_name_or_whose_name_the_domain_refuses_ends_terminally(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         name = str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         widget_actions_service = restate.Service(f"WidgetActions{suffix}")
@@ -115,9 +111,7 @@ class TestRestateRegisterWidget:
             widget_orchestrator_workflow,
             activities.RestateKeepWidget(widget_actions_service, fake_widget_application_client),
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -128,20 +122,20 @@ class TestRestateRegisterWidget:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['MINIMAL_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
                         restate_register_widget.handler, key="other-" + name, arg=relays.RegisterWidgetRequest(name=domain.Name(name))

@@ -164,121 +164,40 @@ run_ports() {
 # conformant way, with about one test per sibling test file and the least
 # business logic that shows how things work. Two contexts, a kernel, an
 # exported kernel, protocol, srv, and app; alpha's durable kinds run on
-# Restate. The arm runs the tiers in the runner's order
-# (docs/design-test-tiers.md): every test outside the root tier first, with no
-# host served — alpha's context test serves the component's containers from
-# its own process under their own names, and each activities, workflows, and
-# dispatchers test serves its own registrations under fresh names, all at
-# MINIMAL_CALLBACK_HOST — then it serves srv/restate, registers it with the
-# Restate admin API (forcing over what the context test left), and runs the
-# root tier against it.
-# CI provides a Restate service container; locally the defaults are a server
-# of its own on 58080/59070. alpha's widgets are in Postgres at ALPHA_STORAGE;
-# locally the default is a `minimal` database on the asyncpg arm's server
-# (CREATE DATABASE minimal once):
-#
-#   docker run -d --name tesser-minimal-restate -p 58080:8080 -p 59070:9070 \
-#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+# Restate and its widgets are in Postgres. The tests own their infrastructure
+# (docs/design-test-tiers.md): a plain pytest runs every tier, and the root
+# conftest starts what they ask for — a private Restate engine, a private
+# Postgres (storage_url), and for the root tier a second private engine with
+# srv/restate served and registered on it (host_engine_url), the CLI host run
+# as a subprocess per command. Docker is the one prerequisite.
 run_minimal() {
   cd "$ROOT/examples/minimal" || return 1
-  local storage="${ALPHA_STORAGE:-postgres://tesser@localhost:5434/minimal}"
-  local engine_url="${RESTATE_URL:-http://localhost:58080}"
-  local admin="${RESTATE_ADMIN:-http://localhost:59070}"
-  local port="${MINIMAL_DEPLOYMENT_PORT:-9085}"
-  local callback_host="${MINIMAL_CALLBACK_HOST:-host.docker.internal}"
-  local deployment="${MINIMAL_DEPLOYMENT:-http://$callback_host:$port}"
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests conftest.py || return 1
-  step "pytest, every tier but the root (no host served; Postgres at ALPHA_STORAGE, Restate at $engine_url)"
-  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" \
-    MINIMAL_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
-  step "serve the Restate endpoint on :$port and register it at $admin"
-  (exec env ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" PYTHONPATH=.:../../tesser-py \
-    python3 -m srv.restate.main "0.0.0.0:$port") &
-  local host=$!
-  local registered=1
-  for _ in $(seq 1 50); do
-    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
-      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
-      registered=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$registered" -ne 0 ]; then
-    echo "minimal: could not register $deployment with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
-    return 1
-  fi
-  step "pytest, the root tier (against the served host)"
-  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" pytest -q tests
-  local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
-  return "$status"
+  step "pytest (every tier; private engines and Postgres from the root conftest)"
+  pytest -q || return 1
 }
 
 # The durable-execution example: one context whose workflows run on Restate.
 # One FastAPI host serves POST /submissions, /orders and /purchases and mounts
 # the Restate endpoint at /restate; the engine never touches the domain. The
-# adapter tests exercise the real engine (testing.md rule 10). The arm runs the
-# tiers in the runner's order (docs/design-test-tiers.md): every tier but the
-# root first, with no host served — the context test serves and registers the
-# component's containers under their own names at DURABLE_CALLBACK_HOST, and
-# each activities, workflows, and dispatchers test its own under fresh names,
-# then reads what the engine recorded in sys_invocation — then the arm serves
-# the host, registers it with the Restate admin API (forcing over whatever the
-# context tier left), and passes its address as pytest's --host option to the
-# root-tier tests, which reach the app only through it. The app reads its own
-# environment through the config repository, so the runner supplies it — the
-# same job a deploy does. Tests never inject it. CI provides a Restate service
-# container; locally the defaults are a server of its own on 18080/19070, so a
-# local run never re-registers another tree's services:
-#
-#   docker run -d --name tesser-durable-restate -p 18080:8080 -p 19070:9070 \
-#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+# adapter tests exercise the real engine (testing.md rule 10). The tests own
+# their infrastructure (docs/design-test-tiers.md): a plain pytest runs every
+# tier, and the root conftest starts a private Restate engine for the context
+# and adapter tiers and, for the root tier, a second private engine with the
+# HTTP host served as a subprocess and registered on it (the `host` fixture;
+# `--host <url>` points the root tier at a host already served). Docker is the
+# one prerequisite.
 run_durable_execution() {
   cd "$ROOT/examples/durable-execution" || return 1
-  local engine_url="${RESTATE_URL:-http://localhost:18080}"
-  local admin="${RESTATE_ADMIN:-http://localhost:19070}"
-  local port="${DURABLE_DEPLOYMENT_PORT:-9084}"
-  local callback_host="${DURABLE_CALLBACK_HOST:-host.docker.internal}"
-  local deployment="${DURABLE_DEPLOYMENT:-http://$callback_host:$port}"
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict protocol ordering app srv tests conftest.py || return 1
-  step "pytest every tier but the root (against Restate at $engine_url, no host served)"
-  RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
-  step "serve the Restate endpoint on :$port and register it at $admin"
-  (exec env RESTATE_URL="$engine_url" PYTHONPATH=.:../../tesser-py \
-    python3 -m srv.http.main "0.0.0.0:$port") &
-  local host=$!
-  local registered=1
-  for _ in $(seq 1 50); do
-    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
-      -d "{\"uri\": \"$deployment/restate\", \"force\": true}" >/dev/null; then
-      registered=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$registered" -ne 0 ]; then
-    echo "durable-execution: could not register $deployment/restate with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
-    return 1
-  fi
-  step "pytest the root tier (against the host on :$port)"
-  pytest -q tests --host "http://127.0.0.1:$port"
-  local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
-  return "$status"
+  step "pytest (every tier; private engines from the root conftest)"
+  pytest -q || return 1
 }
 
 # The minimal tree with a real database behind it: the same two contexts, each
@@ -455,75 +374,24 @@ run_story_drafting() {
 # subprocess) and reads the person's name back by the call id through the same
 # host (get-call), speaking only protocol. place_call runs the
 # CallOrchestrator workflow on Restate, and its record_call action writes the
-# call through an asyncpg repository; get_call reads it back directly. The gate needs a reachable Postgres at
-# CALLS_STORAGE and a Restate server at RESTATE_URL / RESTATE_ADMIN, and
-# has no skip. It serves the tree's Restate endpoint itself, registers it
-# with the server at VOICE_DEPLOYMENT (the address the server dials back),
-# and stops it after pytest. The adapter tests serve endpoints of their own
-# under fresh service names and register them at VOICE_CALLBACK_HOST through
-# RESTATE_ADMIN, so a test deployment never replaces the tree's. Locally:
-#
-#   docker run -d --name tesser-asyncpg-pg -e POSTGRES_USER=tesser \
-#     -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=tesser -p 5434:5432 postgres:16
-#   docker run -d --name tesser-voice-restate -p 28080:8080 -p 29070:9070 \
-#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+# call through an asyncpg repository; get_call reads it back directly. The
+# tests own their infrastructure (docs/design-test-tiers.md): a plain pytest
+# runs every tier, and the root conftest starts a private Restate engine, a
+# private Postgres (storage_url), and for the root tier a second private
+# engine with srv/restate served and registered on it (host_engine_url). The
+# root tier is an opt-in eval against real LiveKit and model APIs: it skips
+# unless VOICE_EVALS=1, and then takes LIVEKIT_URL, LIVEKIT_API_KEY,
+# LIVEKIT_API_SECRET and a LIVEKIT_AGENT_NAME no other worker serves from the
+# environment, and its fixtures also serve the LiveKit agent server. Docker is
+# the one prerequisite of everything else.
 run_voice() {
   cd "$ROOT/examples/voice" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict app calls pgdatabase protocol simulated srv tests conftest.py || return 1
-  local storage="${CALLS_STORAGE:-postgres://tesser@localhost:5434/tesser}"
-  local restate_url="${RESTATE_URL:-http://localhost:28080}"
-  local admin="${RESTATE_ADMIN:-http://localhost:29070}"
-  local port="${VOICE_DEPLOYMENT_PORT:-9080}"
-  local callback_host="${VOICE_CALLBACK_HOST:-host.docker.internal}"
-  local deployment="${VOICE_DEPLOYMENT:-http://$callback_host:$port}"
-  export LIVEKIT_URL="${LIVEKIT_URL:-ws://livekit.invalid}"
-  export LIVEKIT_API_KEY="${LIVEKIT_API_KEY:-unused}"
-  export LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-unused}"
-  export LIVEKIT_AGENT_NAME="${LIVEKIT_AGENT_NAME:-caller}"
-  export LIVEKIT_SIP_TRUNK_ID="${LIVEKIT_SIP_TRUNK_ID:-unused}"
-  step "pytest every tier but the root (no host served)"
-  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
-    VOICE_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
-  step "serve the Restate endpoint on :$port and register it at $admin (forcing)"
-  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" PYTHONPATH=.:../../tesser-py \
-    python3 -m srv.restate.main "0.0.0.0:$port" &
-  local host=$!
-  local registered=1
-  for _ in $(seq 1 50); do
-    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
-      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
-      registered=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$registered" -ne 0 ]; then
-    echo "voice: could not register $deployment with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
-    return 1
-  fi
-  local worker=""
-  if [ "${VOICE_EVALS:-0}" = "1" ]; then
-    step "serve the LiveKit agent server as $LIVEKIT_AGENT_NAME"
-    CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" PYTHONPATH=.:../../tesser-py \
-      python3 -m srv.livekit.agent_server &
-    worker=$!
-  fi
-  step "pytest the root tier (against the served hosts)"
-  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
-    VOICE_CALLBACK_HOST="$callback_host" pytest -q tests
-  local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
-  if [ -n "$worker" ]; then
-    kill -TERM "$worker" 2>/dev/null
-    wait "$worker" 2>/dev/null
-  fi
-  return "$status"
+  step "pytest (every tier; private engines and Postgres from the root conftest)"
+  pytest -q || return 1
 }
 
 run_layout() {

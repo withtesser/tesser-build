@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import typing
 
@@ -52,10 +53,13 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
         settings: dict[str, str] = {}
         for name in _REQUIRED:
-            value = os.environ.get(name)
+            value = self._environ.get(name)
             if value is None:
                 raise errors.invalid("missing_env", f"{name} is required")
             settings[name] = value
@@ -64,7 +68,7 @@ class EnvConfigRepository(AppConfigRepository):
                 calls=calls_component.Config(
                     calls_component.Spec(
                         storage=settings["CALLS_STORAGE"],
-                        restate_url=settings["RESTATE_URL"],
+                        engine_url=settings["RESTATE_URL"],
                         livekit_url=settings["LIVEKIT_URL"],
                         livekit_api_key=settings["LIVEKIT_API_KEY"],
                         livekit_api_secret=settings["LIVEKIT_API_SECRET"],
@@ -86,4 +90,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> VoiceApp:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

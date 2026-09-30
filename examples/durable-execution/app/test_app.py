@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import tesser.testing as ts
 
 import app as app
@@ -26,13 +24,13 @@ class TestAppConfig:
 
 class TestEnvConfigRepository:
 
-    def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
+    def test_the_environment_is_read_into_a_config(self) -> None:
+        app_config = app.EnvConfigRepository({"RESTATE_URL": "http://engine.invalid:8080"}).get()
         assert isinstance(app_config, app.AppConfig)
-        assert app_config.ordering.engine_url == os.environ["RESTATE_URL"]
+        assert app_config.ordering.engine_url == "http://engine.invalid:8080"
 
     def test_each_read_returns_its_own_config(self) -> None:
-        env_config_repository = app.EnvConfigRepository()
+        env_config_repository = app.EnvConfigRepository({"RESTATE_URL": "http://engine.invalid:8080"})
         assert env_config_repository.get() is not env_config_repository.get()
 
 
