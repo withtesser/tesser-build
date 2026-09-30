@@ -17,6 +17,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 
 TREE = "story-drafting"
@@ -294,9 +295,19 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
         env["STORY_DRAFTING_PORT"] = str(run["host_port"])
     env["COVERAGE_FILE"] = str(out / ".coverage")
     env["PYTEST_ADDOPTS"] = f"--cov=. --cov-append --cov-report=json:{coverage} -rA -p no:cacheprovider"
-    proc = subprocess.run(["scripts/verify", TREE], cwd=worktree, env=env, capture_output=True, text=True)
-    (out / "verify.log").write_text(proc.stdout + proc.stderr)
-    log = proc.stdout
+    # The gate runs in its own process group with its output in a file, not a
+    # pipe: a served host that outlives the script (a gate that aborts before
+    # stopping it) would otherwise hold the pipe open and hang this run, and
+    # would stay running. Whatever the script leaves in its group is killed.
+    with (out / "verify.log").open("w") as log_file:
+        proc = subprocess.Popen(["scripts/verify", TREE], cwd=worktree, env=env, stdout=log_file,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        verify_exit = proc.wait()
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    log = (out / "verify.log").read_text()
     steps = re.findall(r"→ (.+)", log)
     tessercheck_findings = len(FINDING.findall(log))
 
