@@ -26,9 +26,9 @@
         "max": 62.6
       },
       "setup_s": {
-        "median": 6.2,
-        "min": 6.2,
-        "max": 6.2
+        "median": 5.1,
+        "min": 5.1,
+        "max": 5.1
       },
       "probing_s": {
         "median": 11.3,
@@ -36,9 +36,9 @@
         "max": 11.3
       },
       "other_s": {
-        "median": 25.3,
-        "min": 25.3,
-        "max": 25.3
+        "median": 26.3,
+        "min": 26.3,
+        "max": 26.3
       },
       "tool_calls": {
         "median": 26,
@@ -101,9 +101,9 @@
         "max": 10.3
       },
       "setup_s": {
-        "median": 17.6,
-        "min": 17.6,
-        "max": 17.6
+        "median": 12.6,
+        "min": 12.6,
+        "max": 12.6
       },
       "probing_s": {
         "median": 11.3,
@@ -111,9 +111,9 @@
         "max": 11.3
       },
       "other_s": {
-        "median": 43.3,
-        "min": 43.3,
-        "max": 43.3
+        "median": 48.3,
+        "min": 48.3,
+        "max": 48.3
       },
       "tool_calls": {
         "median": 29,
@@ -241,14 +241,14 @@
         "max": 0.0
       },
       "setup_s": {
-        "median": 17.0,
-        "min": 17.0,
-        "max": 17.0
+        "median": 11.5,
+        "min": 11.5,
+        "max": 11.5
       },
       "probing_s": {
-        "median": 1.4,
-        "min": 1.4,
-        "max": 1.4
+        "median": 6.8,
+        "min": 6.8,
+        "max": 6.8
       },
       "other_s": {
         "median": 0.0,
@@ -298,9 +298,9 @@
       ],
       "agent_s": 359.7,
       "checking_s": 62.6,
-      "setup_s": 6.2,
+      "setup_s": 5.1,
       "probing_s": 11.3,
-      "other_s": 25.3,
+      "other_s": 26.3,
       "model_s": 254.4,
       "tool_calls": 26,
       "api_requests": 26,
@@ -339,9 +339,9 @@
       ],
       "agent_s": 245.5,
       "checking_s": 10.3,
-      "setup_s": 17.6,
+      "setup_s": 12.6,
       "probing_s": 11.3,
-      "other_s": 43.3,
+      "other_s": 48.3,
       "model_s": 163.1,
       "tool_calls": 29,
       "api_requests": 25,
@@ -416,8 +416,8 @@
       ],
       "agent_s": 41.0,
       "checking_s": 0.0,
-      "setup_s": 17.0,
-      "probing_s": 1.4,
+      "setup_s": 11.5,
+      "probing_s": 6.8,
       "other_s": 0.0,
       "model_s": 22.6,
       "tool_calls": 5,

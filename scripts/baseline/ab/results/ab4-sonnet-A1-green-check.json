@@ -1,0 +1,39 @@
+{
+  "cmd": "python3 -m srv.http.main 0.0.0.0:9330",
+  "cwd": "<repo>/.claude/worktrees/run-ab4-sonnet-A1-green/story-drafting",
+  "seconds_to_listen": 0.51,
+  "served": true,
+  "restate_registration": {
+    "ok": true,
+    "status": 201,
+    "detail": "{\"id\":\"dp_11tZ7gOOUhK9jXQ1YLqVy01\",\"services\":[{\"name\":\"JtbdActions\",\"ty\":\"Service\",\"handlers\":[{\"name\":\"record_stories\",\"public\":false,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy\":{\"max_attempts\":nul"
+  },
+  "story_1": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"01038d70-4626-40c5-8231-e311a5c3248b\", \"status\": \"drafting_stories\"}"
+  },
+  "story_2": {
+    "passed": true,
+    "problems": [],
+    "seconds_until_drafted": 0.26,
+    "answered": "{\"jtbd_id\": \"01038d70-4626-40c5-8231-e311a5c3248b\", \"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"a job to be done: as a developer, I want my work to survive across sessions\", \"when\": \"I submit it to the story-drafting skill\", \"then\": \"it is drafted into stories, so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "probes": {
+    "get_unknown_id_status": 500,
+    "post_missing_fields_status": 400
+  },
+  "exited_early": false,
+  "seconds_to_listen_after_restart": 0.5,
+  "restart_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_11tZ7gOOUhK9jXQ1YLqVy01\",\"services\":[{\"name\":\"JtbdOrchestrator\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"story_drafting\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy"
+  },
+  "story_3": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"01038d70-4626-40c5-8231-e311a5c3248b\", \"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"a job to be done: as a developer, I want my work to survive across sessions\", \"when\": \"I submit it to the story-drafting skill\", \"then\": \"it is drafted into stories, so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "passed": true
+}

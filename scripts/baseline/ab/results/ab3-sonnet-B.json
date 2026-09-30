@@ -30,8 +30,8 @@
     "duration_s": 41.0,
     "time": {
       "checking_s": 0.0,
-      "setup_s": 17.0,
-      "probing_s": 1.4,
+      "setup_s": 11.5,
+      "probing_s": 6.8,
       "other_s": 0.0,
       "model_s": 22.6
     },

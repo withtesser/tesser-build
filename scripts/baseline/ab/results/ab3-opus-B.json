@@ -30,9 +30,9 @@
     "duration_s": 245.5,
     "time": {
       "checking_s": 10.3,
-      "setup_s": 17.6,
+      "setup_s": 12.6,
       "probing_s": 11.3,
-      "other_s": 43.3,
+      "other_s": 48.3,
       "model_s": 163.1
     },
     "api_requests": 25,

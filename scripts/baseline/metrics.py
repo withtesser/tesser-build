@@ -56,7 +56,8 @@ def result_text(content: object) -> str:
 # service by hand. Any other call, of any tool, is "other".
 TIME_CLASSES = (
     ("checking", re.compile(r"scripts/verify|pytest|tessercheck|-m srv\.cli\.main|\bmypy\b|\bruff\b")),
-    ("setup", re.compile(r"\bvenv\b|pip3? install|\buv (pip|sync|add|venv)|\bdocker\b")),
+    # Creating a virtualenv, not using one: ".venv/bin/python main.py" is probing.
+    ("setup", re.compile(r"-m venv\b|\bvirtualenv\b|pip3? install|\buv (pip|sync|add|venv)|\bdocker\b")),
     ("probing", re.compile(r"\bcurl\b|main\.py|srv\.http")),
 )
 
