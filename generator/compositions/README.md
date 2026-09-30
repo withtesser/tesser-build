@@ -148,9 +148,6 @@ when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower and title"
 route = "GET /loans/{loan_id}"
 status = 200
-reached_by = [                                  # optional: the calls that reach the given, in order
-  { route = "POST /loans" },                    # a level-2 story's route, called with sample values
-]                                               # a step may add until = { <field> = <value> }: poll for it
 ```
 
 A route is observable, so it belongs to the level-2 story: each level-2 story
@@ -162,12 +159,10 @@ method and the path are words of the `when` (`I GET /loans/{loan_id}`) and the
 status is a word of the `then` (`I get back 200 ...`). A level-2 story with a
 route that no client operation serves is a problem.
 
-`reached_by` says how the story's given is reached, as calls on the host: each
-step is a level-2 story's `route`, called with the sample values of its
-operation's request, and optionally an `until` of one response field and the
-value to poll for (at most 40 calls, a quarter second apart, then on). A
-`{field}` in a route's path — a step's, or the story's own — takes the value a
-step before it answered; one nothing before it answers is a problem.
+A level-2 story's `given` is prose: it says in words how the story is reached
+(`I have created a loan with POST /loans`). The renderer never reads it for
+calls; the root test's author does. A story with a `reached_by` key is a
+problem, because the key is no longer part of the format.
 
 **Root test skeletons.** For each level-2 story with a route, the renderer
 writes an agent-owned `tests/test_<words>.py` (and `tests/__init__.py`), named
@@ -177,11 +172,16 @@ in order, a literal segment as it is and a `{field}` segment as `by_<field>`,
 so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
 `GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds_by_jtbd_id.py` (so `GET
 /jtbds` and `GET /jtbds/{jtbd_id}` are two files). It reaches the host
-through `ts.served("<APP>_HOST")`, reaches the given as `reached_by` says,
-calls the story's route, and asserts its `status`; where the then goes it
-fails with one placeholder assertion whose message is the story's `then`,
-verbatim. So a freshly rendered tree is red at each then until the author
-writes it, and rendering again keeps the edited test.
+through `ts.served("<APP>_HOST")`, calls the story's route, and asserts its
+`status`, and holds two placeholders. The first is the given: an assertion whose
+message is the story's `given`, verbatim, with a `<field>: <type> | None = None`
+line above it for each `{field}` the route's path carries; the author writes how
+the host reaches the given (which calls, any waiting) and binds those values in
+its place. A route with no path value has nothing to bind, and the placeholder
+is `assert False, ...`. The second is the then: an assertion whose message is
+the story's `then`, verbatim. So a freshly rendered tree is red at the first
+unwritten placeholder, then at the then, and rendering again keeps the edited
+test.
 
 ## 3 `composition.toml`
 
@@ -482,8 +482,8 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    name of every term a class of actions acts on.
 2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
    route serves carries its `route` and `status`, and its `when` and `then`
-   say them word for word; a story whose given needs calls first says them in
-   `reached_by`.
+   say them word for word; a story whose given needs calls first says in its
+   `given`, in words, how it is reached.
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; exactly one orchestrator operation whose request holds

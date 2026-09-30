@@ -15,7 +15,7 @@ class TestRenderingCompositions:
     def test_two_client_operations_reusing_one_repository_operation_render_one_mapper_each(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/title\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}/title\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/title\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}/title\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
@@ -48,7 +48,7 @@ class TestRenderingCompositions:
     def test_a_load_keeps_what_the_steps_before_it_hold(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I PUT a title as JSON to /loans/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"PUT /loans/{loan_id}\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I PUT a title as JSON to /loans/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"PUT /loans/{loan_id}\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.retitle_loan]\nrequest = [\"loan_id\", \"title\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\", \"repository.save_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
@@ -423,7 +423,7 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert (tmp_path / "out" / "drafting" / "application" / "story_actions.py").is_file()
 
-    def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_then(self, tmp_path: pathlib.Path) -> None:
+    def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_given(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
 
@@ -438,41 +438,54 @@ class TestRenderingCompositions:
         reading = (tmp_path / "out" / "tests" / "test_reading_jtbds_by_jtbd_id.py").read_text()
         assert reading.startswith("# pragma: tesser-agent-owned;")
         assert 'host = ts.served("STORY_DRAFTING_HOST")' in reading
-        assert 'given_jtbd_id = answered["jtbd_id"]' in reading
-        assert "for _ in range(40):" in reading
-        assert "if answered.get(\"status\") == 'awaiting_story_acceptance':" in reading
-        assert 'f"{host}/jtbds/{given_jtbd_id}", data=None,' in reading
+        assert "jtbd_id: str | None = None" in reading
+        assert (
+            "assert jtbd_id is not None, 'write the given of s-2-a-1: I have created a job to be done with POST /jtbds, "
+            "and its stories have been drafted'\n"
+        ) in reading
+        assert reading.index("write the given of") < reading.index('f"{host}/jtbds/{jtbd_id}", data=None,')
         assert "assert status == 200" in reading
+        assert "reached_by" not in reading
+        assert "time.sleep" not in reading
         assert reading.rstrip().endswith(
             "assert False, 'write the then of s-2-a-1: I get back 200 with status \"awaiting_story_acceptance\" and at least one story, "
             "each with a given, a when, and a then, and in state \"drafted\"' + f\" (answered {answered_body!r})\""
         )
         ast.parse(reading)
 
-    def test_a_reached_by_step_that_names_no_story_route_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+    def test_a_route_with_no_path_value_fails_at_its_given_with_nothing_to_bind(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
-        edits = {
-            "story.toml": [('reached_by = [{ route = "POST /loans" }]', 'reached_by = [{ route = "POST /books" }]')],
-        }
-        for name in ("language", "story", "composition", "implementations", "generator"):
-            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
-            for old, new in edits.get(f"{name}.toml", []):
-                assert old in text
-                text = text.replace(old, new, 1)
-            (tmp_path / "composition").mkdir(exist_ok=True)
-            (tmp_path / "composition" / f"{name}.toml").write_text(text)
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
 
-        render_composition_response = rendering.client.render_composition(
-            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
         )
+        submitting = (tmp_path / "out" / "tests" / "test_submitting_loans.py").read_text()
 
-        assert render_composition_response.problems == ("s-1-b-1's reached_by names 'POST /books', which is no level-2 story's route",)
+        assert "assert False, 'write the given of s-1-a-1: a borrower and a title'\n" in submitting
+        assert "| None" not in submitting
+        assert submitting.index("write the given of") < submitting.index("urllib_request.Request(")
+        ast.parse(submitting)
 
-    def test_a_route_field_its_reached_by_never_answers_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+    def test_an_edited_root_test_skeleton_is_kept_on_render_again(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
+        rendering.client.render_composition(render_composition_request)
+        reading = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
+        reading.write_text(reading.read_text().replace("loan_id: str | None = None", "loan_id: str | None = 'loan-1'"))
+        edited = reading.read_text()
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+
+        assert render_composition_response.problems == ()
+        assert reading.read_text() == edited
+        assert "tests/test_reading_loans_by_loan_id.py" not in render_composition_response.written
+
+    def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [('reached_by = [{ route = "POST /loans" }]\n', "")],
+            "story.toml": [('route = "GET /loans/{loan_id}"', 'route = "GET /loans/{loan_id}"\nreached_by = [{ route = "POST /loans" }]')],
         }
         for name in ("language", "story", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
@@ -488,29 +501,8 @@ class TestRenderingCompositions:
         )
 
         assert render_composition_response.problems == (
-            "s-1-b-1 reaches GET /loans/{loan_id}, and nothing before it in its reached_by answers loan_id",
-        )
-
-    def test_polling_until_a_field_the_step_does_not_answer_is_a_problem(self, tmp_path: pathlib.Path) -> None:
-        tree = pathlib.Path(__file__).resolve().parents[2]
-        edits = {
-            "story.toml": [('until = { status = "awaiting_story_acceptance" }', 'until = { stage = "awaiting_story_acceptance" }')],
-        }
-        for name in ("language", "story", "composition", "implementations", "generator"):
-            text = (tree / "compositions" / "story-drafting" / f"{name}.toml").read_text()
-            for old, new in edits.get(f"{name}.toml", []):
-                assert old in text
-                text = text.replace(old, new, 1)
-            (tmp_path / "composition").mkdir(exist_ok=True)
-            (tmp_path / "composition" / f"{name}.toml").write_text(text)
-        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
-
-        render_composition_response = rendering.client.render_composition(
-            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
-        )
-
-        assert render_composition_response.problems == (
-            "s-2-a-1's reached_by polls GET /jtbds/{jtbd_id} until stage, which it does not answer",
+            "s-1-b-1 has reached_by, which is no longer part of the story format; write in its given how it is "
+            "reached, and write the calls in its root test",
         )
 
     def test_two_ports_declaring_one_operation_name_is_a_problem(self, tmp_path: pathlib.Path) -> None:
@@ -565,7 +557,7 @@ class TestRenderingCompositions:
     def test_two_client_operations_on_one_route_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
@@ -591,7 +583,7 @@ class TestRenderingCompositions:
     def test_an_integer_path_parameter_reaches_the_client_as_an_integer(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/copies/{copies}\"\nthen = \"I get back 200 with its loan_id\"\nroute = \"GET /loans/{loan_id}/copies/{copies}\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }, { route = \"GET /loans/{loan_id}\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/copies/{copies}\"\nthen = \"I get back 200 with its loan_id\"\nroute = \"GET /loans/{loan_id}/copies/{copies}\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('[aggregate.spec]\nloan_id = "str"', '[aggregate.spec]\ncopies = "int"\nloan_id = "str"'),
                 ('[aggregate.reads]\nloan_id = "str"', '[aggregate.reads]\ncopies = "int"\nloan_id = "str"'),
@@ -665,7 +657,7 @@ class TestRenderingCompositions:
     def test_two_routes_differing_only_by_a_path_parameter_render_two_root_tests(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans\"\nthen = \"I get back 200 with a loan_id\"\nroute = \"GET /loans\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans\"\nthen = \"I get back 200 with a loan_id\"\nroute = \"GET /loans\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.list_loans]\nrequest = [\"loan_id\"]\nresponse = [\"loan_id\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
@@ -692,7 +684,7 @@ class TestRenderingCompositions:
     def test_a_path_naming_one_parameter_twice_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/title/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}/title/{loan_id}\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/title/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}/title/{loan_id}\"\nstatus = 200\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
             "composition.toml": [
                 ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),

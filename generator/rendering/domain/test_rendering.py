@@ -36,7 +36,6 @@ id = "s-1-a-2"
 when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower"
 route = "GET /loans/{loan_id}"
-reached_by = [{ route = "POST /loans" }]
 status = 200
 """,
         ),

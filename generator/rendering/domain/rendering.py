@@ -69,7 +69,6 @@ PATH_FIELD: typing.Final[re.Pattern[str]] = re.compile(r"\{([a-z_][a-z0-9_]*)\}"
 GERUNDS: typing.Final[dict[str, str]] = {
     "GET": "reading", "POST": "submitting", "PUT": "replacing", "PATCH": "updating", "DELETE": "deleting",
 }
-POLLS: typing.Final[int] = 40
 
 WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 
@@ -2222,6 +2221,9 @@ class Model(ts.Entity):
         while pending:
             node = pending.pop()
             stories[str(node.get("id", ""))] = node
+            if "reached_by" in node:
+                raise ValueError(f"{node.get('id', '')} has reached_by, which is no longer part of the story format; "
+                                 "write in its given how it is reached, and write the calls in its root test")
             for child_key in ("jtbds", "stories"):
                 children = node.get(child_key, [])
                 if isinstance(children, list):
@@ -2284,7 +2286,7 @@ class Model(ts.Entity):
             answered_by[str(story["route"])] = {
                 "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
                 "body": repr(json.dumps(body).encode()) if body else "None",
-                "responds": [str(t.field()) for t in response.targets()],
+                "path_types": {str(t.field()): str(t.type_text()) for t in request.targets() if str(t.field()) in path_fields},
             }
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
@@ -2318,55 +2320,20 @@ class Model(ts.Entity):
         root_tests: list[dict[str, object]] = []
         for story_id in sorted(routed_stories):
             story = stories[story_id]
-            reached_by = story.get("reached_by", [])
-            if not isinstance(reached_by, list) or not all(isinstance(step, dict) for step in reached_by):
-                raise ValueError(f"{story_id}'s reached_by is not a list of steps like {{ route = \"POST /loans\" }}")
-            calls: list[tuple[dict[str, object], list[dict[str, str]]]] = []
-            for step in reached_by:
-                step_route = str(step.get("route", ""))
-                if step_route not in answered_by:
-                    raise ValueError(f"{story_id}'s reached_by names {step_route!r}, which is no level-2 story's route")
-                until = step.get("until", {})
-                if not isinstance(until, dict) or len(until) > 1:
-                    raise ValueError(f"{story_id}'s reached_by step {step_route} polls until one field has one value, "
-                                     "like until = { status = \"drafted\" }")
-                polling: list[dict[str, str]] = []
-                for until_field, until_value in until.items():
-                    if until_field not in typing.cast(list[str], answered_by[step_route]["responds"]):
-                        raise ValueError(f"{story_id}'s reached_by polls {step_route} until {until_field}, "
-                                         "which it does not answer")
-                    if not isinstance(until_value, (str, int)) or isinstance(until_value, bool):
-                        raise ValueError(f"{story_id}'s reached_by polls until {until_field} is text or an integer")
-                    polling.append({"until_field": str(until_field), "until_value": repr(until_value), "polls": str(POLLS)})
-                calls.append((answered_by[step_route], polling))
-            calls.append((answered_by[str(story["route"])], []))
-            reaching: list[dict[str, object]] = []
-            bound: set[str] = set()
-            for index, (call, polling) in enumerate(calls):
-                for field in typing.cast(list[str], call["path_fields"]):
-                    if field not in bound:
-                        raise ValueError(f"{story_id} reaches {call['method']} {call['path']}, and nothing before it "
-                                         f"in its reached_by answers {field}")
-                later = {field for later_call, _ in calls[index + 1:] for field in typing.cast(list[str], later_call["path_fields"])}
-                responds = typing.cast(list[str], call["responds"])
-                reaching.append({
-                    "method": call["method"], "path": PATH_FIELD.sub(r"{given_\1}", str(call["path"])), "body": call["body"],
-                    "once": [] if polling else [{}], "polling": polling,
-                    "binds": [{"field": field} for field in responds if field in later and field not in bound],
-                })
-                bound.update(responds)
-            final = reaching.pop()
-            method, path = str(calls[-1][0]["method"]), str(calls[-1][0]["path"])
+            call = answered_by[str(story["route"])]
+            method, path = str(call["method"]), str(call["path"])
+            path_types = typing.cast(dict[str, str], call["path_types"])
             words = "_".join([GERUNDS[method]] + [
                 "by_" + segment[1:-1] if PATH_FIELD.fullmatch(segment) else segment.replace("-", "_")
                 for segment in path.strip("/").split("/")
             ])
+            given = repr(f"write the given of {story_id}: {story.get('given', '')}")
             root_tests.append({
                 "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
-                "method": method, "path": final["path"], "body": final["body"],
-                "status": str(story["status"]), "given": reaching,
-                "polls": [{}] if any(step["polling"] for step in reaching) else [],
-                "reached": [{}] if reaching else [],
+                "method": method, "path": path, "body": call["body"],
+                "status": str(story["status"]), "given": given,
+                "path_values": [{"name": name, "type": kind} for name, kind in path_types.items()],
+                "given_check": " and ".join(f"{name} is not None" for name in path_types) or "False",
                 "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
             })
         self._binding["root_tests"] = root_tests
