@@ -125,8 +125,9 @@ composition's names:
   It runs its steps in order and stops at the first that fails, printing a
   `  →` line as each step starts: tessercheck, `mypy --strict`, the non-root
   tests, then it serves `srv/http/main.py` on port {port}, registers its
-  Restate endpoint, and runs `tests/` with the host's address in
-  `STORY_DRAFTING_HOST`. Every step before the last `  →` line passed. The
+  Restate endpoint, and runs `tests/` with the host's address passed as
+  pytest's `--host` option (a `host` fixture in `tests/conftest.py`, generated).
+  Every step before the last `  →` line passed. The
   full output stays in `{log}` to grep; don't run it again to see more. Do
   not edit `scripts/verify`.
 - Your Restate server is at ingress {ingress} and admin {admin}; generated
