@@ -9,4 +9,17 @@ import drafting.application.ports as ports
 class TemplateStoryDrafter(ts.Gateway):
 
     async def draft_stories(self, draft_stories_request: ports.DraftStoriesRequest) -> ports.DraftStoriesResponse:
-        return ports.DraftStoriesResponse(story_texts=())
+        return ports.DraftStoriesResponse(
+            story_texts=(
+                ports.StoryText(
+                    given=f"I am {draft_stories_request.role}",
+                    when=f"I get {draft_stories_request.i_want}",
+                    then=f"{draft_stories_request.so_that}",
+                ),
+                ports.StoryText(
+                    given=f"I am {draft_stories_request.role} and I stepped away",
+                    when=f"I come back to {draft_stories_request.i_want}",
+                    then=f"I can still say that {draft_stories_request.so_that}",
+                ),
+            )
+        )
