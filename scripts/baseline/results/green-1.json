@@ -1,0 +1,504 @@
+{
+  "run": {
+    "phase": "green",
+    "name": "green-1",
+    "base_ref": "baseline/runs/red-1",
+    "base_sha": "f54e04a3c9e570863316996f032508316a2cb45b",
+    "branch": "baseline/runs/green-1",
+    "prepared": "2026-09-28T20:30:21Z"
+  },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "green-1",
+      "task_kind": "in_process_teammate",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 8750,
+      "sha256": "cc716fd1a1796fee"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 2156.5,
+    "api_requests": 62,
+    "tokens": {
+      "input": 124,
+      "cache_read": 10704646,
+      "cache_write": 711241
+    },
+    "tool_calls_total": 65,
+    "tool_calls": {
+      "Bash": 60,
+      "Write": 3,
+      "Read": 2
+    },
+    "guidance": [
+      "bash:SKILL.md",
+      "bash:python.md",
+      "read:python.md",
+      "bash:testing.md"
+    ],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo> && for f in story-drafting/.tesser-root story-drafting/conftest.py story-drafting/pyproject.toml story-drafting/requirem",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && grep -n \"run_durable_execution()\" -A60 scripts/verify; ls skills/tesser-build/; wc -l skills/tesser-build/*.md; find ",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && find examples/minimal -type f -not -path '*/__pycache__/*' | sort; grep -n \"run_minimal()\" -A45 scripts/verify",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && find examples/llmport -type f -not -path '*/__pycache__/*' | sort; cat examples/llmport/README.md 2>/dev/null | head ",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && grep -n \"tessercheck_tree()\" -A12 scripts/verify; cat examples/minimal/alpha/adapters/repositories/postgres.py | head",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/tessercheck-py && source <repo>/.venv/bin/activate && PYTHONPATH=.:../tesser-py ",
+        "findings": 3,
+        "by_code": {
+          "TB083": 1,
+          "TB085": 2
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/domain && python3 - <<'EOF'\nimport re\np='test_drafting.py'\ns=open(p).read()\ns=re.sub(r'\\bdraftin",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/application/ports && cat > drafting_repository.py <<'EOF'\nfrom __future__ import annotations\n\nim",
+        "findings": 14,
+        "by_code": {
+          "TB042": 14
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/application && cat > client/writing_actions.py <<'EOF'\nfrom __future__ import annotations\n\nimpor",
+        "findings": 3,
+        "by_code": {
+          "TB074": 3
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/application && cat > test_writing_actions.py <<'EOF'\nfrom __future__ import annotations\n\nimport ",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/application && python3 - <<'EOF'\np='test_writing_actions.py'; s=open(p).read()\ns=s.replace('asse",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/adapters && touch __init__.py && cat > gateways/deterministic_story_writer.py <<'EOF'\nfrom __fut",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/adapters && python3 - <<'EOF'\ndef serde(prefix_mod, name, snap_req=True):\n    pass\ndef serde_pai",
+        "findings": 3,
+        "by_code": {
+          "TB074": 3
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && cat > drafting/component/component.py <<'EOF'\nfrom __future__ import annotations\n\nimport typing\n\nimpor",
+        "findings": 3,
+        "by_code": {
+          "TB074": 3
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/adapters && python3 - <<'EOF'\nserve_head = '''        with socket.socket() as probe:\n           ",
+        "findings": 3,
+        "by_code": {
+          "TB074": 3
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting/drafting/adapters && python3 - <<'EOF'\nserve_head = '''        with socket.socket() as probe:\n           ",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "pkill -INT -f \"srv.restate.main 0.0.0.0:9087\"; sleep 1; cd <repo> && source <repo>/.venv/b",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 17,
+    "final_message": "The acceptance test now passes. `scripts/verify story-drafting` is green: tessercheck zero findings, `mypy --strict` clean over 62 files, and 63 pytest tests passing against the Restate server on 38080/39070. The acceptance test file is unchanged from the red commit. Everything is committed on the branch as `8b41cda`; nothing was pushed and no PR was opened.\n\n**What it does**\n- `draft_stories` checks the job isn't blank, gets a new drafting id, saves the drafting at step `\"drafting\"`, and starts the `DraftingOrchestrator` workflow on Restate.\n- The workflow then does three steps:\n  1. Writes the stories through a `StoryWriter` port.\n  2. Saves them with the step at `\"awaiting_pick\"` and no story accepted.\n  3. Waits on the `pick_story` durable promise.\n- `get_drafting` reads the saved drafting back, or raises `DraftingNotFound`.\n- The only drafter is a deterministic one. The component refuses any other value of `STORY_DRAFTING_DRAFTER`.\n\n**Decisions to review**\n- **A new required environment variable, `STORY_DRAFTING_STORAGE`.** CI gives this tree only Restate, no Postgres, and the test process has to read what the Restate host process wrote. So draftings are stored as JSON files (atomic writes) in a directory that both processes point at. The verify arm passes the same directory to the host and to pytest, using a temp directory by default. `app/app.py` and `app/test_app.py` now read it.\n- **Scope.**\n  - Nothing yet resolves the `pick_story` promise, so a run waits there until the pick story is built.\n  - There is no real language-model writer yet.\n  - No revising and no `SKILL.md`.\n- **Verify arm.** It now serves and registers the Restate endpoint before pytest, on port 9087. It also fails if the host process has died after registration.\n\n**Something outside this worktree**\nPort 9086, the obvious next port, is held by an old `srv.restate.main` from `~/workspace/vero/go-ddd/.claude/worktrees/migrate-new-kinds` (PID 75035, running since Thursday). My first"
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "8b41cda7d6a1b09a1eac914f2e1d09d0d2af27e4",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 57,
+    "lines_added": 2585,
+    "lines_removed": 25,
+    "py_impl_files": 38,
+    "py_impl_lines": 1333,
+    "py_test_files": 18,
+    "py_test_lines": 1216,
+    "files_outside_tree": [
+      "scripts/verify"
+    ]
+  },
+  "gate": {
+    "verify_exit": 0,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "serve the Restate endpoint on :9087 and register it at http://localhost:39070",
+      "pytest (against Restate at http://localhost:38080)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app.test_app.TestAppConfig::test_a_config_carries_the_drafting_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestAppLoader::test_the_loader_builds_an_app_that_publishes_the_drafting_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.activities.test_restate_activities.TestRestateActivities::test_restate_serves_each_action_and_a_call_made_with_its_handler_reaches_its_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.dispatchers.test_restate_http_drafting_orchestrator_relay.TestRestateHttpDraftingOrchestratorRelay::test_starting_answers_at_once_and_the_drafting_runs_on_to_wait_for_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.gateways.test_deterministic_story_writer.TestDeterministicStoryWriter::test_every_story_written_names_the_job",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.gateways.test_deterministic_story_writer.TestDeterministicStoryWriter::test_the_same_job_writes_the_same_stories",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file_drafting_repository.TestFileDraftingStore::test_a_saved_drafting_is_loaded_back_whole_by_another_store_over_the_same_directory",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file_drafting_repository.TestFileDraftingStore::test_a_later_save_of_a_drafting_replaces_the_earlier_one",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file_drafting_repository.TestFileDraftingStore::test_issued_drafting_ids_differ",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file_drafting_repository.TestFileDraftingStore::test_a_drafting_never_saved_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.repositories.test_file_drafting_repository.TestFileDraftingStore::test_an_id_naming_a_path_outside_the_directory_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.workflows.test_restate_conduct_drafting.TestRestateConductDrafting::test_conduct_drafting_writes_and_keeps_the_stories_then_waits_on_the_pick_promise",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.adapters.workflows.test_restate_conduct_drafting.TestRestateConductDrafting::test_a_drafting_its_key_does_not_name_ends_terminally_before_anything_is_written",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.orchestrators.test_drafting_orchestrator.TestDraftingOrchestrator::test_conducting_writes_the_stories_keeps_them_then_waits_for_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_actions_relay.TestKeepDraftedStoriesSnapshots::test_each_message_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_orchestrator_relay.TestDraftingOrchestratorSnapshots::test_each_message_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_drafting_orchestrator_signal_relay.TestAwaitPickStoryResponseSnapshot::test_the_promise_named_for_its_operation_carries_the_story_picked",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.relays.test_writing_actions_relay.TestWriteStoriesSnapshots::test_each_message_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_actions.TestDraftingActions::test_keeping_saves_the_drafting_once_awaiting_the_pick_with_its_stories_and_none_accepted",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_drafting_stories_starts_the_drafting_of_the_job_under_the_issued_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_a_started_drafting_is_saved_still_drafting_with_no_stories",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_a_blank_job_is_rejected_and_nothing_starts",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_a_saved_drafting_is_read_back_by_its_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_a_drafting_that_was_never_started_is_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_an_empty_drafting_id_is_rejected",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_writing_actions.TestWritingActions::test_writing_asks_the_writer_once_for_the_job_and_answers_what_it_wrote",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestDrafting::test_a_drafting_carries_its_stories_and_the_ones_accepted",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestDraftingRejected::test_a_rejection_carries_its_code_and_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestDraftingNotFound::test_a_drafting_that_was_not_found_carries_its_message",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestErrors::test_the_declared_set_names_every_error_the_client_raises",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestConfig::test_a_config_carries_the_ingress_the_drafter_and_the_storage",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_only_the_workflow_faces_the_ingress_and_each_container_holds_its_handlers",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_the_wired_client_rejects_a_blank_job_before_anything_starts",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_a_drafter_other_than_the_deterministic_one_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestDrafting::test_an_empty_storage_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_a_drafting_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_drafting_numbers_the_drafted_stories_and_awaits_the_pick",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_drafting_accepts_no_story",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_a_drafting_drafts_its_stories_once",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_a_drafting_still_drafting_with_stories_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_a_drafting_awaiting_the_pick_with_no_stories_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDrafting::test_an_accepted_story_that_was_not_drafted_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingId::test_a_drafting_id_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingId::test_an_empty_drafting_id_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestJob::test_a_job_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestJob::test_a_blank_job_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStep::test_a_step_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStep::test_a_step_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStoryId::test_a_story_id_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStoryId::test_an_empty_story_id_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStoryText::test_a_story_text_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStoryText::test_a_blank_story_text_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftedStories::test_drafted_stories_equal_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftedStories::test_drafted_stories_construct_from_their_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftedStories::test_drafting_no_story_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestStory::test_a_story_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingPresence::test_a_drafting_found_decides_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingPresence::test_a_drafting_not_found_decides_not_found",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingPresence::test_a_presence_outside_the_set_is_refused",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.domain.test_drafting.TestDraftingPresence::test_a_presence_equals_by_value",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv.restate.test_main.TestRestateHost::test_the_served_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests.test_story_drafting.TestStoryDrafting::test_drafted_stories_wait_for_the_developers_pick_with_none_accepted",
+        "outcome": "passed",
+        "message": ""
+      }
+    ],
+    "test_outcomes": {
+      "passed": 63
+    },
+    "impl_coverage_pct": 94.3,
+    "impl_statements": 822
+  }
+}

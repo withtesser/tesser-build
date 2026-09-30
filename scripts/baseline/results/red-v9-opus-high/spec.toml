@@ -1,0 +1,42 @@
+app_name = "story_drafting"
+bounded_context_name = "story_drafting"
+aggregate_root_class_name = "Jtbd"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "jtbd_id"
+identity_port_operation_name = "issue_jtbd_id"
+
+[aggregate_fields]
+job = "str"
+
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+job = ["When I design a feature, I want sign-off fixed in advance, so I can step away", "When I build a service, I want the steps to survive sessions, so I can resume"]
+
+[client]
+write_operation_name = "submit_jtbd"
+read_operation_name = "check_status"
+read_response_fields = ["jtbd_id", "job"]
+
+[orchestrator]
+operation_name = "work_through_jtbd"
+calling_mode = "start"
+
+[action]
+operation_name = "record_jtbd"
+
+[repository]
+save_operation_name = "save_jtbd"
+load_operation_name = "load_jtbd"
+load_response_collection_name = "jtbds"
+
+[acceptance_test]
+test_class_name = "TestSubmittingAJtbd"
+test_method_name = "test_a_submitted_jtbd_is_drafting_right_away"
+asserted_field = "job"
+random_values = ["When I design a schema, I want my sign-off before the build, so I can step away", "When I plan a migration, I want the checkpoints fixed, so I can resume tomorrow", "When I write an API, I want the design reviewed first, so I can come back later", "When I refactor a module, I want each step agreed, so I can pick up where we left off"]
+
+[environment_variables]
+restate_ingress_url = "RESTATE_INGRESS"
+host_url = "STORY_DRAFTING_HOST"

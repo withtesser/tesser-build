@@ -1,0 +1,33 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import typing
+
+import tesser.application as ts
+{{#records}}
+
+
+class {{Record}}(ts.{{base}}):
+
+    def __init__(self{{#fields}}, {{field}}: {{dto_type}}{{/fields}}) -> None:
+{{#fields}}
+        self.{{field}} = {{field}}
+{{/fields}}
+{{^fields}}
+        return None
+{{/fields}}
+{{/records}}
+
+
+class {{Port}}(ts.Port, typing.Protocol):
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: {{Operation}}Request) -> {{Operation}}Response: ...
+{{/operations}}
+{{#store}}
+
+
+class {{Store}}(ts.Store, typing.Protocol):
+
+    def transaction(self) -> typing.AsyncContextManager[{{Port}}]: ...
+{{/store}}

@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+import pytest
+import tesser.testing as ts
+
+import campaign.client as campaign_client
+import reports.adapters.gateways as gateways
+import reports.application.ports as ports
+
+
+@ts.fake
+class FakeCampaignClient(campaign_client.CampaignClient):
+    def __init__(
+        self, *links: campaign_client.Link, error: Exception | None = None
+    ) -> None:
+        self.links = links
+        self.error = error
+        self.requests: list[campaign_client.ListLinksRequest] = []
+
+    def create_campaign(
+        self, create_campaign_request: campaign_client.CreateCampaignRequest
+    ) -> campaign_client.CreateCampaignResponse:
+        raise AssertionError("create_campaign is not part of the reports surface")
+
+    def add_link(self, add_link_request: campaign_client.AddLinkRequest) -> campaign_client.AddLinkResponse:
+        raise AssertionError("add_link is not part of the reports surface")
+
+    def deactivate_link(
+        self, deactivate_link_request: campaign_client.DeactivateLinkRequest
+    ) -> campaign_client.DeactivateLinkResponse:
+        raise AssertionError("deactivate_link is not part of the reports surface")
+
+    def get_campaign(
+        self, get_campaign_request: campaign_client.GetCampaignRequest
+    ) -> campaign_client.GetCampaignResponse:
+        raise AssertionError("get_campaign is not part of the reports surface")
+
+    def resolve_slug(self, resolve_slug_request: campaign_client.ResolveSlugRequest) -> campaign_client.ResolveSlugResponse:
+        raise AssertionError("resolve is not part of the reports surface")
+
+    def list_links(
+        self, list_links_request: campaign_client.ListLinksRequest
+    ) -> campaign_client.ListLinksResponse:
+        self.requests.append(list_links_request)
+        if self.error is not None:
+            raise self.error
+        return campaign_client.ListLinksResponse(links=self.links)
+
+
+def test_every_link_the_campaign_context_serves_becomes_a_link_record() -> None:
+    fake_campaign_client = FakeCampaignClient(
+        campaign_client.Link("spring-sale", "https://a.example/s", "active"),
+        campaign_client.Link("winter-sale", "https://a.example/w", "inactive"),
+    )
+
+    list_links_response = gateways.CampaignLinkGateway(fake_campaign_client).list_links(ports.ListLinksRequest())
+
+    assert [(record.slug, record.target_url) for record in list_links_response.links] == [
+        ("spring-sale", "https://a.example/s"),
+        ("winter-sale", "https://a.example/w"),
+    ]
+
+
+def test_the_gateway_hands_back_records_and_never_the_foreign_view() -> None:
+    fake_campaign_client = FakeCampaignClient(
+        campaign_client.Link("spring-sale", "https://a.example/s", "active")
+    )
+
+    list_links_response = gateways.CampaignLinkGateway(fake_campaign_client).list_links(ports.ListLinksRequest())
+
+    assert isinstance(list_links_response, ports.ListLinksResponse)
+    assert isinstance(list_links_response.links[0], ports.LinkRecord)
+
+
+def test_the_gateway_asks_the_campaign_context_for_its_whole_link_list() -> None:
+    fake_campaign_client = FakeCampaignClient()
+
+    gateways.CampaignLinkGateway(fake_campaign_client).list_links(ports.ListLinksRequest())
+
+    assert len(fake_campaign_client.requests) == 1
+    assert isinstance(fake_campaign_client.requests[0], campaign_client.ListLinksRequest)
+
+
+def test_a_campaign_context_with_no_links_yields_no_records() -> None:
+    fake_campaign_client = FakeCampaignClient()
+
+    list_links_response = gateways.CampaignLinkGateway(fake_campaign_client).list_links(ports.ListLinksRequest())
+
+    assert list_links_response.links == ()
+
+
+def test_a_failure_the_campaign_context_never_declared_reaches_the_caller() -> None:
+    fake_campaign_client = FakeCampaignClient(error=RuntimeError("campaign store unreachable"))
+
+    with pytest.raises(RuntimeError):
+        gateways.CampaignLinkGateway(fake_campaign_client).list_links(ports.ListLinksRequest())

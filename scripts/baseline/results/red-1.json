@@ -1,0 +1,172 @@
+{
+  "run": {
+    "phase": "red",
+    "name": "red-1",
+    "base_ref": "baseline/story-drafting",
+    "base_sha": "d012fa32fa23c0d7ef0bfb3b2c642781ed4d1725",
+    "branch": "baseline/runs/red-1",
+    "prepared": "2026-09-28T20:25:26Z"
+  },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "red-1",
+      "task_kind": "in_process_teammate",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 8750,
+      "sha256": "cc716fd1a1796fee"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 199.6,
+    "api_requests": 21,
+    "tokens": {
+      "input": 42,
+      "cache_read": 2007335,
+      "cache_write": 124888
+    },
+    "tool_calls_total": 23,
+    "tool_calls": {
+      "Bash": 21,
+      "Write": 1,
+      "Edit": 1
+    },
+    "guidance": [
+      "bash:SKILL.md"
+    ],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo> && sed -n 230,360p scripts/verify && cat skills/tesser-build/SKILL.md",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && find examples/voice examples/durable-execution -type f -not -path '*/__pycache__/*' | sort && sed -n 360,460p scripts/v",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && grep -n \"tessercheck_tree()\" -A15 scripts/verify; cat examples/durable-execution/ordering/application/order_service.py ",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo>/story-drafting && \ncat > tests/test_story_drafting.py <<'EOF'\nfrom __future__ import annotations\n\nimport asyncio\nimport ty",
+        "findings": 4,
+        "by_code": {
+          "TB082": 2,
+          "TB085": 1,
+          "TB071": 1
+        }
+      },
+      {
+        "command": "cd <repo>/story-drafting && grep -rl . --include=*.py drafting app tests | xargs sed -i '' -e 's/StartDraftingRequest/DraftStoriesRe",
+        "findings": 2,
+        "by_code": {
+          "TB082": 1,
+          "TB085": 1
+        }
+      },
+      {
+        "command": "cd <repo>/tessercheck-py 2>/dev/null; cd <repo>/tessercheck-py && source ~/worksp",
+        "findings": 0,
+        "by_code": {}
+      },
+      {
+        "command": "cd <repo> && source <repo>/.venv/bin/activate && scripts/verify story-drafting 2>&1 | grep -",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 7,
+    "final_message": "The red acceptance test is written and fails for the right reason: the app answers `NotImplementedError` when the test starts the drafting. I committed it on `baseline/runs/red-1` as `f54e04a`.\n\n**The test:** `TestStoryDrafting::test_drafted_stories_wait_for_the_developers_pick_with_none_accepted` in `<repo>/story-drafting/tests/test_story_drafting.py`.\n- It loads the app with `app.load()` and goes through `app.drafting.client` only.\n- It calls `draft_stories` with a job, then asks for the drafting with `get_drafting` until its step is no longer `\"drafting\"` (100 tries, 0.1s apart).\n- It then checks that the step is `\"awaiting_pick\"`, that there is at least one drafted story, and that no story is accepted.\n\n**Result of `scripts/verify story-drafting`:** tessercheck finds nothing, `mypy --strict` passes on 16 files, and pytest fails 1 of 8 tests. The exact failure:\n\n```\ndrafting/application/drafting_service.py:13: NotImplementedError\nFAILED tests/test_story_drafting.py::TestStoryDrafting::test_drafted_stories_wait_for_the_developers_pick_with_none_accepted\n1 failed, 7 passed\n```\n\nIt fails on the very first call, `draft_stories`, which goes from the component's `Client` to `DraftingService.draft_stories`. That method only does `raise NotImplementedError`. There is no import, collection or connection error.\n\n**What I built, and nothing more:**\n- **Public client** (`drafting/client/client.py`): the requests and responses for drafting stories and reading a drafting back, plus the `DraftingClient` protocol. The step is a string such as `\"awaiting_pick\"`, and \"none accepted\" is an empty `accepted_stories` tuple rather than a missing value.\n- **Placeholder service** (`drafting/application/drafting_service.py`): both methods do `raise NotImplementedError`. Its sibling test checks that they raise, so whoever builds the story will need to replace that test.\n- **Wiring:** `drafting/component/component.py` conne"
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "f54e04a3c9e570863316996f032508316a2cb45b",
+    "commits": 1,
+    "uncommitted": [
+      "?? story-drafting/.coverage"
+    ],
+    "files_changed": 17,
+    "lines_added": 361,
+    "lines_removed": 1,
+    "py_impl_files": 9,
+    "py_impl_lines": 204,
+    "py_test_files": 7,
+    "py_test_lines": 153,
+    "files_outside_tree": [
+      "scripts/verify"
+    ]
+  },
+  "gate": {
+    "verify_exit": 1,
+    "verify_steps_reached": [
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "pytest (against Restate at http://localhost:38080)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app.test_app.TestAppConfig::test_a_config_carries_the_drafting_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app.test_app.TestAppLoader::test_the_loader_builds_an_app_that_publishes_the_drafting_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_drafting_stories_is_not_implemented_yet",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.application.test_drafting_service.TestDraftingService::test_getting_a_drafting_is_not_implemented_yet",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.client.test_client.TestDrafting::test_a_drafting_carries_its_stories_and_the_ones_accepted",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting.component.test_component.TestConfig::test_a_config_carries_the_ingress_and_the_drafter",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests.test_story_drafting.TestStoryDrafting::test_drafted_stories_wait_for_the_developers_pick_with_none_accepted",
+        "outcome": "failed",
+        "message": "NotImplementedError"
+      }
+    ],
+    "test_outcomes": {
+      "passed": 7,
+      "failed": 1
+    },
+    "impl_coverage_pct": 96.4,
+    "impl_statements": 111
+  }
+}

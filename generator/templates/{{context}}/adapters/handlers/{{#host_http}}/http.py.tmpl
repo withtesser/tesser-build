@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import json
+
+import tesser.adapters as ts
+
+import {{context}}.client as client
+import protocol
+
+
+class HttpHandler(ts.Handler):
+
+    def __init__(self, {{context}}_client: client.{{Context}}Client) -> None:
+        self._{{context}}_client = {{context}}_client
+
+    async def {{write}}(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
+{{#fields}}
+        {{field}} = http_request.{{http_arg}}("{{field}}")
+{{/fields}}
+        {{write}}_response = await self._{{context}}_client.{{write}}(
+            client.{{Write}}Request({{#fields}}{{field}}={{field}}{{comma}}{{/fields}})
+        )
+        return protocol.HttpResponse(
+            status_code=201, body=json.dumps({"{{identity}}": {{write}}_response.{{identity}}}).encode()
+        )
+
+    async def {{read}}(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
+        {{identity}} = http_request.path_param("{{identity}}")
+        {{read}}_response = await self._{{context}}_client.{{read}}(client.{{Read}}Request({{identity}}={{identity}}))
+        return protocol.HttpResponse(
+            status_code=200,
+            body=json.dumps(
+                {
+{{#read_fields}}
+                    "{{field}}": {{read}}_response.{{aggregate}}.{{field}},
+{{/read_fields}}
+                }
+            ).encode(),
+        )

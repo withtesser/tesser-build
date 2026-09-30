@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tessercheck-py"
+version = "0.4.0"
+description = "The tesser-build construction analyzer for Python: declare-then-verify over the tesser shell classes"
+requires-python = ">=3.12"
+dependencies = ["tesser==0.1.0"]
+
+[tool.setuptools]
+packages = [
+    "tessercheck",
+    "tessercheck.domain",
+    "tessercheck.application",
+    "tessercheck.application.ports",
+    "tessercheck.adapters",
+    "tessercheck.adapters.repositories",
+    "tessercheck.client",
+    "tessercheck.component",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["app", "protocol", "tessercheck", "srv"]
+
+[tool.mypy]
+strict = true
+files = ["tessercheck", "srv", "app", "protocol"]
