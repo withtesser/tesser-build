@@ -689,6 +689,19 @@ class TestRenderingCompositions:
             "test_reading_loans.py", "test_reading_loans_by_loan_id.py", "test_submitting_loans.py",
         ]
 
+    def test_a_rendered_tree_collects_its_root_tests_by_default(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+        testpaths = [line for line in (tmp_path / "out" / "pyproject.toml").read_text().splitlines() if line.startswith("testpaths")]
+        assert len(testpaths) == 1
+        assert '"tests"' in testpaths[0]
+
     def test_a_path_naming_one_parameter_twice_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

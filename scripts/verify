@@ -651,7 +651,7 @@ run_rendered_tree() {
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
   step "$composition: pytest every tier but the root, with no host served"
   (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
-    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests)
+    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .)
 }
 
 run_generated_tree() {
@@ -687,7 +687,7 @@ run_generated_tree() {
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
   step "$spec: pytest every tier but the root, with no host served"
   (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests) || return 1
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || return 1
   step "$spec: serve the generated $host_kind host's Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "${env_vars[@]}" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m "$module" "0.0.0.0:$port") &
