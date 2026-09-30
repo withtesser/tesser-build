@@ -34,6 +34,8 @@ run_story_drafting() {
   (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
+  local host_started
+  host_started=$(host_identity "$host")
   local registered=1
   for _ in $(seq 1 50); do
     if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
@@ -45,12 +47,12 @@ run_story_drafting() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
-    stop_host "$host" TERM
+    stop_host "$host" TERM "$host_started"
     return 1
   fi
   step "pytest the root tier (against the host on :$port, passed as --host)"
   pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
-  stop_host "$host" INT
+  stop_host "$host" INT "$host_started"
   return "$status"
 }
