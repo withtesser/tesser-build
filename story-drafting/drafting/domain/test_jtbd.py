@@ -28,3 +28,11 @@ class TestJtbd:
         jtbd = domain.Jtbd(domain.JtbdSpec(jtbd_id="jtbd-1", role="a developer", i_want="the steps fixed in advance", so_that="I can pick up where we left off", stories=()))
 
         assert str(jtbd.status) in [jtbd_status.value for jtbd_status in domain.JtbdStatus]
+
+    def test_a_jtbd_with_recorded_stories_awaits_story_acceptance_with_them_drafted(self) -> None:
+        jtbd = domain.Jtbd(domain.JtbdSpec(jtbd_id="jtbd-1", role="a developer", i_want="the steps fixed in advance", so_that="I can pick up where we left off", stories=()))
+
+        jtbd.record_stories(domain.RecordStoriesSpec(story_texts=(domain.StoryTextSpec(given="a job to be done", when="I submit it", then="it is drafting its stories"),)))
+
+        assert str(jtbd.status) == "awaiting_story_acceptance"
+        assert [(str(story.given), str(story.when), str(story.then), str(story.state),) for story in jtbd.stories] == [("a job to be done", "I submit it", "it is drafting its stories", "drafted",)]

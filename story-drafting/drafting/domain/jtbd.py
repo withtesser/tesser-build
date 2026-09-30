@@ -1,6 +1,7 @@
 # pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import enum
 
 import tesser.domain as ts
@@ -96,6 +97,29 @@ class StoryView(ts.ValueObject):
         return self._state
 
 
+class DraftedStory(StoryView):
+
+    def __init__(self, spec: StoryTextSpec) -> None:
+        object.__setattr__(self, "_given", Text(spec.given))
+        object.__setattr__(self, "_when", Text(spec.when))
+        object.__setattr__(self, "_then", Text(spec.then))
+        object.__setattr__(self, "_state", Text(StoryState.DRAFTED.value))
+
+
+class DraftedStories(ts.ValueObject):
+
+    _stories: tuple[StoryView, ...]
+
+    def __init__(self, spec: RecordStoriesSpec) -> None:
+        object.__setattr__(self, "_stories", tuple(DraftedStory(story_text) for story_text in spec.story_texts))
+
+    def __len__(self) -> int:
+        return len(self._stories)
+
+    def __iter__(self) -> collections_abc.Iterator[StoryView]:
+        return iter(self._stories)
+
+
 class Jtbd(ts.AggregateRoot):
 
     def __init__(self, spec: JtbdSpec) -> None:
@@ -110,6 +134,7 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def record_stories(self, record_stories_spec: RecordStoriesSpec) -> RecordStoriesOutcome:
+        self._stories = tuple(DraftedStories(record_stories_spec))
         return RecordStoriesOutcome.RECORDED
 
     @property
@@ -130,6 +155,8 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
+        if self._stories:
+            return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
         return Text(JtbdStatus.DRAFTING_STORIES.value)
 
     @property

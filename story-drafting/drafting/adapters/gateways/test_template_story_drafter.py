@@ -11,3 +11,8 @@ class TestTemplateStoryDrafter:
         draft_stories_response = await gateways.TemplateStoryDrafter().draft_stories(ports.DraftStoriesRequest(role="a developer", i_want="the steps fixed in advance", so_that="I can pick up where we left off"))
 
         assert isinstance(draft_stories_response, ports.DraftStoriesResponse)
+
+    async def test_draft_stories_answers_at_least_one_story_text(self) -> None:
+        draft_stories_response = await gateways.TemplateStoryDrafter().draft_stories(ports.DraftStoriesRequest(role="a developer", i_want="the steps fixed in advance", so_that="I can pick up where we left off"))
+
+        assert len(draft_stories_response.story_texts) >= 1
