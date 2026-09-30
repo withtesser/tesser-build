@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -41,7 +39,9 @@ class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 class Test{{Dispatcher}}:
 {{#start_methods}}
 
-    async def test_{{method}}_starts_the_workflow_the_engine_keys_by_the_{{identity}}_and_does_not_wait(self) -> None:
+    async def test_{{method}}_starts_the_workflow_the_engine_keys_by_the_{{identity}}_and_does_not_wait(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         released = asyncio.Event()
@@ -54,9 +54,7 @@ class Test{{Dispatcher}}:
             activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
 {{/workflow_activities}}
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -67,7 +65,7 @@ class Test{{Dispatcher}}:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         started: list[dict[str, str]] = []
         try:
@@ -75,7 +73,7 @@ class Test{{Dispatcher}}:
             while True:
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
@@ -84,7 +82,7 @@ class Test{{Dispatcher}}:
 
             try:
                 {{result}} = await asyncio.wait_for(
-                    dispatchers.{{Dispatcher}}(os.environ["{{engine_url_variable}}"], {{workflow_param}}).{{method}}(
+                    dispatchers.{{Dispatcher}}(engine_url, {{workflow_param}}).{{method}}(
                         relays.{{Request}}({{keyed_request_sample}})
                     ),
                     timeout=15.0,
@@ -127,7 +125,9 @@ class Test{{Dispatcher}}:
 {{/start_methods}}
 {{#run_methods}}
 
-    async def test_{{method}}_runs_the_workflow_the_engine_keys_by_the_{{identity}}_and_answers_what_it_answered(self) -> None:
+    async def test_{{method}}_runs_the_workflow_the_engine_keys_by_the_{{identity}}_and_answers_what_it_answered(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         released = asyncio.Event()
@@ -141,9 +141,7 @@ class Test{{Dispatcher}}:
             activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
 {{/workflow_activities}}
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -154,7 +152,7 @@ class Test{{Dispatcher}}:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         started: list[dict[str, str]] = []
         try:
@@ -162,7 +160,7 @@ class Test{{Dispatcher}}:
             while True:
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
@@ -170,7 +168,7 @@ class Test{{Dispatcher}}:
             assert registered.is_success, registered.text
 
             {{result}} = await dispatchers.{{Dispatcher}}(
-                os.environ["{{engine_url_variable}}"], {{workflow_param}}
+                engine_url, {{workflow_param}}
             ).{{method}}(relays.{{Request}}({{keyed_request_sample}}))
             invoked = await admin.post(
                 "/query",

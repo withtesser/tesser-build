@@ -10,8 +10,6 @@ version = "3.12"
 body = "supported"
 engine_path = "/restate"
 engine_url_variable = "RESTATE_URL"
-admin_variable = "RESTATE_ADMIN"
-callback_host_variable = "RESTATE_CALLBACK_HOST"
 
 [hosts.http]
 serves = "interfaces.http"
@@ -21,6 +19,4 @@ listen_port_variable = "LIBRARY_PORT"
 
 [variables]
 RESTATE_URL = "the engine's URL, the one the client starts workflows through"
-RESTATE_ADMIN = "the Restate admin URL the tests register a served endpoint with"
-RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
 LIBRARY_PORT = "the port the HTTP host listens on"

@@ -1,6 +1,7 @@
 # pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 {{#identity_seeded}}
 import secrets
@@ -48,12 +49,15 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
-        engine_url = os.environ.get("{{engine_url_variable}}")
+        engine_url = self._environ.get("{{engine_url_variable}}")
         if engine_url is None:
             raise errors.invalid("missing_env", "{{engine_url_variable}} is required")
 {{#locations}}
-        {{location_attr}} = os.environ.get("{{location_variable}}")
+        {{location_attr}} = self._environ.get("{{location_variable}}")
         if {{location_attr}} is None:
             raise errors.invalid("missing_env", "{{location_variable}} is required")
 {{/locations}}
@@ -85,4 +89,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> {{App}}App:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

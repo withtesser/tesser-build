@@ -559,15 +559,16 @@ run_layout() {
 # database and a Restate server of its own on 48080/49070, so a local run never
 # re-registers another tree's services. Then every composition in
 # generator/compositions/ is rendered by the composition-driven renderer
-# (srv.cli.render) into a scratch directory and the rendered tree is gated:
-# tessercheck zero findings, mypy --strict, and pytest over every tier but the
-# root (a rendered tree's root tier is its skeletons, red at each placeholder
-# until their author writes them, so the arm does not run it; a runner that
-# does passes the served host as pytest tests --host <url>, which the rendered
-# tests/conftest.py answers; each render is first checked against its composition with
-# srv.cli.render --check), against the same Restate server, reached through the variables its
-# infra.toml names for the engine, with every storage location variable its
-# infra.toml declares set to a fresh temporary path.
+# (srv.cli.render) into a scratch directory, checked against its composition
+# (srv.cli.render --check), and gated: tessercheck zero findings, mypy
+# --strict, and a plain pytest from the rendered tree's root. Nothing is served
+# beforehand and nothing is read from the environment: the rendered root
+# conftest.py starts the engines (Docker) and the HTTP host the tests ask for
+# (docs/design-test-tiers.md, "The tests own their infrastructure"). A
+# rendered root tier is its skeletons, red at each placeholder until their
+# author writes them, so the arm reads pytest's report and passes when every
+# other test passed and every failure is a root-tier skeleton failing at its
+# placeholder (after its host fixture served and registered the host).
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -592,15 +593,6 @@ run_generator() {
 run_rendered_tree() {
   local composition=$1
   local out=$2
-  local engine_url="${RESTATE_URL:-http://localhost:48080}"
-  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
-  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
-  local names engine_url_env admin_env callback_env
-  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["engine_url_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
-  read -r engine_url_env admin_env callback_env <<<"$names"
-  local location_names location_name locations
-  local location_env=()
-  location_names=$(python3 -c 'import sys, tomllib; print(" ".join(s["location_variable"] for s in tomllib.load(open(sys.argv[1], "rb")).get("storage", {}).values() if "location_variable" in s))' "$composition/infra.toml") || return 1
   step "render $composition into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
   step "$composition: the rendered tree matches its composition (srv.cli.render --check)"
@@ -615,16 +607,37 @@ run_rendered_tree() {
   if [ -f "$out/conftest.py" ]; then packages+=(conftest.py); fi
   step "$composition: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
-  step "$composition: pytest every tier but the root, with no host served"
-  locations=$(mktemp -d) || return 1
-  for location_name in $location_names; do
-    location_env+=("$location_name=$locations/$location_name")
-  done
-  local tested=0
-  (cd "$out" && env "$engine_url_env=$engine_url" "$admin_env=$admin" "$callback_env=$callback_host" \
-    ${location_env[@]+"${location_env[@]}"} PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || tested=$?
-  rm -rf "$locations"
-  return "$tested"
+  step "$composition: pytest (every tier; the tests start the engines and the host they take)"
+  local report
+  report=$(mktemp) || return 1
+  (cd "$out" && PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --junitxml="$report")
+  step "$composition: every failure is a root-tier skeleton red at its placeholder"
+  local judged=0
+  python3 - "$report" <<'PY' || judged=$?
+import sys
+import xml.etree.ElementTree as element_tree
+
+cases = list(element_tree.parse(sys.argv[1]).getroot().iter("testcase"))
+unexpected = []
+for case in cases:
+    for outcome in ("failure", "error"):
+        for found in case.findall(outcome):
+            message = found.get("message") or ""
+            skeleton = (
+                outcome == "failure"
+                and case.get("classname", "").startswith("tests.")
+                and ("write the given of" in message or "write the then of" in message)
+            )
+            if not skeleton:
+                unexpected.append(f"{case.get('classname')}::{case.get('name')} ({outcome}): {message}")
+if not cases:
+    unexpected.append("pytest ran no tests")
+for line in unexpected:
+    print(f"  not a skeleton: {line}", file=sys.stderr)
+sys.exit(1 if unexpected else 0)
+PY
+  rm -f "$report"
+  return "$judged"
 }
 
 run_generated_tree() {

@@ -1108,7 +1108,7 @@ class Model(ts.Entity):
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
         engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
-                     for key in ("engine_url_variable", "admin_variable", "callback_host_variable") if key in engine)
+                     for key in ("engine_url_variable",) if key in engine)
         if "engine_path" in engine:
             named.append(("path", "[engine.restate] engine_path", str(engine["engine_path"])))
         for storage_name, storage in self._infra.get("storage", {}).items():
@@ -2017,10 +2017,15 @@ class Model(ts.Entity):
         if list(engines) != ["restate"]:
             raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
         engine = engines["restate"]
-        for key in ("engine_url_variable", "admin_variable", "callback_host_variable", "engine_path"):
+        for key in ("engine_url_variable", "engine_path"):
             if key not in engine:
                 raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
+        for key in ("admin_variable", "callback_host_variable"):
+            if key in engine:
+                raise ValueError(f"[engine.restate] names {key}, which nothing reads: the tests take the engine's admin URL "
+                                 f"and callback host from the root conftest's fixtures, so infra.toml names no variable for them")
+        self._binding["restate_engine"] = [{}]
         chosen: dict[str, str] = {}
         if not implementations.get("environments"):
             raise ValueError("implementations.toml declares no [environments]")

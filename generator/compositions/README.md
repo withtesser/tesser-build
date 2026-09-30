@@ -59,9 +59,9 @@ names (`adapters`, `app`, `application`, `client`, `component`, `config`,
 
 Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
-`mypy --strict`, and every test tier but the root, with the engine variables
-its `infra.toml` names set and every storage `location_variable` set to a fresh
-temporary path. `library/` is the small
+`mypy --strict`, and a plain `pytest` from its root, which starts the engines
+and the host the tests take (Docker required); it passes when every failure is
+a root-test skeleton red at its placeholder. `library/` is the small
 worked example.
 
 ## Which file answers which question
@@ -196,15 +196,16 @@ the story's `then`, verbatim. So a freshly rendered tree is red at the first
 unwritten placeholder, then at the then, and rendering again keeps the edited
 test.
 
-Beside the skeletons the renderer writes two generated files, so a tree with
-root tests has a root tier that runs: `tests/conftest.py`, which registers
-pytest's `--host` option and the session `host` fixture that answers it,
-failing loudly when the runner passed none, and an empty `tests/__init__.py`,
-without which the root `conftest.py` and `tests/conftest.py` collide under
-mypy. The runner serves the host and passes its address:
-`pytest tests --host http://127.0.0.1:<port>` (`docs/design-test-tiers.md`).
-The address is an argument, not a variable, so `infra.toml` declares none for
-it.
+Beside the skeletons the renderer writes an empty generated
+`tests/__init__.py`, and the rendered root `conftest.py` holds the session
+`host` fixture the skeletons take: it starts a private Restate engine, serves
+`srv.http.main` with the engine's URL, a fresh temporary path for every storage
+`location_variable`, and a free port in the `listen_port_variable`, registers
+the host's `engine_path` with the engine, and yields the host's address. A
+runner that already serves a host passes its address instead:
+`pytest tests --host http://127.0.0.1:<port>` (`docs/design-test-tiers.md`,
+"The tests own their infrastructure"). The address is an argument, not a
+variable, so `infra.toml` declares none for it.
 
 ## 3 `infra.toml`
 
@@ -223,8 +224,6 @@ version = "3.12"
 body = "supported"                        # informational
 engine_path = "/restate"                  # required: where the Restate endpoint is mounted
 engine_url_variable = "RESTATE_URL"       # required: the variable the app reads the engine's URL from
-admin_variable = "RESTATE_ADMIN"          # required: read by the tests that register an endpoint
-callback_host_variable = "RESTATE_CALLBACK_HOST"   # required: likewise
 
 [hosts.http]                              # required, and the only host
 serves = "interfaces.http"                # informational: the composition's interface it serves
@@ -237,6 +236,13 @@ location_variable = "JTBD_DB_PATH"        # the variable that names its location
 [variables]                               # informational: what each variable is
 JTBD_DB_PATH = "the path of the SQLite database file"
 ```
+
+The engine names one variable, the one the app reads its URL from. The tests
+never read the environment: they take the engine's URL, its admin URL and the
+host name it reaches a served endpoint at as fixtures of the rendered root
+`conftest.py`, so an `admin_variable` or `callback_host_variable` is a problem.
+The host's variables stay, because the `host` fixture passes them to the host
+it serves.
 
 A storage is named by its key (snake_case). `[storage.memory]` needs no
 `location_variable`, since it lives in the process; every other storage names

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -40,13 +38,13 @@ class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 
 class Test{{Activity}}:
 
-    async def test_restate_serves_{{operation}}_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_{{operation}}_and_a_call_made_with_its_handler_reaches_the_application_client(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
         {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}")
         fake_{{application_client}} = Fake{{ApplicationClient}}()
         {{activity_param}} = activities.{{Activity}}({{container_attr}}, fake_{{application_client}})
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -57,21 +55,21 @@ class Test{{Activity}}:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             registering_until = asyncio.get_running_loop().time() + 30.0
             while True:
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 {{operation}}_response = await restate_client.Client(async_client).service_call(
                     {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})
                 )
@@ -92,12 +90,12 @@ class Test{{Activity}}:
 
 class TestRestateEngineRefusals:
 
-    async def test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried(self) -> None:
+    async def test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
         {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}")
         {{activity_param}} = activities.{{Activity}}({{container_attr}}, Fake{{ApplicationClient}}())
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -108,21 +106,21 @@ class TestRestateEngineRefusals:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             registering_until = asyncio.get_running_loop().time() + 30.0
             while True:
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).generic_call(
                         {{container_attr}}.name, {{activity_param}}.handler.__name__,
@@ -141,12 +139,12 @@ class TestRestateEngineRefusals:
             serving.cancel()
             await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 
-    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(self) -> None:
+    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
         {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}", ingress_private=True)
         {{activity_param}} = activities.{{Activity}}({{container_attr}}, Fake{{ApplicationClient}}())
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -157,21 +155,21 @@ class TestRestateEngineRefusals:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             registering_until = asyncio.get_running_loop().time() + 30.0
             while True:
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).service_call(
                         {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})
