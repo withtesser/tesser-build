@@ -21,7 +21,7 @@ class TestRenderingCompositions:
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -54,7 +54,7 @@ class TestRenderingCompositions:
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.retitle_loan]\nrequest = [\"loan_id\", \"title\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\", \"repository.save_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -88,7 +88,7 @@ class TestRenderingCompositions:
             )],
             "generator.toml": [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\ncopies = [1, 2]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -122,7 +122,7 @@ class TestRenderingCompositions:
                 ('builds = "Loan"\ncalls = "save_loan"', 'builds = "Loan"\ncommands = ["renew_loan"]\ncalls_on = ["renewd"]\ncalls = "save_loan"'),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -156,7 +156,7 @@ class TestRenderingCompositions:
             ],
             "generator.toml": [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\ncopies = [1, 2]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -195,7 +195,7 @@ class TestRenderingCompositions:
             ],
             "generator.toml": [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\ncopies = [1, 2]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -224,7 +224,7 @@ class TestRenderingCompositions:
                 ("[ports.NoticeSender]", "[actions.loan.operations.note_loan]\nbuilds = \"Loan\"\ncalls = \"save_loan\"\nrequest = [\"loan_id\", \"borrower\", \"title\"]\nresponse = [\"loan_id\"]\n\n[ports.NoticeSender]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -258,7 +258,7 @@ class TestRenderingCompositions:
                 ("[ports.NoticeSender]", "[actions.loan.operations.note_loan]\nbuilds = \"Loan\"\ncalls = \"save_loan\"\nrequest = [\"loan_id\", \"borrower\", \"title\"]\nresponse = [\"loan_id\"]\n\n[ports.NoticeSender]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -284,7 +284,7 @@ class TestRenderingCompositions:
                 ('NoticeSender = "printed", ', 'NoticeSender = "printed", ReminderSender = "printed", '),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -306,12 +306,12 @@ class TestRenderingCompositions:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
             "implementations.toml": [(
-                "[hosts.http]",
+                "[environments.gate]",
                 "[environments.local]\nimplementations = { LoanRepository = \"memory\", LoanIdentityRepository = \"uuid\" }\n"
-                "engine = \"restate\"\nhosts = [\"http\"]\n\n[hosts.http]",
+                "engine = \"restate\"\nhosts = [\"http\"]\n\n[environments.gate]",
             )],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -333,7 +333,7 @@ class TestRenderingCompositions:
         edits = {
             "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I DELETE /loans/{loan_id}\"\nthen = \"I get back 204\"\nroute = \"DELETE /loans/{loan_id}\"\nstatus = 204\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -353,7 +353,7 @@ class TestRenderingCompositions:
         edits = {
             "composition.toml": [('serves = ["s-1", "s-1-a-1"]', 'serves = ["s-1", "s-1-a-1", "s-1-b-1"]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -375,7 +375,7 @@ class TestRenderingCompositions:
         edits = {
             "story.toml": [('route = "POST /loans"', 'route = "PUT /loans"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -402,7 +402,7 @@ class TestRenderingCompositions:
                 ('"actions.story.draft_stories"', '"actions.drafter.draft_stories"'),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "story-drafting" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -431,6 +431,60 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert (tmp_path / "out" / "drafting" / "application" / "story_actions.py").is_file()
 
+    def test_a_composition_without_infra_toml_is_a_problem_saying_what_it_holds(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        (tmp_path / "composition").mkdir()
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library" / f"{name}.toml").read_text())
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "the composition's infra.toml is missing, and it says what the app runs on and what an operator must provide",
+        )
+        assert not (tmp_path / "out").exists()
+
+    def test_an_implementations_toml_still_carrying_engine_hosts_variables_or_app_is_a_problem_saying_they_moved(
+        self, tmp_path: pathlib.Path,
+    ) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "implementations.toml": [(
+                "[implementations.NoticeSender.printed]",
+                'app = "library"\n\n[implementations.NoticeSender.printed]',
+            ), (
+                "[environments.gate]",
+                '[engine.restate]\ningress_variable = "RESTATE_INGRESS"\n\n[hosts.http]\n'
+                'listen_port_variable = "LIBRARY_PORT"\n\n[variables]\nLIBRARY_PORT = "the port"\n\n[environments.gate]',
+            )],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "implementations.toml declares app, which moved to infra.toml: implementations.toml holds only "
+            "[implementations] and [environments]",
+            "implementations.toml declares [engine], which moved to infra.toml: implementations.toml holds only "
+            "[implementations] and [environments]",
+            "implementations.toml declares [hosts], which moved to infra.toml: implementations.toml holds only "
+            "[implementations] and [environments]",
+            "implementations.toml declares [variables], which moved to infra.toml: implementations.toml holds only "
+            "[implementations] and [environments]",
+        )
+
     def test_an_agent_owned_store_renders_a_working_store_stub_the_component_wires_and_keeps_it_on_a_second_render(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
@@ -439,7 +493,7 @@ class TestRenderingCompositions:
                 "[implementations.LoanRepository.file]\nclass = \"FileLoanStore\"\nbody = \"agent\"",
             ), ('LoanRepository = "memory"', 'LoanRepository = "file"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -546,7 +600,7 @@ class TestRenderingCompositions:
         edits = {
             "story.toml": [('route = "GET /loans/{loan_id}"', 'route = "GET /loans/{loan_id}"\nreached_by = [{ route = "POST /loans" }]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -573,7 +627,7 @@ class TestRenderingCompositions:
                 'operations.issue_loan_id = { request = [], response = ["loan_id"] }',
             )],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -596,7 +650,7 @@ class TestRenderingCompositions:
         edits = {
             "composition.toml": [('builds = "Loan"', 'builds = "Book"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -622,7 +676,7 @@ class TestRenderingCompositions:
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -655,7 +709,7 @@ class TestRenderingCompositions:
             ],
             "generator.toml": [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\ncopies = [1, 2]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -695,7 +749,7 @@ class TestRenderingCompositions:
                 ("[aggregate.reads]", "[aggregate.commands.close_loan]\ntakes = {}\noutcomes = [\"closed\"]\n\n[aggregate.reads]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -722,7 +776,7 @@ class TestRenderingCompositions:
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.list_loans]\nrequest = [\"loan_id\"]\nresponse = [\"loan_id\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -762,7 +816,7 @@ class TestRenderingCompositions:
                 ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
             ],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -781,7 +835,7 @@ class TestRenderingCompositions:
 
     def test_a_path_parameter_that_is_not_an_integer_answers_400_never_a_crash(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             (tmp_path / "composition").mkdir(exist_ok=True)
             (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library" / f"{name}.toml").read_text())
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
@@ -809,7 +863,7 @@ class TestRenderingCompositions:
     def test_an_empty_sample_list_is_a_problem_not_a_crash(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {"generator.toml": [('borrower = ["Ada", "Grace"]', "borrower = []")]}
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -829,7 +883,7 @@ class TestRenderingCompositions:
         edits = {
             'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["lapsed"]\n\n[aggregate.reads]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -850,7 +904,7 @@ class TestRenderingCompositions:
             'composition.toml': [('[aggregate.reads]\nloan_id = "str"', '[aggregate.reads]\nloan_id = "str"\nshelf = "str"'), ('request = ["borrower", "title"]\nresponse = ["loan_id"]\nsteps = ["identity', 'request = ["borrower", "title", "shelf"]\nresponse = ["loan_id"]\nsteps = ["identity'), ('response = ["loan_id", "borrower", "title"]\nsteps = ["repository.load_loan"]', 'response = ["loan_id", "borrower", "title", "shelf"]\nsteps = ["repository.load_loan"]')],
             'generator.toml': [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\nshelf = ["A1", "B2"]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -874,7 +928,7 @@ class TestRenderingCompositions:
         edits = {
             'composition.toml': [('[aggregate.reads]\nloan_id = "str"', '[aggregate.reads]\nloan_id = "str"\nshelf = "str"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -895,7 +949,7 @@ class TestRenderingCompositions:
             'composition.toml': [('[aggregate.reads]\nloan_id = "str"', '[aggregate.reads]\nloan_id = "str"\nshelf = "str"'), ('payload = ["loan_id"]', 'payload = ["loan_id", "shelf"]')],
             'generator.toml': [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\nshelf = ["A1", "B2"]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -915,7 +969,7 @@ class TestRenderingCompositions:
         edits = {
             'composition.toml': [('[aggregate.reads]', '[aggregate.commands.renew_loan]\ntakes = {}\noutcomes = ["renewed", "refused"]\n\n[aggregate.reads]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -935,7 +989,7 @@ class TestRenderingCompositions:
         edits = {
             'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["lapsed", "open"]\n\n[aggregate.commands.renew_loan]\ntakes = {}\noutcomes = ["renewed", "refused"]\n\n[aggregate.reads]')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -960,7 +1014,7 @@ class TestRenderingCompositions:
             'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["lapsed_loan", "loan_i"]\n\n[aggregate.reads]')],
             'story.toml': [('then = "the loan is on record and I can read it back"', 'then = "the loan is on record and I can read it back, even a Lapsed Loan"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -981,7 +1035,7 @@ class TestRenderingCompositions:
             'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["lapsed"]\n\n[aggregate.reads]')],
             'story.toml': [('[[jtbds]]\nid = "j-root"', '[scope]\nout = ["lapsed loans"]\n\n[[jtbds]]\nid = "j-root"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -1002,7 +1056,7 @@ class TestRenderingCompositions:
             'composition.toml': [('[aggregate.reads]', '[aggregate.commands.renew_loan]\ntakes = { title = "str" }\noutcomes = ["renewed", "refused"]\n\n[aggregate.reads]'), ('builds = "Loan"\ncalls = "save_loan"', 'builds = "Loan"\ncommands = ["renew_loan"]\ncalls_on = ["renewed"]\ncalls = "save_loan"')],
             'story.toml': [('then = "', 'then = "a renewal can be refused, and ')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text
@@ -1025,7 +1079,7 @@ class TestRenderingCompositions:
         edits = {
             'composition.toml': [('[aggregate.reads]', '[aggregate.commands.renew_loan]\ntakes = { title = "str" }\noutcomes = ["renewed"]\n\n[aggregate.reads]'), ('builds = "Loan"\ncalls = "save_loan"', 'builds = "Loan"\ncommands = ["renew_loan"]\ncalls_on = ["renewed"]\ncalls = "save_loan"')],
         }
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
             for old, new in edits.get(f"{name}.toml", []):
                 assert old in text

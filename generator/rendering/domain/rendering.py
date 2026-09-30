@@ -59,7 +59,13 @@ PATTERNS: typing.Final[dict[str, tuple[re.Pattern[str], str]]] = {
     "path": (ENGINE_PATH, "URL path of lowercase segments, like /restate"),
 }
 
-DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
+DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "infra", "composition", "implementations", "generator")
+
+HOLDS: typing.Final[dict[str, str]] = {"infra": "what the app runs on and what an operator must provide"}
+
+MOVED_TO_INFRA: typing.Final[tuple[tuple[str, str], ...]] = (
+    ("app", "app"), ("engine", "[engine]"), ("hosts", "[hosts]"), ("variables", "[variables]"),
+)
 
 READ: typing.Final[str] = "read"
 
@@ -963,9 +969,10 @@ class Echo(ts.ValueObject):
 
 class ModelSpec(ts.Spec):
 
-    def __init__(self, language: str, story: str, composition: str, implementations: str, generator: str) -> None:
+    def __init__(self, language: str, story: str, infra: str, composition: str, implementations: str, generator: str) -> None:
         self.language = language
         self.story = story
+        self.infra = infra
         self.composition = composition
         self.implementations = implementations
         self.generator = generator
@@ -975,14 +982,19 @@ class Model(ts.Entity):
 
     def __init__(self, spec: ModelSpec) -> None:
         self._story = tomllib.loads(spec.story)
+        self._infra = tomllib.loads(spec.infra)
         self._composition = tomllib.loads(spec.composition)
         self._implementations = tomllib.loads(spec.implementations)
+        moved = [f"implementations.toml declares {shown}, which moved to infra.toml: implementations.toml holds only "
+                 f"[implementations] and [environments]" for key, shown in MOVED_TO_INFRA if key in self._implementations]
+        if moved:
+            raise ValueError(*moved)
         self._generator = tomllib.loads(spec.generator)
         language = tomllib.loads(spec.language)
         composition = self._composition
         aggregate_table = composition["aggregate"]
         self._context = str(composition["context"])
-        self._app = str(self._implementations["app"])
+        self._app = str(self._infra["app"])
         self._Aggregate = str(aggregate_table["name"])
         self._aggregate = str(Word(self._Aggregate).snake())
         self._identity = str(aggregate_table["identity"])
@@ -1094,14 +1106,14 @@ class Model(ts.Entity):
             for key, implementation in choices.items():
                 if implementation.get("body") == "agent":
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
-        engine = self._implementations.get("engine", {}).get("restate", {})
+        engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
                      for key in ("ingress_variable", "admin_variable", "callback_host_variable") if key in engine)
-        host = self._implementations.get("hosts", {}).get("http", {})
+        if "engine_path" in engine:
+            named.append(("path", "[engine.restate] engine_path", str(engine["engine_path"])))
+        host = self._infra.get("hosts", {}).get("http", {})
         if "listen_port_variable" in host:
             named.append(("variable", "[hosts.http] listen_port_variable", str(host["listen_port_variable"])))
-        if "engine_path" in host:
-            named.append(("path", "[hosts.http] engine_path", str(host["engine_path"])))
         for pattern_name, where, name in named:
             pattern, description = PATTERNS[pattern_name]
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
@@ -1992,13 +2004,14 @@ class Model(ts.Entity):
         implementations = self._implementations
         identity = self._identity
         Orchestrator = self._Orchestrator
-        engines = implementations.get("engine", {})
+        infra = self._infra
+        engines = infra.get("engine", {})
         if list(engines) != ["restate"]:
-            raise ValueError("implementations.toml names an engine other than restate, the one this renderer renders")
+            raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
         engine = engines["restate"]
-        for key in ("ingress_variable", "admin_variable", "callback_host_variable"):
+        for key in ("ingress_variable", "admin_variable", "callback_host_variable", "engine_path"):
             if key not in engine:
-                raise ValueError(f"[engine.restate] does not say which variable is the {key.removesuffix('_variable').replace('_', ' ')}")
+                raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
         chosen: dict[str, str] = {}
         if not implementations.get("environments"):
@@ -2015,11 +2028,10 @@ class Model(ts.Entity):
                 raise ValueError(f"environment {environment_name} runs no restate engine")
             if list(environment.get("hosts", [])) != ["http"]:
                 raise ValueError(f"environment {environment_name} serves hosts other than http, the one this renderer renders")
-        host = implementations.get("hosts", {}).get("http")
+        host = infra.get("hosts", {}).get("http")
         if host is None:
-            raise ValueError("implementations.toml declares no [hosts.http]")
+            raise ValueError("infra.toml declares no [hosts.http]")
         self._binding["listen_port_variable"] = str(host["listen_port_variable"])
-        self._binding["engine_path"] = str(host["engine_path"])
         port_exprs: dict[str, str] = {}
         shared_stores: list[dict[str, object]] = []
         memory_repositories: list[dict[str, object]] = []
@@ -2460,17 +2472,18 @@ class RenderedTree(ts.AggregateRoot):
             if state == READ:
                 texts[name] = text
             else:
-                found.append(Text(f"the composition's {name}.toml is {state}"))
+                found.append(Text(f"the composition's {name}.toml is {state}"
+                                  + (f", and it says {HOLDS[name]}" if name in HOLDS else "")))
         for name in DOCUMENTS:
             if name not in texts and not any(document == name for document, _, _ in spec.documents):
-                found.append(Text(f"the composition has no {name}.toml"))
+                found.append(Text(f"the composition has no {name}.toml" + (f", which says {HOLDS[name]}" if name in HOLDS else "")))
         if spec.target == "not_directory":
             found.append(Text("the output directory is a file"))
         rendered: list[RenderedFile] = []
         if not found:
             try:
                 model = Model(ModelSpec(
-                    language=texts["language"], story=texts["story"], composition=texts["composition"],
+                    language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts["composition"],
                     implementations=texts["implementations"], generator=texts["generator"],
                 ))
                 model.messages()

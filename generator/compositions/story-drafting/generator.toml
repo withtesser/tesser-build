@@ -1,15 +1,16 @@
-# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
-# 5 generator. Each fact lives in the one spec whose question it answers; what a
-# convention derives (TB085 names, a class named for its aggregate) is in none.
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
 #
-# 5 GENERATOR — What does the generator need beyond the other four? Only what no
-# reviewer would care about. The generator is a function of composition.toml and
-# implementations.toml: it renders every piece by its kind (aggregate, entity,
-# value, enum, client operation, orchestrator operation, signal, actions, port,
-# adapter), with its sibling tests, wires them as the steps say, and builds each
-# environment's adapters and hosts as implementations.toml says. If composition
-# can say it, the generator renders it. Acceptance tests are red's, from the
-# level-2 stories.
+# 6 GENERATOR — What does the generator need beyond the other five? Only what no
+# reviewer would care about. The generator is a function of infra.toml,
+# composition.toml, and implementations.toml: it renders every piece by its kind
+# (aggregate, entity, value, enum, client operation, orchestrator operation,
+# signal, actions, port, adapter), with its sibling tests, wires them as the
+# steps say, builds each environment's adapters as implementations.toml says,
+# and runs them on what infra.toml declares. If composition can say it, the
+# generator renders it. Acceptance tests are red's, from the level-2 stories.
 
 # Test data for the generated sibling tests.
 [sample_values]

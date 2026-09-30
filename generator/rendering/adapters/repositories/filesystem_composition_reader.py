@@ -9,7 +9,7 @@ import rendering.application.ports as ports
 
 PIECE_SUFFIX: typing.Final[str] = ".tmpl"
 
-DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
+DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "infra", "composition", "implementations", "generator")
 
 
 class FilesystemCompositionReader(ts.Repository):

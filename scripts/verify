@@ -604,7 +604,7 @@ run_layout() {
 # root (a rendered tree has no root tier; its acceptance tests are written by
 # hand; each render is first checked against its composition with
 # srv.cli.render --check), against the same Restate server, reached through the variables its
-# implementations.toml names for the engine.
+# infra.toml names for the engine.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -633,7 +633,7 @@ run_rendered_tree() {
   local admin="${RESTATE_ADMIN:-http://localhost:49070}"
   local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
   local names ingress_env admin_env callback_env
-  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/implementations.toml") || return 1
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
   read -r ingress_env admin_env callback_env <<<"$names"
   step "render $composition into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1

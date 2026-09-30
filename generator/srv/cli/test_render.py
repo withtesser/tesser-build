@@ -92,7 +92,7 @@ class TestRenderHost:
         tree = pathlib.Path(__file__).resolve().parents[2]
         library = tmp_path / "library"
         (library / "specs").mkdir(parents=True)
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             (library / "specs" / f"{name}.toml").write_text((tree / "compositions" / "library" / f"{name}.toml").read_text())
         (library / "README.md").write_text("# library\n")
 
@@ -194,7 +194,7 @@ class TestRenderHost:
         ):
             composition = tmp_path / str(len(answered)) / "composition"
             composition.mkdir(parents=True)
-            for name in ("language", "story", "composition", "implementations", "generator"):
+            for name in ("language", "story", "infra", "composition", "implementations", "generator"):
                 text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
                 (composition / f"{name}.toml").write_text(text.replace(replaced, replacement) if name == "composition" else text)
             completed = subprocess.run(

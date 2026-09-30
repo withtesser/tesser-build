@@ -21,6 +21,7 @@ class TestFilesystemCompositionReader:
         assert [(document.name, document.state, document.text) for document in read_composition_response.documents] == [
             ("language", ports.DocumentState.READ, 'context = "lending"\n'),
             ("story", ports.DocumentState.MISSING, ""),
+            ("infra", ports.DocumentState.MISSING, ""),
             ("composition", ports.DocumentState.MISSING, ""),
             ("implementations", ports.DocumentState.MISSING, ""),
             ("generator", ports.DocumentState.MISSING, ""),

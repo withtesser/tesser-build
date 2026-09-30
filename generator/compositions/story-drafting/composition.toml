@@ -1,15 +1,16 @@
-# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
-# 5 generator. Each fact lives in the one spec whose question it answers; what a
-# convention derives (TB085 names, a class named for its aggregate) is in none.
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
 #
-# 3 COMPOSITION — Which pieces exist and how do they connect? The design
+# 4 COMPOSITION — Which pieces exist and how do they connect? The design
 # decisions no convention determines, made before any code. Written by the agent
 # in step 1 and reviewed; the generator reads it directly. Every name is a
 # language code name or convention word. Every piece names the stories it serves
-# (story ids, level 1 and 2); a piece that serves none is a finding. Which
-# implementation or host exists, and which is used where, is the implementations
-# spec's: this one declares contracts (the aggregate, the ports, the relays and
-# the signal), never what satisfies them.
+# (story ids, level 1 and 2); a piece that serves none is a finding. What the app
+# runs on is the infra spec's, and which implementation is used where is the
+# implementations spec's: this one declares contracts (the aggregate, the ports,
+# the relays and the signal), never what satisfies them.
 
 context = "drafting"
 

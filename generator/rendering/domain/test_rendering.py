@@ -40,6 +40,29 @@ status = 200
 """,
         ),
         (
+            "infra",
+            "read",
+            """
+app = "library"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+[engine.restate]
+body = "supported"
+engine_path = "/restate"
+ingress_variable = "RESTATE_INGRESS"
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
+
+[hosts.http]
+listen_port_variable = "LIBRARY_PORT"
+
+[storage.memory]
+""",
+        ),
+        (
             "composition",
             "read",
             """
@@ -98,28 +121,16 @@ operations.issue_loan_id = { request = [], response = ["loan_id"] }
             "implementations",
             "read",
             """
-app = "library"
-
 [implementations.LoanRepository.memory]
 body = "supported"
 
 [implementations.LoanIdentityRepository.uuid]
 body = "supported"
 
-[engine.restate]
-body = "supported"
-ingress_variable = "RESTATE_INGRESS"
-admin_variable = "RESTATE_ADMIN"
-callback_host_variable = "RESTATE_CALLBACK_HOST"
-
 [environments.gate]
 implementations = { LoanRepository = "memory", LoanIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
-
-[hosts.http]
-engine_path = "/restate"
-listen_port_variable = "LIBRARY_PORT"
 """,
         ),
         ("generator", "read", '[sample_values]\nloan_id = ["loan-1", "loan-2"]\nborrower = ["Ada", "Grace"]\n'),
@@ -260,6 +271,7 @@ class TestRenderedTree:
         assert [str(text) for text in rendered_tree.problems()] == [
             "the composition's language.toml is missing",
             "the composition has no story.toml",
+            "the composition has no infra.toml, which says what the app runs on and what an operator must provide",
             "the composition has no composition.toml",
             "the composition has no implementations.toml",
             "the composition has no generator.toml",
