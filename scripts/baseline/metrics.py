@@ -50,6 +50,71 @@ def result_text(content: object) -> str:
     return ""
 
 
+# What a Bash call spent its time on, by the first rule its command matches:
+# checking the work (the gate, tests, the analyzer, type and lint checks),
+# setting up (a virtualenv, installs, containers), or exercising the served
+# service by hand. Any other call, of any tool, is "other".
+TIME_CLASSES = (
+    ("checking", re.compile(r"scripts/verify|pytest|tessercheck|-m srv\.cli\.main|\bmypy\b|\bruff\b")),
+    ("setup", re.compile(r"\bvenv\b|pip3? install|\buv (pip|sync|add|venv)|\bdocker\b")),
+    ("probing", re.compile(r"\bcurl\b|main\.py|srv\.http")),
+)
+
+
+def union_s(spans: list[tuple[datetime.datetime, datetime.datetime]]) -> float:
+    """Seconds covered by the spans, counting an overlap once: calls the agent
+    makes in parallel share their wall-clock time."""
+    covered, end = 0.0, None
+    for start, stop in sorted(spans):
+        if end is None or start > end:
+            covered += (stop - start).total_seconds()
+            end = stop
+        elif stop > end:
+            covered += (stop - end).total_seconds()
+            end = stop
+    return covered
+
+
+def time_split(rows: list[dict]) -> dict:
+    """The agent's wall-clock time, split by what it was waiting on. A tool
+    call runs from its tool_use row to its tool_result row; the time in no
+    call is the model's own (thinking and writing). Parallel calls count once,
+    within a class and across classes (a moment in two classes counts in the
+    first of checking, setup, probing, other)."""
+    stamps: list[datetime.datetime] = []
+    started: dict[str, tuple[datetime.datetime, str]] = {}
+    spans: dict[str, list[tuple[datetime.datetime, datetime.datetime]]] = {name: [] for name, _ in TIME_CLASSES}
+    spans["other"] = []
+    for row in rows:
+        if not row.get("timestamp"):
+            continue
+        stamp = datetime.datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+        stamps.append(stamp)
+        message = row.get("message")
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for part in message["content"]:
+            if not isinstance(part, dict):
+                continue
+            if row.get("type") == "assistant" and part.get("type") == "tool_use":
+                command = str(part.get("input", {}).get("command", "")) if part.get("name") == "Bash" else ""
+                kind = next((name for name, pattern in TIME_CLASSES if command and pattern.search(command)), "other")
+                started[part["id"]] = (stamp, kind)
+            elif row.get("type") == "user" and part.get("type") == "tool_result" and part.get("tool_use_id") in started:
+                begun, kind = started.pop(part["tool_use_id"])
+                spans[kind].append((begun, stamp))
+    if not stamps:
+        return {}
+    total = (max(stamps) - min(stamps)).total_seconds()
+    split, claimed = {}, []
+    for kind in ("checking", "setup", "probing", "other"):
+        before = union_s(claimed)
+        claimed = claimed + spans[kind]
+        split[f"{kind}_s"] = round(union_s(claimed) - before, 1)
+    split["model_s"] = round(total - union_s(claimed), 1)
+    return split
+
+
 def transcript_metrics(rows: list[dict]) -> dict:
     """A subagent transcript (session-log format): one row per content block,
     rows of one API request sharing a requestId and repeating its usage. The
@@ -112,6 +177,7 @@ def transcript_metrics(rows: list[dict]) -> dict:
     return {
         "models": sorted(models),
         "duration_s": round((max(stamps) - min(stamps)).total_seconds(), 1) if stamps else None,
+        "time": time_split(rows),
         "api_requests": len(usage_by_request),
         "tokens": {
             "input": total("input_tokens"),
@@ -379,6 +445,7 @@ def main() -> None:
     agent, hook, diff, gate = metrics["agent"], metrics["hook"], metrics["diff"], metrics["gate"]
     print(f"phase {args.phase}: {agent['duration_s']}s, {agent['api_requests']} API requests, "
           f"{agent['tool_calls_total']} tool calls {agent['tool_calls']}, tokens {agent['tokens']}, models {agent['models']}")
+    print(f"  time: {agent['time']}")
     print(f"  guidance: {agent['guidance']}")
     print(f"  tessercheck runs by agent: {agent['tessercheck_runs_count']}, findings per run: "
           f"{[r['findings'] for r in agent['tessercheck_runs']]}")
