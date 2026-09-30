@@ -67,6 +67,19 @@ Done means all of these hold:
 {{FILE:story-drafting/specs/story.toml}}
 ```
 
+## What it runs on (given: the engineer's decisions, not yours)
+
+```toml
+{{FILE:story-drafting/specs/infra.toml}}
+```
+
+You do not write or change `infra.toml`. Its `[storage.*]` are the stores that
+exist: every store port you declare must be implemented by one of them, as
+`[implementations.<Port>.<storage>]`, and a storage that is not `memory` is
+implemented by an agent-owned class you name (`body = "agent"`, `class = ...`;
+the green agent writes its body). A story that says data must survive a restart
+needs a storage that keeps it.
+
 ## The spec formats
 
 {{FILE:generator/compositions/README.md}}

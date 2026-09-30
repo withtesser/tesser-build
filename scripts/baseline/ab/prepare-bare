@@ -43,10 +43,10 @@ cat >"$out/run.json" <<JSON
 {"phase": "bare", "name": "$name", "slot": $slot, "worktree": "$work", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 
-python3 - "$HERE/prompts/bare.md" "$out/prompt.md" "$work" "$host_port" "http://localhost:$ingress_port" "http://localhost:$admin_port" <<'PY'
+python3 - "$HERE/prompts/bare.md" "$out/prompt.md" "$work" "$host_port" "http://localhost:$ingress_port" "http://localhost:$admin_port" "$work/jtbd.db" <<'PY'
 import sys
 text = open(sys.argv[1]).read()
-for token, value in zip(("{workdir}", "{port}", "{ingress}", "{admin}"), sys.argv[3:7]):
+for token, value in zip(("{workdir}", "{port}", "{ingress}", "{admin}", "{dbpath}"), sys.argv[3:8]):
     text = text.replace(token, value)
 open(sys.argv[2], "w").write(text)
 PY

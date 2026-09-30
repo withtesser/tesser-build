@@ -29,6 +29,15 @@ generated mark; do not edit one — a drift check fails if you do. **Yours are:*
 - `story-drafting/drafting/adapters/gateways/template_story_drafter.py` and
   its `test_template_story_drafter.py`: the body of the one implementation
   the toolkit does not supply.
+- the agent-owned STORE class that `implementations.toml` declares
+  (`body = "agent"` on the repository port) and its sibling test, under
+  `story-drafting/drafting/adapters/repositories/`: it starts as a working
+  in-memory store. Make it keep its data in the storage `infra.toml` declares
+  for it (for `sqlite`: the database file whose path the class is built with as
+  `location`, using the standard library's `sqlite3`), so the data survives the
+  process. Keep its public shape (`transaction()`, the repository operations),
+  which the generated code relies on. Stories that say a job to be done
+  survives a restart of the service are yours to satisfy here.
 
 Do not edit the specs (story-drafting/specs/), the acceptance tests, `scripts/verify`, or any
 `.tesser-root` (no `skip` lines).
@@ -49,6 +58,12 @@ there, not in your files.
 
 ```toml
 {{FILE:story-drafting/specs/story.toml}}
+```
+
+## What it runs on
+
+```toml
+{{FILE:story-drafting/specs/infra.toml}}
 ```
 
 ## The contracts (composition)

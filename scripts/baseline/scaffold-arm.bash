@@ -4,6 +4,20 @@ run_story_drafting() {
   local admin="${RESTATE_ADMIN:-http://localhost:39070}"
   local port="${STORY_DRAFTING_PORT:-9300}"
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  # Every storage infra.toml declares with a location variable gets a fresh file
+  # path for this run, as an operator would supply it.
+  local scratch pair
+  scratch=$(mktemp -d)
+  if [ -f specs/infra.toml ]; then
+    while IFS= read -r pair; do export "$pair"; done < <(python3 - specs/infra.toml "$scratch" <<'PY'
+import sys, tomllib
+declared = tomllib.load(open(sys.argv[1], "rb")).get("storage", {})
+for name, storage in declared.items():
+    if "location_variable" in storage:
+        print("{}={}/{}.db".format(storage["location_variable"], sys.argv[2], name))
+PY
+)
+  fi
   if [ -f .tesser-rendered ]; then
     local composition
     composition=$(head -n 1 .tesser-rendered)
