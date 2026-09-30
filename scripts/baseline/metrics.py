@@ -17,9 +17,11 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 
 TREE = "story-drafting"
+GATE_TIMEOUT_S = 600  # a gate that has not finished by then is hung; it is killed and recorded as such
 FINDING = re.compile(r":\d+: (TB\d{3}) ")
 SUMMARY = re.compile(r"^(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS) (\S+)(?: - (.*))?$")
 TESSERCHECK_COMMAND = re.compile(r"scripts/verify\s+[\w-]|scripts/verify\s*($|[;&|])|-m srv\.cli\.main|tessercheck-check|tessercheck_tree")
@@ -176,6 +178,18 @@ def git(worktree: pathlib.Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True).stdout
 
 
+class GitFailed(Exception):
+    pass
+
+
+def git_strict(worktree: pathlib.Path, *args: str) -> str:
+    """Like git(), but a failed command raises instead of reading as empty output."""
+    proc = subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise GitFailed(f"git {' '.join(args)}: {proc.stderr.strip() or proc.returncode}")
+    return proc.stdout
+
+
 def is_test(path: str) -> bool:
     name = pathlib.PurePosixPath(path).name
     return name.startswith("test_") or name == "conftest.py" or "/tests/" in f"/{path}"
@@ -203,6 +217,75 @@ def diff_metrics(worktree: pathlib.Path, base: str) -> dict:
     }
 
 
+AGENT_OWNED = "# pragma: tesser-agent-owned;"
+GREEN_PHASES = ("green-specs", "green-on-red")
+PROTECTED_PREFIXES = (f"{TREE}/specs/", "generator/compositions/", f"{TREE}/tests/")
+PROTECTED_FILES = ("scripts/verify", f"{TREE}/.tesser-rendered")
+# Ignored files are counted, because pytest collects a gitignored conftest.py
+# as readily as a tracked one. Only what the tools themselves write is exempt.
+TOOL_DIRS = ("__pycache__", ".tesser", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis")
+TOOL_FILES = (".coverage", "coverage.json")
+
+
+def integrity_metrics(worktree: pathlib.Path, base: str, phase: str) -> dict:
+    """What a green trial changed against what it was allowed to change.
+
+    The render drift check only compares generated files with the specs, so
+    it cannot see a trial that edits the specs and re-renders, weakens an
+    acceptance test, or deletes a file it owns. This compares the trial's
+    commit and working tree with its base: the files it may change are the
+    ones marked agent-owned at the base, plus new domain modules; the specs,
+    acceptance tests, verify script, render marker, and any .tesser-root must
+    be byte-identical.
+    """
+    if phase not in GREEN_PHASES:
+        return {"checked": False}
+    try:
+        return audit_integrity(worktree, base)
+    except GitFailed as failure:
+        return {"checked": True, "ok": False, "error": str(failure)}
+
+
+def is_tool_output(path: str) -> bool:
+    parts = pathlib.PurePosixPath(path).parts
+    return any(part in TOOL_DIRS for part in parts) or parts[-1] in TOOL_FILES or path.endswith(".pyc")
+
+
+def audit_integrity(worktree: pathlib.Path, base: str) -> dict:
+    git_strict(worktree, "rev-parse", "--verify", f"{base}^{{commit}}")
+    at_base = git_strict(worktree, "ls-tree", "-r", "--name-only", base).splitlines()
+    owned = {path for path in at_base if path.endswith(".py")
+             and AGENT_OWNED in git_strict(worktree, "show", f"{base}:{path}")[:400]}
+    changes: dict[str, str] = {}
+    for line in git_strict(worktree, "diff", "--name-status", "--no-renames", base).splitlines():
+        status, path = line.split("\t", 1)
+        changes[path] = status
+    untracked = git_strict(worktree, "ls-files", "--others", "--exclude-standard").splitlines()
+    ignored = git_strict(worktree, "ls-files", "--others", "--ignored", "--exclude-standard").splitlines()
+    for line in untracked + ignored:
+        changes.setdefault(line, "A")
+    changes = {path: status for path, status in changes.items() if not is_tool_output(path)}
+
+    def new_domain_module(path: str, status: str) -> bool:
+        parts = pathlib.PurePosixPath(path).parts
+        return status == "A" and path.endswith(".py") and len(parts) >= 3 and parts[0] == TREE and parts[-2] == "domain"
+
+    protected = sorted(path for path in changes if path.startswith(PROTECTED_PREFIXES) or path in PROTECTED_FILES
+                       or pathlib.PurePosixPath(path).name == ".tesser-root")
+    outside = sorted(path for path, status in changes.items()
+                     if path not in owned and not new_domain_module(path, status) and path not in protected)
+    owned_deleted = sorted(path for path, status in changes.items() if path in owned and status == "D")
+    return {
+        "checked": True,
+        "owned_at_base": sorted(owned),
+        "changed": sorted(changes),
+        "protected_changed": protected,
+        "outside_owned": outside,
+        "owned_deleted": owned_deleted,
+        "ok": not (protected or outside or owned_deleted),
+    }
+
+
 def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
     env = dict(os.environ)
@@ -213,9 +296,22 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
         env["STORY_DRAFTING_PORT"] = str(run["host_port"])
     env["COVERAGE_FILE"] = str(out / ".coverage")
     env["PYTEST_ADDOPTS"] = f"--cov=. --cov-append --cov-report=json:{coverage} -rA -p no:cacheprovider"
-    proc = subprocess.run(["scripts/verify", TREE], cwd=worktree, env=env, capture_output=True, text=True)
-    (out / "verify.log").write_text(proc.stdout + proc.stderr)
-    log = proc.stdout
+    # The gate runs in its own process group with its output in a file, not a
+    # pipe: a served host that outlives the script (a gate that aborts before
+    # stopping it) would otherwise hold the pipe open and hang this run, and
+    # would stay running. Whatever the script leaves in its group is killed.
+    with (out / "verify.log").open("w") as log_file:
+        proc = subprocess.Popen(["scripts/verify", TREE], cwd=worktree, env=env, stdout=log_file,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            verify_exit = proc.wait(timeout=GATE_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            verify_exit = "timeout"
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    log = (out / "verify.log").read_text()
     steps = re.findall(r"→ (.+)", log)
     tessercheck_findings = len(FINDING.findall(log))
 
@@ -238,7 +334,7 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
             total += data["summary"]["num_statements"]
     outcomes = collections.Counter(t["outcome"] for t in tests)
     return {
-        "verify_exit": proc.returncode,
+        "verify_exit": verify_exit,
         "verify_steps_reached": steps,
         "tessercheck_findings": tessercheck_findings,
         "tests": tests,
@@ -254,7 +350,16 @@ def main() -> None:
     parser.add_argument("--worktree", required=True, type=pathlib.Path)
     parser.add_argument("--base", required=True)
     parser.add_argument("--out", required=True, type=pathlib.Path)
+    parser.add_argument("--integrity-only", action="store_true",
+                        help="re-audit an already measured run and replace only its integrity block")
     args = parser.parse_args()
+
+    if args.integrity_only:
+        measured = json.loads((args.out / "metrics.json").read_text())
+        measured["integrity"] = integrity_metrics(args.worktree, args.base, args.phase)
+        (args.out / "metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
+        print(f"integrity: {'ok' if measured['integrity'].get('ok') else 'VIOLATED'}: {json.dumps(measured['integrity'])[:300]}")
+        return
 
     run = json.loads((args.out / "run.json").read_text())
     transcript = read_jsonl(args.out / "transcript.jsonl")
@@ -266,6 +371,7 @@ def main() -> None:
         "agent": transcript_metrics(transcript),
         "hook": hook_metrics(read_jsonl(args.out / "hook-changes.jsonl")),
         "diff": diff_metrics(args.worktree, args.base),
+        "integrity": integrity_metrics(args.worktree, args.base, args.phase),
         "gate": gate_metrics(args.worktree, args.out),
     }
     (args.out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
@@ -281,6 +387,13 @@ def main() -> None:
     print(f"  diff: {diff['commits']} commits, {diff['files_changed']} files, impl {diff['py_impl_files']} files/"
           f"{diff['py_impl_lines']} lines, tests {diff['py_test_files']} files/{diff['py_test_lines']} lines, "
           f"uncommitted {len(diff['uncommitted'])}")
+    integrity = metrics["integrity"]
+    if integrity.get("error"):
+        print(f"  integrity: VIOLATED; the audit could not run: {integrity['error']}")
+    elif integrity["checked"]:
+        print(f"  integrity: {'ok' if integrity['ok'] else 'VIOLATED'}; changed {len(integrity['changed'])} files, "
+              f"outside owned {integrity['outside_owned']}, protected changed {integrity['protected_changed']}, "
+              f"owned deleted {integrity['owned_deleted']}")
     print(f"  gate: verify exit {gate['verify_exit']}, final tessercheck findings {gate['tessercheck_findings']}, "
           f"tests {gate['test_outcomes']}, impl coverage {gate['impl_coverage_pct']}%")
     for test in gate["tests"]:

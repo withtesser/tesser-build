@@ -1,0 +1,35 @@
+# 4 IMPLEMENTATIONS
+
+app = "story_drafting"
+
+[implementations.StoryDrafter.template]
+class = "TemplateStoryDrafter"
+body = "agent"
+
+[implementations.JtbdRepository.memory]
+body = "supported"
+
+[implementations.JtbdIdentityRepository.uuid]
+body = "supported"
+
+[engine.restate]
+body = "supported"
+ingress_variable = "RESTATE_INGRESS"
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
+
+[environments.gate]
+implementations = { StoryDrafter = "template", JtbdRepository = "memory", JtbdIdentityRepository = "uuid" }
+engine = "restate"
+hosts = ["http"]
+
+[hosts.http]
+serves = "interfaces.http"
+engine_path = "/restate"
+listen_port_variable = "STORY_DRAFTING_PORT"
+
+[variables]
+RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
+RESTATE_ADMIN = "the Restate admin URL the host registers its endpoint with"
+RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
+STORY_DRAFTING_PORT = "the port the HTTP host listens on"
