@@ -2208,9 +2208,11 @@ class Model(ts.Entity):
         routes: list[dict[str, object]] = []
         probes: list[dict[str, object]] = []
         answers: list[str] = []
+        routed_stories: set[str] = set()
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             routed = [str(story) for story in operation.get("serves", []) if "route" in stories.get(str(story), {})]
+            routed_stories.update(routed)
             if len(routed) != 1:
                 raise ValueError(f"client operation {operation_name} serves {len(routed)} level-2 stories with a route; "
                                  "it serves exactly one, whose route it is")
@@ -2225,6 +2227,11 @@ class Model(ts.Entity):
             if not isinstance(status_code, int) or isinstance(status_code, bool) or not 200 <= status_code < 300:
                 raise ValueError(f"{routed[0]} has no status, the 2xx its route answers with, like 201")
             method, path = route.group(1), route.group(2)
+            when = str(story.get("when", ""))
+            then = str(story.get("then", ""))
+            if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
+                raise ValueError(f"{routed[0]} is {method} {path} answering {status_code}, and its own when and then "
+                                 f"do not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
             request = self._messages[("client", Operation + "Request")]
             response = self._messages[("client", Operation + "Response")]
@@ -2267,6 +2274,9 @@ class Model(ts.Entity):
             elif path_fields and any(step.startswith("repository.") for step in steps):
                 probes.append({"method": method, "path": probe_path, "body": "None"})
                 answers.append("500")
+        unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)
+        if unserved:
+            raise ValueError(f"{', '.join(unserved)} has a route, and no client operation serves it")
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
         self._binding["route_probe_answers"] = ", ".join(answers)

@@ -104,8 +104,9 @@ code names.
 ## 2 `story.toml`
 
 A tree of JTBDs and stories. The renderer reads two things from it: story ids,
-and each HTTP-served level-2 story's `route` and `status`, which are the route
-of the client operation that serves it.
+and each HTTP-served level-2 story's `route`, `status`, `when`, and `then`: the
+route and status are those of the client operation that serves the story, and
+its `when` and `then` must state them.
 
 ```toml
 [[jtbds]]                         # level 1, in the user's words
@@ -128,8 +129,8 @@ level = 2
 [[jtbds.stories.jtbds.stories]]
 id = "s-1-a-1"
 given = "a borrower and a title"
-when = "I POST them as JSON to /loans"
-then = "I get back 201 with its loan_id"
+when = "I POST them as JSON to /loans"          # says the method and the path
+then = "I get back 201 with its loan_id"        # says the status
 route = "POST /loans"                           # the method, a space, and the path
 status = 201                                    # the 2xx it answers with
 reached_by = "..."                              # optional, for the acceptance test's given
@@ -139,8 +140,11 @@ A route is observable, so it belongs to the level-2 story: each level-2 story
 an HTTP route serves carries its `route` — the method (`GET`, `POST`, `PUT`,
 `PATCH`, `DELETE`), a space, and a path of lowercase segments and `{field}`
 parameters — and its `status`, the 2xx it answers with. The `given`, `when`,
-and `then` stay prose; the renderer does not read them. Acceptance tests are written by hand from
-the level-2 stories; the renderer writes none.
+and `then` stay prose, and the prose must state the route word for word: the
+method and the path are words of the `when` (`I GET /loans/{loan_id}`) and the
+status is a word of the `then` (`I get back 200 ...`). A level-2 story with a
+route that no client operation serves is a problem. Acceptance tests are
+written by hand from the level-2 stories; the renderer writes none.
 
 ## 3 `composition.toml`
 
@@ -414,7 +418,8 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 
 1. `language.toml`: the terms and their code names.
 2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
-   route serves carries its `route` and `status`.
+   route serves carries its `route` and `status`, and its `when` and `then`
+   say them word for word.
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; exactly one orchestrator operation whose request holds
