@@ -30,7 +30,7 @@ The work is two decisions, and the rest is mechanical:
 2. **The acceptance tests.** The render writes one root test skeleton per
    level-2 story with a route, named for the route
    (`story-drafting/tests/test_submitting_jtbds.py` for `POST /jtbds`,
-   `test_reading_jtbds.py` for `GET /jtbds/{jtbd_id}`): it reaches the
+   `test_reading_jtbds.py` for the read route): it reaches the
    served host, reaches the story's *given* as its `reached_by` says, calls
    the route, asserts its status, and ends in one placeholder assertion
    carrying the story's *then*. Replace each placeholder with assertions of
