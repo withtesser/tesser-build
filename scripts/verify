@@ -57,37 +57,6 @@ tessercheck_tree() {
   (cd "$ROOT/tessercheck-py" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.main "$1")
 }
 
-# host_identity <pid>: the start time of a process, empty when there is none.
-# Captured right after a host is launched, it is what makes a pid mean "the
-# host we started": a pid the OS has handed to another process starts at
-# another time.
-host_identity() {
-  ps -o lstart= -p "$1" 2>/dev/null
-}
-
-# stop_host <pid> <signal> <identity>: signals a served host, gives it two
-# seconds to exit, then kills it. A host whose Restate endpoint holds a
-# suspended invocation otherwise outlives its root tier by Restate's
-# inactivity timeout (about a minute), because cancelling that invocation's
-# task waits on Restate. It signals only a process whose start time is the
-# identity captured at launch, at every step: a host that has exited is never
-# signalled again (its pid may be another process's by then), and a pid that
-# now names a different process is not mistaken for the host.
-stop_host() {
-  local pid=$1 signal=$2 identity=$3 _
-  if [ -n "$identity" ] && [ "$(host_identity "$pid")" = "$identity" ]; then
-    kill "-$signal" "$pid" 2>/dev/null
-    for _ in $(seq 1 20); do
-      [ "$(host_identity "$pid")" = "$identity" ] || break
-      sleep 0.1
-    done
-    if [ "$(host_identity "$pid")" = "$identity" ]; then
-      kill -KILL "$pid" 2>/dev/null
-    fi
-    wait "$pid" 2>/dev/null
-  fi
-}
-
 run_llmport() {
   cd "$ROOT/examples/llmport" || return 1
   step "tessercheck (zero findings over the whole tree)"
