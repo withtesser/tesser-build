@@ -8,7 +8,7 @@ import rendering.domain as domain
 @ts.helper
 def rendered_tree_spec(
     documents: tuple[tuple[str, str, str], ...] = (
-        ("language", "read", 'context = "lending"\n'),
+        ("language", "read", 'context = "lending"\n\n[[terms]]\nterm = "loan"\nmeans = "A book lent to a borrower."\ncode_names = ["Loan"]\n'),
         (
             "story",
             "read",

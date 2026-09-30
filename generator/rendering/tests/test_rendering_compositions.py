@@ -384,3 +384,41 @@ class TestRenderingCompositions:
             "s-1-a-1 is PUT /loans answering 201, and its own when and then do not say so "
             "(when: 'I POST them as JSON to /loans'; then: 'I get back 201 with its loan_id')",
         )
+
+    def test_a_class_of_actions_named_for_its_port_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "composition.toml": [
+                ("[actions.story]", "[actions.drafter]"),
+                ("[actions.story.operations.draft_stories]", "[actions.drafter.operations.draft_stories]"),
+                ('"actions.story.draft_stories"', '"actions.drafter.draft_stories"'),
+            ],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "story-drafting" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert render_composition_response.problems == (
+            "[actions.drafter] is named for 'Drafter', which is not a code name in language.toml; a class of actions "
+            "is named for the domain term it acts on, never for its port (StoryDrafter)",
+        )
+
+    def test_a_class_of_actions_named_for_the_term_it_acts_on_renders(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "story-drafting"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert render_composition_response.problems == ()
+        assert (tmp_path / "out" / "drafting" / "application" / "story_actions.py").is_file()

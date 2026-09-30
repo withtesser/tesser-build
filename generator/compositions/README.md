@@ -286,8 +286,13 @@ commands = ["record_stories"]         # optional, needs builds: give it this one
 calls_on = ["recorded"]               # ...required with commands: the outcomes that make the call
 ```
 
-The class is `<Key>Actions`, and it may carry several operations; every one
-must be a step of the orchestrator operation. An action calls its port once.
+The class is `<Key>Actions`, and it is named for the domain term it acts on,
+never for its port: `<Key>` in PascalCase is exactly one of the language's
+code names (`loan` → `Loan`, so `LoanActions` on `LoanRepository`). A key that
+is not a code name is a problem, even when a code name contains it: `drafter`
+on `StoryDrafter` is refused, since `Drafter` is no term; the class is
+`story`. It may carry several operations; every one must be a step of the
+orchestrator operation. An action calls its port once.
 With `commands`, it matches the command's outcome: the outcomes in `calls_on`
 (each one of the command's `outcomes`) make the call, the others answer
 without it.
@@ -416,14 +421,16 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 
 ## Checklist for a new composition
 
-1. `language.toml`: the terms and their code names.
+1. `language.toml`: the terms and their code names, including the PascalCase
+   name of every term a class of actions acts on.
 2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
    route serves carries its `route` and `status`, and its `when` and `then`
    say them word for word.
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; exactly one orchestrator operation whose request holds
-   the identity; its actions (one port each) and any signal; every port.
+   the identity; its actions (one port each, each named for the term it acts
+   on, never for its port) and any signal; every port.
 4. `implementations.toml`: `app`; an implementation for every port;
    `[engine.restate]` with its three variables; an environment; `[hosts.http]`.
 5. `generator.toml`: two sample values for every field.

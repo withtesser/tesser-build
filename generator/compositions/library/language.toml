@@ -25,7 +25,7 @@ code_names = ["lend_book", "arrange_loan", "record_loan"]
 [[terms]]
 term = "notice"
 means = "The note the borrower gets when a loan is opened."
-code_names = ["send_notice", "NoticeSender"]
+code_names = ["Notice", "send_notice", "NoticeSender"]
 
 [[terms]]
 term = "return"

@@ -974,7 +974,7 @@ class Model(ts.Entity):
         self._composition = tomllib.loads(spec.composition)
         self._implementations = tomllib.loads(spec.implementations)
         self._generator = tomllib.loads(spec.generator)
-        tomllib.loads(spec.language)
+        language = tomllib.loads(spec.language)
         composition = self._composition
         aggregate_table = composition["aggregate"]
         self._context = str(composition["context"])
@@ -1099,6 +1099,12 @@ class Model(ts.Entity):
             pattern, description = PATTERNS[pattern_name]
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
                 raise ValueError(f"{where} names {name!r}, which is not a {description}")
+        code_names = {str(code_name) for term in language.get("terms", []) for code_name in term.get("code_names", [])}
+        for key, table in composition.get("actions", {}).items():
+            if str(Word(str(key)).pascal()) not in code_names:
+                raise ValueError(f"[actions.{key}] is named for {str(Word(str(key)).pascal())!r}, which is not a code name in "
+                                 f"language.toml; a class of actions is named for the domain term it acts on, never for its "
+                                 f"port ({table.get('port', '')})")
         self._messages: dict[tuple[str, str], Record] = {}
         self._port_of: dict[str, str] = {}
         self._port_ops: dict[str, list[str]] = {}
