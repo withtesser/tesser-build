@@ -29,6 +29,7 @@ in waves across the Restate slots, with every metric recorded.
     scripts/baseline/ab/round done ab4 <run> <agent-id>
     scripts/baseline/ab/round next ab4          # a finished red frees its green; a finished sample frees its slot
     #   ...until status shows every run done or blocked...
+    scripts/baseline/ab/round review ab4        # cold codex review of every finished tree (up to ~25 min; run it in the background)
     scripts/baseline/ab/round report ab4        # results/ab4-metrics.json and ab4-table.md
     scripts/baseline/ab/round push-refs ab4     # arm A trees to refs/trials/<run>
 
@@ -52,6 +53,13 @@ What `round` does for you:
 - **Failures.** A run whose prepare fails is marked blocked with the reason,
   and the rest of the wave goes on. `prepare` removes whatever it made
   before failing.
+- **Reviews.** `review` runs `codex-review` on every finished sample's final
+  tree at once (arm A's green tree, arm B's project), under labels shuffled
+  with a recorded seed. It writes `results/<run>-codex.txt`. The report lists
+  each review's findings and changeability verdict under its cell, unscored:
+  a review is part of the round's record, not yet one of its metrics. A
+  sample is reviewed once, so running `review` again reviews only what was
+  not reviewed.
 - **The report.** It reports each cell's median and range over its samples:
   agent time and its split, calls, API requests, tokens, the shared check
   (per story, plus the probes), tests, coverage, tessercheck findings, green's
