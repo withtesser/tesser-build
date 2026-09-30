@@ -75,7 +75,7 @@ class FakeCallStore(ports.CallStore):
 @ts.helper
 def _spec(
     storage: str = "postgres://a@b/c",
-    restate_url: str = "http://localhost:8080",
+    engine_url: str = "http://localhost:8080",
     livekit_url: str = "ws://livekit",
     livekit_api_key: str = "key",
     livekit_api_secret: str = "secret",
@@ -83,7 +83,7 @@ def _spec(
 ) -> component.Spec:
     return component.Spec(
         storage=storage,
-        restate_url=restate_url,
+        engine_url=engine_url,
         livekit_url=livekit_url,
         livekit_api_key=livekit_api_key,
         livekit_api_secret=livekit_api_secret,
@@ -97,10 +97,10 @@ class TestConfig:
 
         assert config.database == pgdatabase_database.DatabaseRequest("postgres://a@b/c")
 
-    def test_a_config_carries_the_restate_url(self) -> None:
-        config = component.Config(_spec(restate_url="http://localhost:8080"))
+    def test_a_config_carries_the_engine_url(self) -> None:
+        config = component.Config(_spec(engine_url="http://localhost:8080"))
 
-        assert config.restate_url == "http://localhost:8080"
+        assert config.engine_url == "http://localhost:8080"
 
     def test_a_config_carries_the_livekit_settings(self) -> None:
         config = component.Config(
