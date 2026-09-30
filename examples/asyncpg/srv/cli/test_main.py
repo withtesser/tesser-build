@@ -2,29 +2,33 @@ from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
+import sys
 
 import asyncpg
-
-import srv.cli as cli
 
 
 class TestCliHost:
 
-    def test_the_host_runs_the_command(self) -> None:
+    def test_the_host_runs_the_command(self, storage_url: str) -> None:
         with asyncio.Runner() as runner:
-            connection = runner.run(asyncpg.connect(os.environ["ALPHA_STORAGE"]))
+            connection = runner.run(asyncpg.connect(storage_url))
             runner.run(connection.execute("DROP TABLE IF EXISTS widgets"))
             runner.run(connection.close())
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": storage_url, "BETA_STORAGE": storage_url}
 
-        exit_code = cli.CliHost().run(["srv-cli", "p"])
+        ran = subprocess.run([sys.executable, "-m", "srv.cli.main", "srv-cli", "p"], capture_output=True, text=True, check=False, env=env)
 
-        assert exit_code == 0
+        assert ran.returncode == 0, ran.stderr
 
-    def test_the_host_reports_the_conflict_of_a_second_add(self) -> None:
+    def test_the_host_reports_the_conflict_of_a_second_add(self, storage_url: str) -> None:
         with asyncio.Runner() as runner:
-            connection = runner.run(asyncpg.connect(os.environ["ALPHA_STORAGE"]))
+            connection = runner.run(asyncpg.connect(storage_url))
             runner.run(connection.execute("DROP TABLE IF EXISTS widgets"))
             runner.run(connection.close())
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": storage_url, "BETA_STORAGE": storage_url}
 
-        assert cli.CliHost().run(["srv-cli-twice", "p"]) == 0
-        assert cli.CliHost().run(["srv-cli-twice", "p"]) == 1
+        first = subprocess.run([sys.executable, "-m", "srv.cli.main", "srv-cli-twice", "p"], capture_output=True, text=True, check=False, env=env)
+        second = subprocess.run([sys.executable, "-m", "srv.cli.main", "srv-cli-twice", "p"], capture_output=True, text=True, check=False, env=env)
+
+        assert (first.returncode, second.returncode) == (0, 1), (first.stderr, second.stderr)

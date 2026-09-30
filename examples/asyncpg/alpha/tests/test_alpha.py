@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 
 import pytest
 
@@ -30,8 +29,8 @@ class FakeRefusingBetaCheck(ports.BetaCheck):
 
 class TestAlphaContext:
 
-    async def test_a_cli_add_reaches_the_wired_service_and_the_widget_is_stored(self) -> None:
-        config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
+    async def test_a_cli_add_reaches_the_wired_service_and_the_widget_is_stored(self, storage_url: str) -> None:
+        config = component.Config(component.Spec(storage=storage_url))
         database = pgdatabase_database.Database(config.database)
         await database.open()
         async with database.acquire() as connection:
@@ -50,8 +49,8 @@ class TestAlphaContext:
         assert found.found == "yes"
         assert missing.found == "no"
 
-    async def test_a_taken_part_is_stored_and_read_back_through_the_client(self) -> None:
-        config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
+    async def test_a_taken_part_is_stored_and_read_back_through_the_client(self, storage_url: str) -> None:
+        config = component.Config(component.Spec(storage=storage_url))
         database = pgdatabase_database.Database(config.database)
         await database.open()
         async with database.acquire() as connection:
@@ -69,8 +68,8 @@ class TestAlphaContext:
         assert taken.part == "q"
         assert retaken.part == "q"
 
-    async def test_a_held_part_beta_clears_is_kept_and_the_widget_is_stored(self) -> None:
-        config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
+    async def test_a_held_part_beta_clears_is_kept_and_the_widget_is_stored(self, storage_url: str) -> None:
+        config = component.Config(component.Spec(storage=storage_url))
         database = pgdatabase_database.Database(config.database)
         await database.open()
         async with database.acquire() as connection:
@@ -87,8 +86,8 @@ class TestAlphaContext:
         assert add_part_response.standing == "kept"
         assert find_widget_response.found == "yes"
 
-    async def test_adding_a_stored_name_is_widget_exists_and_the_stored_standing_survives(self) -> None:
-        config = component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"]))
+    async def test_adding_a_stored_name_is_widget_exists_and_the_stored_standing_survives(self, storage_url: str) -> None:
+        config = component.Config(component.Spec(storage=storage_url))
         database = pgdatabase_database.Database(config.database)
         await database.open()
         async with database.acquire() as connection:
