@@ -1,9 +1,14 @@
 name: Test
 
+# Pull requests only. A push to main is the merge of a PR whose run already
+# gated that merge commit, so running it again doubled the bill for no new
+# signal. A newer push to the same PR cancels the run it supersedes.
 on:
   pull_request:
-  push:
-    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   layout:
@@ -11,10 +16,23 @@ jobs:
     # manifest.json, the .tesser-root files, and the CI jobs agree — and it is
     # itself a full tesser app, gated at the same bar as every other tree.
     # Every scripts/verify run everywhere also runs its check as step 0.
+    #
+    # It is also the job that decides which other jobs run: scripts/affected
+    # reads the PR's diff (the merge commit against its first parent, the base
+    # it merges into) and names the gates that change can reach. Every other
+    # job needs this one and runs only when it is named, so a docs-only or
+    # one-tree change bills a minute or a few, not every job.
     name: layout app (repo-layout check + tessercheck + mypy --strict + pytest)
     runs-on: ubuntu-latest
+    outputs:
+      gates: ${{ steps.affected.outputs.gates }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+      - name: Which gates this change reaches
+        id: affected
+        run: echo "gates=$(scripts/affected HEAD^1 HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -31,6 +49,8 @@ jobs:
     # trees' tests start their own private Restate engines, Postgres and hosts
     # (docs/design-test-tiers.md), so the job runs no service containers.
     name: generator app (tessercheck + mypy --strict + pytest, then every spec generated and every composition rendered and gated)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'generator')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -51,6 +71,8 @@ jobs:
     # (pure AST) but outside the mypy crawl — livekit-agents is not
     # installed in CI; the tree's README records that boundary.
     name: llmport (tessercheck + mypy --strict + pytest)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'llmport')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -72,6 +94,8 @@ jobs:
     # covers (import-time side effects, host-routes-never-translates, context
     # discovery).
     name: python-app example (ruff + import-linter + mypy --strict + pytest + tessercheck)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'python-app')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -93,6 +117,8 @@ jobs:
     # encodings it was chosen over live on the spike/application-ports branch;
     # docs/design-application-ports.md carries the measurements.
     name: ports example (tessercheck + mypy --strict + pytest)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'ports')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -111,6 +137,8 @@ jobs:
     # their own private Restate engines and Postgres (docs/design-test-tiers.md),
     # so the job runs no service containers.
     name: minimal example (tessercheck + mypy --strict + pytest, engines owned by the tests)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'minimal')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -130,6 +158,8 @@ jobs:
     # private engines and serve that host themselves (docs/design-test-tiers.md),
     # so the job runs no service containers.
     name: durable-execution example (tessercheck + mypy --strict + pytest, engines owned by the tests)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'durable-execution')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -150,6 +180,8 @@ jobs:
     # Postgres (docs/design-test-tiers.md), so the job runs no service
     # containers.
     name: voice example (tessercheck + mypy --strict + pytest, engines owned by the tests)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'voice')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -169,6 +201,8 @@ jobs:
     # private Postgres of their own (docs/design-test-tiers.md), so the job
     # runs no service containers.
     name: asyncpg example (tessercheck + mypy --strict + pytest, Postgres owned by the tests)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'asyncpg')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -188,6 +222,8 @@ jobs:
     # derived field diverging from the spec, an edge golden) — the all-cases
     # companion to python-app's production-shaped parts impl.
     name: serdepy example (tessercheck + mypy --strict + pytest)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'serdepy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -205,6 +241,8 @@ jobs:
     # error-handling conventions in running, type-checked code before they are
     # taught.
     name: errorspy example (tessercheck + mypy --strict + pytest)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'errorspy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -229,6 +267,8 @@ jobs:
     # resolves to the newest patch the runner has, which is the point: this
     # arm is here to see an interpreter change before a consumer does.
     name: tesser-py runtime library on ${{ matrix.python-version }} (mypy --strict + pytest)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'tesser-py')
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -254,6 +294,8 @@ jobs:
     # the product specification page against the HTTP host the root conftest
     # serves as a process, so the job installs Chromium before it runs.
     name: specs-app (tessercheck + mypy --strict + pytest + playwright)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'specs-app')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -275,6 +317,8 @@ jobs:
     # and serve the host themselves (docs/design-test-tiers.md), so the job
     # runs no service containers.
     name: story-drafting app (tessercheck + mypy --strict + pytest, engines owned by the tests)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'story-drafting')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -291,6 +335,8 @@ jobs:
     # own tree, the RULES.md drift gate, mypy --strict, pytest, and the import
     # contracts — the same bar every example tree is held to.
     name: tessercheck-py (self-check + RULES.md drift + mypy --strict + pytest + import-linter)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'tessercheck-py')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -310,6 +356,8 @@ jobs:
     # into a clean virtualenv with no source tree on the path, imports
     # everything shipped, and runs the console script for real.
     name: packaging (clean-venv install + tessercheck-check smoke)
+    needs: layout
+    if: contains(fromJSON(needs.layout.outputs.gates), 'packaging')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
