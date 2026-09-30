@@ -101,6 +101,16 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def draft_stories(self, draft_stories_spec: DraftStoriesSpec) -> DraftStoriesOutcome:
+        self._stories = (
+            Story(
+                StorySpec(
+                    given=f"I am {self._role}",
+                    when=f"I get {self._i_want}",
+                    then=f"I can see that {self._so_that}",
+                    state=StoryState.DRAFTED,
+                )
+            ),
+        )
         return DraftStoriesOutcome.DRAFTED
 
     @property
@@ -121,6 +131,8 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
+        if self._stories:
+            return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
         return Text(JtbdStatus.DRAFTING_STORIES.value)
 
     @property
