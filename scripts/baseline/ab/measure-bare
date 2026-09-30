@@ -29,7 +29,7 @@ def own_tests(work: pathlib.Path, run: dict, py: list[str]) -> dict:
     virtualenv against the run's Restate server; its coverage is not measured."""
     if not any(pathlib.PurePosixPath(f).name.startswith("test_") or f.endswith("_test.py") for f in py):
         return {"written": False, "passed": 0, "failed": 0}
-    env = dict(os.environ, PORT=str(run["host_port"] + 5), RESTATE_INGRESS=run["restate_ingress"],
+    env = dict(os.environ, PORT=str(run["host_port"] + 5), RESTATE_URL=run["engine_url"],
                RESTATE_ADMIN=run["restate_admin"], JTBD_DB_PATH=str(work / ".measure-tests.db"))
     try:
         proc = subprocess.run([str(work / ".venv" / "bin" / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider"],
