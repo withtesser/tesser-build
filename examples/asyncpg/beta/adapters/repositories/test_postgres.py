@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 
 import asyncpg
 import pytest
@@ -12,8 +11,8 @@ import pgdatabase.database as pgdatabase_database
 
 class TestPostgresKeyStore:
 
-    async def test_a_put_key_is_held_in_a_later_transaction(self) -> None:
-        dsn = os.environ["BETA_STORAGE"]
+    async def test_a_put_key_is_held_in_a_later_transaction(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS keys")
         await connection.close()
@@ -30,8 +29,8 @@ class TestPostgresKeyStore:
         assert held.outcome is ports.HasKeyOutcome.YES
         assert missing.outcome is ports.HasKeyOutcome.NO
 
-    async def test_a_transaction_that_raises_is_rolled_back(self) -> None:
-        dsn = os.environ["BETA_STORAGE"]
+    async def test_a_transaction_that_raises_is_rolled_back(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS keys")
         await connection.close()
@@ -47,8 +46,8 @@ class TestPostgresKeyStore:
         await database.close()
         assert missing.outcome is ports.HasKeyOutcome.NO
 
-    async def test_the_schema_outlives_a_first_transaction_that_rolls_back(self) -> None:
-        dsn = os.environ["BETA_STORAGE"]
+    async def test_the_schema_outlives_a_first_transaction_that_rolls_back(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS keys")
         await connection.close()

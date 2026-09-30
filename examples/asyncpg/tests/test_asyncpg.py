@@ -10,8 +10,8 @@ import protocol
 
 class TestCliHost:
 
-    def test_an_added_part_is_stored_and_a_second_add_of_its_name_is_refused(self) -> None:
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    def test_an_added_part_is_stored_and_a_second_add_of_its_name_is_refused(self, storage_url: str) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": storage_url, "BETA_STORAGE": storage_url}
         name = f"e2e-{uuid.uuid4().hex}"
         taken_request = protocol.CliRequest(args=(f"{name}-taken", "p"))
         held_request = protocol.CliRequest(args=(name, name))

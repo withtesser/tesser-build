@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 import asyncpg
 import pytest
@@ -13,8 +12,8 @@ import pgdatabase.database as pgdatabase_database
 
 class TestPostgresWidgetStore:
 
-    async def test_a_saved_widget_is_loaded_and_found_in_a_later_transaction(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_a_saved_widget_is_loaded_and_found_in_a_later_transaction(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -35,8 +34,8 @@ class TestPostgresWidgetStore:
         assert found.outcome is ports.FindWidgetOutcome.YES
         assert missing.outcome is ports.FindWidgetOutcome.NO
 
-    async def test_a_released_widget_is_loaded_back_as_released(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_a_released_widget_is_loaded_back_as_released(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -52,8 +51,8 @@ class TestPostgresWidgetStore:
         await database.close()
         assert loaded.widgets[0].standing == "released"
 
-    async def test_adding_a_stored_name_answers_exists_and_leaves_the_row_alone(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_adding_a_stored_name_answers_exists_and_leaves_the_row_alone(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -75,8 +74,8 @@ class TestPostgresWidgetStore:
         assert loaded.widgets[0].part == "p"
         assert loaded.widgets[0].standing == "released"
 
-    async def test_the_schema_step_adds_the_standing_column_to_an_older_table(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_the_schema_step_adds_the_standing_column_to_an_older_table(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.execute(
@@ -92,8 +91,8 @@ class TestPostgresWidgetStore:
         await database.close()
         assert loaded.widgets[0].standing == "kept"
 
-    async def test_loading_an_unknown_widget_answers_missing(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_loading_an_unknown_widget_answers_missing(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -106,8 +105,8 @@ class TestPostgresWidgetStore:
         assert loaded.outcome is ports.LoadWidgetOutcome.NOT_FOUND
         assert loaded.widgets == ()
 
-    async def test_a_transaction_that_raises_is_rolled_back(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_a_transaction_that_raises_is_rolled_back(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -125,8 +124,8 @@ class TestPostgresWidgetStore:
         await database.close()
         assert loaded.widgets[0].part == "p"
 
-    async def test_the_schema_outlives_a_first_transaction_that_rolls_back(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_the_schema_outlives_a_first_transaction_that_rolls_back(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()
@@ -143,8 +142,8 @@ class TestPostgresWidgetStore:
         await connection.close()
         assert table is True
 
-    async def test_a_load_holds_the_row_until_the_transaction_ends(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_a_load_holds_the_row_until_the_transaction_ends(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS widgets")
         await connection.close()

@@ -286,27 +286,20 @@ run_durable_execution() {
 # Postgres-only, there is no memory backend to fall back to — an async
 # client/service/port chain, and an e2e that runs the CLI host as a
 # subprocess and speaks only protocol to it. The app reads its own
-# environment through the config repository, so the runner supplies it — the
-# same job a deploy does, and the e2e passes it on to the host. Tests never
-# inject it. The gate needs a reachable Postgres at that
-# coordinate — there is no skip, because a skipped e2e is a gate that passes
-# without checking anything. CI provides a service container; locally:
-#
-#   docker run -d --name tesser-asyncpg-pg -e POSTGRES_USER=tesser \
-#     -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=tesser -p 5434:5432 postgres:16
-#
-# Trust auth on a throwaway container means the DSN carries no password, so
-# nothing credential-shaped is ever committed.
+# environment through the config repository, which takes the environment it
+# reads; a test hands the host subprocess the database explicitly. The tests
+# start a private Postgres of their own (the root conftest's storage_url
+# fixture, docs/design-test-tiers.md), so the gate needs Docker and nothing
+# running beforehand. There is no skip, because a skipped e2e is a gate that
+# passes without checking anything.
 run_asyncpg() {
   cd "$ROOT/examples/asyncpg" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests pgdatabase conftest.py || return 1
-  step "pytest (against Postgres at ALPHA_STORAGE / BETA_STORAGE)"
-  ALPHA_STORAGE="${ALPHA_STORAGE:-postgres://tesser@localhost:5434/tesser}" \
-  BETA_STORAGE="${BETA_STORAGE:-postgres://tesser@localhost:5434/tesser}" \
-    pytest -q || return 1
+  step "pytest (the tests start their own private Postgres)"
+  pytest -q || return 1
 }
 
 run_serdepy() {

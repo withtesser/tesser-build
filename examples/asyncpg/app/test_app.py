@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import tesser.testing as ts
 
 import alpha.client as alpha_client
@@ -14,12 +12,13 @@ import beta.component as beta_component
 @ts.fake
 class FakeConfigRepository(app.AppConfigRepository):
 
+    def __init__(self, storage_url: str) -> None:
+        self._storage_url = storage_url
+
     def get(self) -> app.AppConfig:
-        alpha_storage = os.environ["ALPHA_STORAGE"]
-        beta_storage = os.environ["BETA_STORAGE"]
         spec = app.Spec(
-            alpha_component.Config(alpha_component.Spec(alpha_storage)),
-            beta_component.Config(beta_component.Spec(beta_storage)),
+            alpha_component.Config(alpha_component.Spec(self._storage_url)),
+            beta_component.Config(beta_component.Spec(self._storage_url)),
         )
         return app.AppConfig(spec)
 
@@ -38,15 +37,17 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
-        assert app_config.alpha.storage == os.environ["ALPHA_STORAGE"]
-        assert app_config.beta.storage == os.environ["BETA_STORAGE"]
+        app_config = app.EnvConfigRepository(
+            {"ALPHA_STORAGE": "postgres://a@b/alpha", "BETA_STORAGE": "postgres://a@b/beta"}
+        ).get()
+        assert app_config.alpha.storage == "postgres://a@b/alpha"
+        assert app_config.beta.storage == "postgres://a@b/beta"
 
 
 class TestApp:
 
-    async def test_two_contexts_on_one_dsn_share_one_database_and_alpha_reaches_beta(self) -> None:
-        dsn = os.environ["ALPHA_STORAGE"]
+    async def test_two_contexts_on_one_dsn_share_one_database_and_alpha_reaches_beta(self, storage_url: str) -> None:
+        dsn = storage_url
         spec = app.Spec(
             alpha_component.Config(alpha_component.Spec(dsn)),
             beta_component.Config(beta_component.Spec(dsn)),
@@ -73,8 +74,8 @@ class TestApp:
 
 class TestAppLoader:
 
-    async def test_the_loader_builds_an_app_from_its_repository(self) -> None:
-        asyncpg_app = app.AppLoader(FakeConfigRepository()).load()
+    async def test_the_loader_builds_an_app_from_its_repository(self, storage_url: str) -> None:
+        asyncpg_app = app.AppLoader(FakeConfigRepository(storage_url)).load()
         await asyncpg_app.open()
         add_part_response = await asyncpg_app.alpha.client.add_part(
             alpha_client.AddPartRequest(name="loader-a", part="p")
