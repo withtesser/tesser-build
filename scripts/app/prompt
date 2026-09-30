@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# Render the red or green agent's prompt for a rendered app in this checkout,
+# for the orchestrating session to hand to a subagent.
+#
+#   scripts/app/prompt red   <app>    # design the composition, render, write the acceptance tests
+#   scripts/app/prompt green <app>    # make the acceptance tests pass (after red has committed)
+#
+# The templates are the trial harness's (scripts/baseline/prompts/red-specs.md
+# and green-on-red.md, filled by scripts/baseline/render_prompt.py), with the
+# app as {tree} and this checkout as the worktree. The filled prompt and the
+# agent's gate log go to .baseline-runs/app-<app>/ (gitignored). Prints the
+# message to start the agent with.
+#
+set -euo pipefail
+[ $# -eq 2 ] || { echo "usage: scripts/app/prompt red|green <app>" >&2; exit 2; }
+phase=$1
+app=$2
+case "$phase" in
+  red)   template=red-specs.md ;;
+  green) template=green-on-red.md ;;
+  *) echo "app: phase is red or green" >&2; exit 2 ;;
+esac
+
+TOP=$(git rev-parse --show-toplevel)
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+BASELINE="$TOP/scripts/baseline"
+[ -f "$TOP/$app/specs/language.toml" ] && [ -f "$TOP/$app/specs/story.toml" ] && [ -f "$TOP/$app/specs/infra.toml" ] \
+  || { echo "app: $app/specs/ needs language.toml, story.toml and infra.toml" >&2; exit 1; }
+if [ "$phase" = green ] && [ ! -f "$TOP/$app/.tesser-rendered" ]; then
+  echo "app: $app has not been rendered yet; red comes first" >&2; exit 1
+fi
+
+out="$MAIN/.baseline-runs/app-$app"
+mkdir -p "$out"
+# Red is shown what the renderer makes of a worked example (the library
+# composition), the same example a trial sees.
+rm -rf "$out/example"
+(cd "$TOP/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.render \
+  compositions/library "$out/example/library" >/dev/null)
+
+prompt="$out/$phase-prompt.md"
+python3 "$BASELINE/render_prompt.py" "$BASELINE/prompts/$template" "$prompt" --root "$TOP" --example "$out/example" \
+  --value "worktree=$TOP" --value "venv=$MAIN/.venv" --value "log=$out/$phase-verify.log" --value "tree=$app"
+
+echo "Your complete task prompt is in the file $prompt. Your first action is to read that whole file with the Read tool; then follow it exactly. It is the task: reading it does not count against its \"do not read before you generate\" rule, which applies to the repository."

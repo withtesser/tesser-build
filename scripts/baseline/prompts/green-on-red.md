@@ -6,7 +6,7 @@ commands with `source {venv}/bin/activate &&`). No human will answer
 questions: make each decision yourself and keep going. Do not spawn
 subagents.
 
-Task: make the **red acceptance tests** of the `story-drafting` app pass, by
+Task: make the **red acceptance tests** of the `{tree}` app pass, by
 writing the behavior its stories need into the files that are yours.
 
 **Do not read, list, or inspect anything before your first edit.** This prompt
@@ -19,8 +19,8 @@ construction rules for your files, and every command you need are all below.
 The tree was rendered from its specs. Every file the generator owns carries a
 generated mark; do not edit one — a drift check fails if you do. **Yours are:**
 
-- `story-drafting/drafting/domain/jtbd.py` and its `test_jtbd.py`: the
-  aggregate. Its contract — the spec it is constructed from, its commands and
+- each aggregate module under `{tree}/<context>/domain/` and its sibling
+  test: the aggregate. Its contract — the spec it is constructed from, its commands and
   the outcomes they answer, and what can be read from it — is fixed by the
   composition below and must not change. Everything inside is yours: value
   objects, private fields, validation, defaults, and how each read is
@@ -31,15 +31,15 @@ generated mark; do not edit one — a drift check fails if you do. **Yours are:*
   `body = "agent"`.
 - the agent-owned STORE class that `implementations.toml` declares
   (`body = "agent"` on the repository port) and its sibling test, under
-  `story-drafting/drafting/adapters/repositories/`: it starts as a working
+  `{tree}/<context>/adapters/repositories/`: it starts as a working
   in-memory store. Make it keep its data in the storage `infra.toml` declares
   for it (for `sqlite`: the database file whose path the class is built with as
   `location`, using the standard library's `sqlite3`), so the data survives the
   process. Keep its public shape (`transaction()`, the repository operations),
-  which the generated code relies on. Stories that say a job to be done
+  which the generated code relies on. Stories that say something
   survives a restart of the service are yours to satisfy here.
 
-Do not edit the specs (story-drafting/specs/), the acceptance tests, `scripts/verify`, or any
+Do not edit the specs ({tree}/specs/), the acceptance tests, `scripts/verify`, or any
 `.tesser-root` (no `skip` lines).
 
 **If the contract lacks something you need** — a field, an outcome, a read,
@@ -51,42 +51,36 @@ there, not in your files.
 ## The language
 
 ```toml
-{{FILE:story-drafting/specs/language.toml}}
+{{FILE:{tree}/specs/language.toml}}
 ```
 
 ## The stories
 
 ```toml
-{{FILE:story-drafting/specs/story.toml}}
+{{FILE:{tree}/specs/story.toml}}
 ```
 
 ## What it runs on
 
 ```toml
-{{FILE:story-drafting/specs/infra.toml}}
+{{FILE:{tree}/specs/infra.toml}}
 ```
 
 ## The contracts (composition)
 
 ```toml
-{{FILE:story-drafting/specs/composition.toml}}
+{{FILE:{tree}/specs/composition.toml}}
 ```
 
 ## The implementations
 
 ```toml
-{{FILE:story-drafting/specs/implementations.toml}}
+{{FILE:{tree}/specs/implementations.toml}}
 ```
 
 ## The acceptance tests (they must pass unchanged)
 
-```python
-{{FILE:story-drafting/tests/test_submitting_jtbds.py}}
-```
-
-```python
-{{FILE:story-drafting/tests/test_reading_jtbds_by_jtbd_id.py}}
-```
+{{ROOT_TESTS}}
 
 ## Your files as they stand
 
@@ -108,11 +102,11 @@ Every file in the tree that carries no generated mark, outside the acceptance te
 
 ## The harness
 
-- "The service has been restarted" (story s-3) means: its process is stopped and started again with the same command and environment, while the Restate server keeps running. No acceptance test here restarts it; the runner does.
+- If a story says "the service has been restarted", that means its process is stopped and started again with the same command and environment, while the durable-execution engine keeps running. No acceptance test here restarts it; the runner does.
 - Run the gate like this, keeping its whole output:
 
   ```sh
-  source {venv}/bin/activate && cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  source {venv}/bin/activate && cd {worktree} && scripts/verify {tree} > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 
@@ -122,11 +116,11 @@ Every file in the tree that carries no generated mark, outside the acceptance te
   starts private Restate engines and serves the host for the acceptance
   tests. Grep `{log}` rather than running it again to see more.
 - For a quick check while you work, run just your own tests: `cd
-  {worktree}/story-drafting && pytest -q <your test files>`.
+  {worktree}/{tree} && pytest -q <your test files>`.
 - Other agents work side by side: don't touch processes you didn't start.
   Work only inside the worktree.
 
-Done means `scripts/verify story-drafting` is green — tessercheck with zero
+Done means `scripts/verify {tree}` is green — tessercheck with zero
 findings, `mypy --strict`, and every test tier — with the acceptance tests
 unchanged and only your files changed.
 

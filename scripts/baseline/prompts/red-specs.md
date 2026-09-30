@@ -6,7 +6,7 @@ commands with `source {venv}/bin/activate &&`). No human will answer
 questions: make each decision yourself and keep going. Do not spawn
 subagents.
 
-Task: design the `story-drafting` app from its specs, generate it, and write
+Task: design the `{tree}` app from its specs, generate it, and write
 its **red acceptance tests**.
 
 **Do not read, list, or inspect anything before you generate.** This prompt is
@@ -18,31 +18,30 @@ holds only the scaffold, and nothing else in it bears on your two decisions.
 The work is two decisions, and the rest is mechanical:
 
 1. **The composition.** From the language and the stories, decide the pieces
-   and how they connect, and write `story-drafting/specs/composition.toml`;
+   and how they connect, and write `{tree}/specs/composition.toml`;
    say which implementation satisfies each contract in each environment in
-   `story-drafting/specs/implementations.toml`; give sample values in
-   `story-drafting/specs/generator.toml`. Every name comes from the language
+   `{tree}/specs/implementations.toml`; give sample values in
+   `{tree}/specs/generator.toml`. Every name comes from the language
    (a term's code name or a convention word). Every piece names the stories it
    serves, and every level-1 and level-2 story is served. Write down only what
    is a decision: nothing a convention derives, and no behavior — what the
    domain does inside is the green agent's, so the aggregate appears only as
-   its contract. Then render the tree straight into `story-drafting/`.
+   its contract. Then render the tree straight into `{tree}/`.
 2. **The acceptance tests.** The render writes one root test skeleton per
    level-2 story with a route, named for the route
-   (`story-drafting/tests/test_submitting_jtbds.py` for `POST /jtbds`,
-   `test_reading_jtbds_by_jtbd_id.py` for the read route): it reaches the
+   (for example `tests/test_submitting_loans.py` for a `POST /loans`): it reaches the
    served host, calls the route, asserts its status, and carries two
    placeholders that quote the story's words: its *given* (before the call)
    and its *then* (after it). Replace the *given* placeholder with what
    puts the system in the state the story's *given* describes, through the
    running host, and bind any value the route needs; replace the *then*
    placeholder with assertions of exactly that story's *then* and nothing
-   more. The render command below prints both skeletons, so you have them
+   more. The render command below prints every skeleton, so you have them
    without reading them.
 
 Done means all of these hold:
 
-1. `scripts/verify story-drafting` gets past tessercheck with zero findings
+1. `scripts/verify {tree}` gets past tessercheck with zero findings
    and past `mypy --strict`, and in its pytest every test passes except
    acceptance tests in `tests/`.
 2. At least one acceptance test fails, and every one that fails fails at its
@@ -57,19 +56,19 @@ Done means all of these hold:
 ## The language
 
 ```toml
-{{FILE:story-drafting/specs/language.toml}}
+{{FILE:{tree}/specs/language.toml}}
 ```
 
 ## The stories
 
 ```toml
-{{FILE:story-drafting/specs/story.toml}}
+{{FILE:{tree}/specs/story.toml}}
 ```
 
 ## What it runs on (given: the engineer's decisions, not yours)
 
 ```toml
-{{FILE:story-drafting/specs/infra.toml}}
+{{FILE:{tree}/specs/infra.toml}}
 ```
 
 You do not write or change `infra.toml`. Its `[storage.*]` are the stores that
@@ -106,17 +105,17 @@ composition's names:
 
 ## The harness
 
-- "The service has been restarted" means: its process is stopped and started again with the same command and environment, while the Restate server keeps running. No acceptance test here can restart the service; the runner does.
+- If a story says "the service has been restarted", that means its process is stopped and started again with the same command and environment, while the durable-execution engine keeps running. No acceptance test here can restart the service; the runner does.
 - Render with
-  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render {worktree}/story-drafting/specs {worktree}/story-drafting --print tests/test_submitting_jtbds.py --print tests/test_reading_jtbds_by_jtbd_id.py`.
+  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render {worktree}/{tree}/specs {worktree}/{tree} --print 'tests/test_*.py'`.
   It prints the path of every file it wrote, then each skeleton verbatim. The
-  specs already in `story-drafting/` stay. If the render
+  specs already in `{tree}/` stay. If the render
   reports a problem, it writes nothing: fix the spec it names and render
   again.
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh
-  source {venv}/bin/activate && cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  source {venv}/bin/activate && cd {worktree} && scripts/verify {tree} > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 

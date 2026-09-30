@@ -5,7 +5,7 @@ and writes a complete tesser app tree:
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path>]...
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...
 ```
 
 It prints the path of every file it wrote, one per line (then `kept <path>` for
@@ -14,7 +14,10 @@ on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
 (repeatable) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
 as the render leaves it (so a kept agent-owned file prints as it stands). A
-`--print` path the composition does not render is a problem.
+`--print` path the composition does not render is a problem. A `--print` with
+a `*` is a pattern (`*` matches within one path segment): it prints every
+rendered path it matches, in path order, so `--print 'tests/test_*.py'`
+prints every root test skeleton; a pattern that matches nothing is a problem.
 
 **The output directory** may already hold files, and rendering again is how a
 tree follows its composition:

@@ -2572,9 +2572,19 @@ class RenderedTree(ts.AggregateRoot):
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
         on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
         on_disk.update({str(path): RenderedFile(RenderedFileSpec(path=str(path), content=existing[str(path)])) for path in kept})
-        found.extend(Text(f"--print names {path}, which the composition does not render")
-                     for path in spec.printed if path not in on_disk and path not in paths)
-        self._printed = () if found else tuple(on_disk[path] for path in spec.printed)
+        selected: list[str] = []
+        for path in spec.printed:
+            if "*" in path:
+                pattern = re.compile(re.escape(path).replace(r"\*", "[^/]*"))
+                matched = sorted(on_disk_path for on_disk_path in on_disk if pattern.fullmatch(on_disk_path))
+                if not matched:
+                    found.append(Text(f"--print names {path}, which matches nothing the composition renders"))
+                selected.extend(matched)
+            elif path not in on_disk and path not in paths:
+                found.append(Text(f"--print names {path}, which the composition does not render"))
+            else:
+                selected.append(path)
+        self._printed = () if found else tuple(on_disk[path] for path in selected)
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
