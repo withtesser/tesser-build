@@ -23,6 +23,15 @@ shape, extra keys, how long drafting takes).
 Arm A uses the existing `prepare red-specs ...`, `prepare green-on-red <red
 branch> ...`, `measure`, then `check-tree A <green run>`.
 
-Reported per arm: agent time and calls per phase, gate time and Restate setup
-separately, the shared check's result, files and lines. Not measured: durability
-across a restart (no story restarts anything).
+Reported per arm: agent time and calls per phase, the shared check's result,
+files and lines. Agent time is split by what the agent was waiting on
+(`metrics.time_split`): checking its work (the gate, tests, the analyzer),
+setup (a virtualenv, installs, containers), probing the served service by hand
+(curl, running `main.py`), other tool calls, and the model's own time, which is
+the time in no tool call. Arm A's end-state gate, run by `measure` after the
+agent finishes, is not agent time.
+
+Neither prompt asks for more than the stories require. Until run 2 the bare
+prompt said to build "the wait at the checkpoint" on Restate, which no story
+asks for and red never built; from run 3 it says only "Build the workflow
+(story drafting) on it".

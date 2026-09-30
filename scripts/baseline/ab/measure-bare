@@ -60,6 +60,7 @@ def main() -> None:
     agent = measured["agent"]
     print(f"bare: {agent['duration_s']}s, {agent['api_requests']} API requests, {agent['tool_calls_total']} tool calls, "
           f"tokens {agent['tokens']}, models {agent['models']}, conditions {measured['conditions']['effort']}")
+    print(f"  time: {agent['time']}")
     print(f"  output: {len(files)} files, {lines} Python lines, {commits} commits")
     print(f"  check: passed={check.get('passed')} story_1={check.get('story_1', {}).get('passed')} "
           f"story_2={check.get('story_2', {}).get('passed')} registration={check.get('restate_registration', {}).get('ok')} "
