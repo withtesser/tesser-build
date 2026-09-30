@@ -66,7 +66,11 @@ there, not in your files.
 ## The acceptance tests (they must pass unchanged)
 
 ```python
-{{FILE:story-drafting/tests/test_story_drafting.py}}
+{{FILE:story-drafting/tests/test_submitting_jtbds.py}}
+```
+
+```python
+{{FILE:story-drafting/tests/test_reading_jtbds_by_jtbd_id.py}}
 ```
 
 ## Your files as they stand
