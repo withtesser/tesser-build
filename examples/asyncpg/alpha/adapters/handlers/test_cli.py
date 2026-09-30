@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import pytest
+
+import tesser.testing as ts
+
+import alpha.adapters.handlers as handlers
+import alpha.client as client
+import protocol
+
+
+@ts.fake
+class FakeClient(client.AlphaClient):
+
+    async def add_part(self, add_part_request: client.AddPartRequest) -> client.AddPartResponse:
+        return client.AddPartResponse(
+            name=add_part_request.name, part=add_part_request.part, standing="kept"
+        )
+
+    async def take_part(self, take_part_request: client.TakePartRequest) -> client.TakePartResponse:
+        return client.TakePartResponse(
+            name=take_part_request.name, part=take_part_request.part, standing="kept"
+        )
+
+    async def find_widget(
+        self, find_widget_request: client.FindWidgetRequest
+    ) -> client.FindWidgetResponse:
+        return client.FindWidgetResponse(found="no")
+
+
+@ts.fake
+class FakeRefusingClient(client.AlphaClient):
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def add_part(self, add_part_request: client.AddPartRequest) -> client.AddPartResponse:
+        raise self.error
+
+    async def take_part(self, take_part_request: client.TakePartRequest) -> client.TakePartResponse:
+        raise self.error
+
+    async def find_widget(
+        self, find_widget_request: client.FindWidgetRequest
+    ) -> client.FindWidgetResponse:
+        raise self.error
+
+
+class TestHandler:
+
+    async def test_add_prints_the_name_the_part_and_the_standing(self) -> None:
+        handler = handlers.Handler(FakeClient())
+        cli_response = await handler.add(protocol.CliRequest(args=("a", "p")))
+        assert cli_response.line == protocol.Line(text="a p kept")
+
+    async def test_a_rejection_exits_two_and_prints_the_contexts_wording(self) -> None:
+        handler = handlers.Handler(
+            FakeRefusingClient(client.WidgetRejected("empty_name", "a name is never empty"))
+        )
+        cli_response = await handler.add(protocol.CliRequest(args=("a", "p")))
+        assert cli_response.exit_code == 2
+        assert cli_response.line == protocol.Line(text="a name is never empty")
+
+    async def test_a_missing_widget_exits_one_and_prints_the_contexts_wording(self) -> None:
+        handler = handlers.Handler(
+            FakeRefusingClient(client.WidgetNotFound("no widget 'a'"))
+        )
+        cli_response = await handler.add(protocol.CliRequest(args=("a", "p")))
+        assert cli_response.exit_code == 1
+        assert cli_response.line == protocol.Line(text="no widget 'a'")
+
+    async def test_an_existing_widget_exits_one_and_prints_the_contexts_wording(self) -> None:
+        handler = handlers.Handler(
+            FakeRefusingClient(client.WidgetExists("widget 'a' is already stored"))
+        )
+        cli_response = await handler.add(protocol.CliRequest(args=("a", "p")))
+        assert cli_response.exit_code == 1
+        assert cli_response.line == protocol.Line(text="widget 'a' is already stored")
+
+    async def test_a_failure_the_context_never_declared_leaves_the_handler(self) -> None:
+        handler = handlers.Handler(
+            FakeRefusingClient(RuntimeError("a stack trace nobody should see"))
+        )
+        with pytest.raises(RuntimeError):
+            await handler.add(protocol.CliRequest(args=("a", "p")))

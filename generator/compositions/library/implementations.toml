@@ -1,0 +1,35 @@
+# 4 IMPLEMENTATIONS — what satisfies each contract, per environment. See ../README.md.
+
+app = "library"
+
+[implementations.NoticeSender.printed]
+class = "PrintedNoticeSender"
+body = "agent"
+
+[implementations.LoanRepository.memory]
+body = "supported"
+
+[implementations.LoanIdentityRepository.uuid]
+body = "supported"
+
+[engine.restate]
+body = "supported"
+ingress_variable = "RESTATE_INGRESS"
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
+
+[environments.gate]
+implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
+engine = "restate"
+hosts = ["http"]
+
+[hosts.http]
+serves = "interfaces.http"
+engine_path = "/restate"
+listen_port_variable = "LIBRARY_PORT"
+
+[variables]
+RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
+RESTATE_ADMIN = "the Restate admin URL the host registers its endpoint with"
+RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
+LIBRARY_PORT = "the port the HTTP host listens on"

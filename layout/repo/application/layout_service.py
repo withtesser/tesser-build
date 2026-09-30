@@ -1,0 +1,154 @@
+from __future__ import annotations
+
+import typing
+
+import tesser.application as ts
+
+import repo.application.ports as ports
+import repo.client as client
+import repo.domain as domain
+
+
+class MapToRepoSpec(ts.Mapper, domain.RepoSpec):
+
+    def __init__(self, read_repo_response: ports.ReadRepoResponse) -> None:
+        match read_repo_response.manifest.state:
+            case ports.ManifestState.READ:
+                manifest_state = domain.READ
+            case ports.ManifestState.MISSING:
+                manifest_state = domain.MISSING
+            case ports.ManifestState.UNREADABLE:
+                manifest_state = domain.UNREADABLE
+            case ports.ManifestState.MALFORMED:
+                manifest_state = domain.MALFORMED
+            case ports.ManifestState.MISSHAPEN:
+                manifest_state = domain.MISSHAPEN
+            case _ as unreachable_manifest:
+                typing.assert_never(unreachable_manifest)
+        manifest_rows = tuple(
+            (row.key, row.kind) for row in read_repo_response.manifest.rows
+        )
+        file_states: list[str] = []
+        for file_record in (read_repo_response.verify, read_repo_response.workflow):
+            match file_record.state:
+                case ports.FileState.READ:
+                    file_states.append(domain.READ)
+                case ports.FileState.MISSING:
+                    file_states.append(domain.MISSING)
+                case ports.FileState.UNREADABLE:
+                    file_states.append(domain.UNREADABLE)
+                case _ as unreachable_file:
+                    typing.assert_never(unreachable_file)
+        verify_state, workflow_state = file_states
+        declared: list[tuple[str, str, str]] = []
+        for declaration_record in read_repo_response.declarations:
+            match declaration_record.state:
+                case ports.FileState.READ:
+                    declaration_state = domain.READ
+                case ports.FileState.MISSING:
+                    declaration_state = domain.MISSING
+                case ports.FileState.UNREADABLE:
+                    declaration_state = domain.UNREADABLE
+                case _ as unreachable_declaration:
+                    typing.assert_never(unreachable_declaration)
+            declared.append(
+                (declaration_record.path, declaration_state, declaration_record.text)
+            )
+        listings: list[tuple[tuple[str, str], ...]] = []
+        for entry_records in (read_repo_response.top, read_repo_response.examples):
+            listed: list[tuple[str, str]] = []
+            for entry_record in entry_records:
+                match entry_record.form:
+                    case ports.EntryForm.DIRECTORY:
+                        entry_form = domain.DIRECTORY
+                    case ports.EntryForm.SYMLINK:
+                        entry_form = domain.SYMLINK
+                    case _ as unreachable_entry:
+                        typing.assert_never(unreachable_entry)
+                listed.append((entry_record.name, entry_form))
+            listings.append(tuple(listed))
+        top, examples = listings
+        stated: list[tuple[str, str, str, str]] = []
+        for floor_record in read_repo_response.floors:
+            match floor_record.key:
+                case ports.FloorKey.REQUIRES_PYTHON:
+                    floor_key = domain.REQUIRES_PYTHON
+                case ports.FloorKey.TARGET_VERSION:
+                    floor_key = domain.TARGET_VERSION
+                case _ as unreachable_key:
+                    typing.assert_never(unreachable_key)
+            match floor_record.state:
+                case ports.FloorState.READ:
+                    floor_state = domain.READ
+                case ports.FloorState.UNDECLARED:
+                    floor_state = domain.UNDECLARED
+                case ports.FloorState.UNREADABLE:
+                    floor_state = domain.UNREADABLE
+                case ports.FloorState.MALFORMED:
+                    floor_state = domain.MALFORMED
+                case _ as unreachable_floor:
+                    typing.assert_never(unreachable_floor)
+            stated.append(
+                (floor_record.path, floor_key, floor_state, floor_record.value)
+            )
+        super().__init__(
+            manifest=(manifest_state, manifest_rows, read_repo_response.manifest.note),
+            verify=(verify_state, read_repo_response.verify.text),
+            workflow=(workflow_state, read_repo_response.workflow.text),
+            top=top,
+            examples=examples,
+            declarations=tuple(declared),
+            requirements=read_repo_response.requirements,
+            floors=tuple(stated),
+        )
+
+
+class MapToReadRepoRequest(ts.Mapper, ports.ReadRepoRequest):
+
+    def __init__(self, repo_root: domain.RepoRoot) -> None:
+        super().__init__(repo_root=str(repo_root))
+
+
+class MapToCheckLayoutResponseWhenClean(ts.Mapper, client.CheckLayoutResponse):
+
+    def __init__(self, repo: domain.Repo) -> None:
+        super().__init__(problems=(), counts=tuple(str(count) for count in repo.counts()))
+
+
+class MapToCheckLayoutResponseWithProblems(ts.Mapper, client.CheckLayoutResponse):
+
+    def __init__(self, repo: domain.Repo) -> None:
+        super().__init__(
+            problems=tuple(str(problem.text()) for problem in repo.problems()),
+            counts=tuple(str(count) for count in repo.counts()),
+        )
+
+
+class MapToListTreesResponse(ts.Mapper, client.ListTreesResponse):
+
+    def __init__(self, repo: domain.Repo) -> None:
+        super().__init__(trees=tuple(str(tree) for tree in repo.trees()))
+
+
+class LayoutService(ts.ApplicationService):
+
+    def __init__(self, repo_reader: ports.RepoReader) -> None:
+        self._repo_reader = repo_reader
+
+    def check_layout(self, check_layout_request: client.CheckLayoutRequest) -> client.CheckLayoutResponse:
+        repo_root = domain.RepoRoot(check_layout_request.repo_root)
+        read_repo_response = self._repo_reader.read_repo(MapToReadRepoRequest(repo_root))
+        repo = domain.Repo(MapToRepoSpec(read_repo_response))
+        match repo.health():
+            case domain.Health.CLEAN:
+                return MapToCheckLayoutResponseWhenClean(repo)
+            case domain.Health.PROBLEMS:
+                return MapToCheckLayoutResponseWithProblems(repo)
+            case _ as unreachable:
+                typing.assert_never(unreachable)
+
+    def list_trees(self, list_trees_request: client.ListTreesRequest) -> client.ListTreesResponse:
+        repo_root = domain.RepoRoot(list_trees_request.repo_root)
+        read_repo_response = self._repo_reader.read_repo(MapToReadRepoRequest(repo_root))
+        repo = domain.Repo(MapToRepoSpec(read_repo_response))
+        return MapToListTreesResponse(repo)
