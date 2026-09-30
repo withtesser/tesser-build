@@ -1,4 +1,4 @@
 [tool.pytest.ini_options]
-testpaths = ["protocol", "drafting", "app", "srv"]
+testpaths = ["protocol", "drafting", "app", "srv", "tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
