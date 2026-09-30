@@ -33,6 +33,9 @@ class {{Spec}}(ts.Spec):
 {{#fields}}
         self.{{field}} = {{field}}
 {{/fields}}
+{{#no_fields}}
+        pass
+{{/no_fields}}
 {{/domain_specs}}
 {{#stub_text}}
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import collections.abc as collections_abc
 import json
+import re
 
 import tesser.srv as ts
 
@@ -53,7 +54,7 @@ class HttpRequest(ts.Request):
         value = self.path_params.get(name)
         if not value:
             raise BadRequest(f"missing path parameter: {name}")
-        if not value.lstrip("-").isdecimal():
+        if re.fullmatch(r"-?[0-9]{1,18}", value) is None:
             raise BadRequest(f"path parameter {name} must be an integer")
         return int(value)
 

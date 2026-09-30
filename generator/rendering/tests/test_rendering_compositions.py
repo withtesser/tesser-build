@@ -433,9 +433,9 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ()
         assert sorted(path for path in render_composition_response.written if path.startswith("tests/")) == [
-            "tests/__init__.py", "tests/test_reading_jtbds.py", "tests/test_submitting_jtbds.py",
+            "tests/__init__.py", "tests/test_reading_jtbds_by_jtbd_id.py", "tests/test_submitting_jtbds.py",
         ]
-        reading = (tmp_path / "out" / "tests" / "test_reading_jtbds.py").read_text()
+        reading = (tmp_path / "out" / "tests" / "test_reading_jtbds_by_jtbd_id.py").read_text()
         assert reading.startswith("# pragma: tesser-agent-owned;")
         assert 'host = ts.served("STORY_DRAFTING_HOST")' in reading
         assert 'given_jtbd_id = answered["jtbd_id"]' in reading
@@ -636,3 +636,126 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert (probed.stdout, probed.stderr) == ("2\n", "")
         assert tested.returncode == 0, tested.stdout
+
+    def test_a_command_that_takes_nothing_renders_a_spec_that_parses(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "composition.toml": [
+                ("[aggregate.reads]", "[aggregate.commands.close_loan]\ntakes = {}\noutcomes = [\"closed\"]\n\n[aggregate.reads]"),
+            ],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        domain_module = (tmp_path / "out" / "loans" / "domain" / "loan.py").read_text()
+
+        assert render_composition_response.problems == ()
+        assert ast.parse(domain_module)
+        assert "class CloseLoanSpec(ts.Spec):" in domain_module
+
+    def test_two_routes_differing_only_by_a_path_parameter_render_two_root_tests(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans\"\nthen = \"I get back 200 with a loan_id\"\nroute = \"GET /loans\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "composition.toml": [
+                ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
+                ("[orchestrator.operations.arrange_loan]", "[client.operations.list_loans]\nrequest = [\"loan_id\"]\nresponse = [\"loan_id\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
+            ],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+        assert sorted(path.name for path in (tmp_path / "out" / "tests").glob("test_*.py")) == [
+            "test_reading_loans.py", "test_reading_loans_by_loan_id.py", "test_submitting_loans.py",
+        ]
+
+    def test_a_path_naming_one_parameter_twice_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [("[[jtbds.stories.jtbds]]\nid = \"j-1-b\"", "[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\nwhen = \"I GET /loans/{loan_id}/title/{loan_id}\"\nthen = \"I get back 200 with its title\"\nroute = \"GET /loans/{loan_id}/title/{loan_id}\"\nstatus = 200\nreached_by = [{ route = \"POST /loans\" }]\n\n[[jtbds.stories.jtbds]]\nid = \"j-1-b\"")],
+            "composition.toml": [
+                ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
+                ("[orchestrator.operations.arrange_loan]", "[client.operations.get_title]\nrequest = [\"loan_id\"]\nresponse = [\"title\"]\nsteps = [\"repository.load_loan\"]\nserves = [\"s-1-c-1\"]\n\n[orchestrator.operations.arrange_loan]"),
+            ],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "/loans/{loan_id}/title/{loan_id} names {loan_id} more than once, and a path parameter is bound once",
+        )
+
+    def test_a_path_parameter_that_is_not_an_integer_answers_400_never_a_crash(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library" / f"{name}.toml").read_text())
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        probe = (
+            "import protocol\n"
+            "for text in ['--2', '-', '', '+2', '1_0', '2 ', '\\u0663', '9' * 5000, '2', '-7']:\n"
+            "    try:\n"
+            "        answer = repr(protocol.HttpRequest(path_params={'copies': text}, body=b'').integer_path_param('copies'))\n"
+            "    except protocol.BadRequest:\n"
+            "        answer = 'bad request'\n"
+            "    except Exception as error:\n"
+            "        answer = type(error).__name__\n"
+            "    print(answer)\n"
+        )
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+        probed = subprocess.run([sys.executable, "-c", probe], cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env)
+
+        assert render_composition_response.problems == ()
+        assert (probed.stdout.splitlines(), probed.stderr) == (["bad request"] * 8 + ["2", "-7"], "")
+
+    def test_an_empty_sample_list_is_a_problem_not_a_crash(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"generator.toml": [('borrower = ["Ada", "Grace"]', "borrower = []")]}
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ("generator.toml lists no sample values for borrower",)

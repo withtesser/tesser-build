@@ -172,9 +172,11 @@ step before it answered; one nothing before it answers is a problem.
 **Root test skeletons.** For each level-2 story with a route, the renderer
 writes an agent-owned `tests/test_<words>.py` (and `tests/__init__.py`), named
 for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
-replacing, `PATCH` updating, `DELETE` deleting) and the path's literal
-segments, so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
-`GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds.py`. It reaches the host
+replacing, `PATCH` updating, `DELETE` deleting), then each segment of the path
+in order, a literal segment as it is and a `{field}` segment as `by_<field>`,
+so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
+`GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds_by_jtbd_id.py` (so `GET
+/jtbds` and `GET /jtbds/{jtbd_id}` are two files). It reaches the host
 through `ts.served("<APP>_HOST")`, reaches the given as `reached_by` says,
 calls the story's route, and asserts its `status`; where the then goes it
 fails with one placeholder assertion whose message is the story's `then`,
@@ -210,7 +212,9 @@ outcomes = ["recorded", "already_recorded", "none_given"] # required, at least o
 Only this contract is rendered in the domain: `<Name>Spec` with the spec's
 fields, the aggregate constructed from it,
 one method per command taking `<Command>Spec` (its `takes`) and answering
-`<Command>Outcome`,
+`<Command>Outcome`
+(a command with `takes = {}` gets a `<Command>Spec` whose constructor is a
+single `pass`),
 and one read per `[aggregate.reads]` entry. Everything else in the domain
 (value objects, validation, how a read is computed) is the agent's.
 
@@ -261,6 +265,10 @@ are read from the path (a `{field}` in it, as text, or an integer for `int`;
 a path carries no other type) or else from the JSON body (as text, or an
 integer for `int`); its response fields are answered as JSON. No two
 operations have the same method and path, since HTTP would reach only one.
+A path names each `{field}` once, since a route binds a parameter once: a
+repeated one (`/loans/{loan_id}/{loan_id}`) is a problem. A path parameter for
+an `int` field answers 400 unless it is an optionally negative run of at most
+18 ASCII digits (`--2`, `+2`, `1_0`, and the empty string are all 400).
 Two operations may call the same port operation; each gets its own mapper.
 
 **Steps**, in order:
@@ -423,7 +431,8 @@ story_texts = [                          # a list field: two lists of tables
 Every field the generated tests need a value for must have one, listed here,
 or inside a listed list of tables (a shape's field found in another sample),
 or an enum (its members are used). A list field with no sample is built from
-its shape's fields.
+its shape's fields. A field listed with no values (`borrower = []`) is a
+problem, since there is nothing to pick from.
 
 ## What is rendered, and who owns it
 

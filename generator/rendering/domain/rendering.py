@@ -1003,6 +1003,9 @@ class Model(ts.Entity):
             tuple(self._spec_fields),
         )
         self._types = Types(TypesSpec(*self._types_args))
+        for sampled_field, sampled in dict(self._generator.get("sample_values", {})).items():
+            if isinstance(sampled, list) and not sampled:
+                raise ValueError(f"generator.toml lists no sample values for {sampled_field}")
         self._sample_values = json.dumps(self._generator.get("sample_values", {}))
         self._samples = Samples(SamplesSpec(values=self._sample_values, index=0, types=TypesSpec(*self._types_args)))
         self._registry: dict[str, str] = dict(self._spec_fields)
@@ -1889,7 +1892,7 @@ class Model(ts.Entity):
                 seen.add(spec_name)
                 ordered.append((spec_name, fields))
         for spec_name, fields in ordered:
-            specs.append({"Spec": spec_name, "fields": [
+            specs.append({"Spec": spec_name, "no_fields": [] if fields else [{}], "fields": [
                 {"field": field, "spec_type": (
                     f"tuple[{str(types.element(type_text)) if str(types.element(type_text)).endswith('Spec') else str(types.element(type_text)) + 'Spec'}, ...]"
                     if str(types.kind(type_text)) == "array" else type_text)}
@@ -2255,6 +2258,8 @@ class Model(ts.Entity):
                 raise ValueError(f"{routed[0]} is {method} {path} answering {status_code}, and its own when and then "
                                  f"do not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
+            for repeated in sorted({field for field in path_fields if path_fields.count(field) > 1}):
+                raise ValueError(f"{path} names {{{repeated}}} more than once, and a path parameter is bound once")
             request = self._messages[("client", Operation + "Request")]
             response = self._messages[("client", Operation + "Response")]
             inputs: list[dict[str, object]] = []
@@ -2352,8 +2357,10 @@ class Model(ts.Entity):
                 bound.update(responds)
             final = reaching.pop()
             method, path = str(calls[-1][0]["method"]), str(calls[-1][0]["path"])
-            words = "_".join([GERUNDS[method]] + [segment.replace("-", "_") for segment in path.strip("/").split("/")
-                                                   if not PATH_FIELD.fullmatch(segment)])
+            words = "_".join([GERUNDS[method]] + [
+                "by_" + segment[1:-1] if PATH_FIELD.fullmatch(segment) else segment.replace("-", "_")
+                for segment in path.strip("/").split("/")
+            ])
             root_tests.append({
                 "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
                 "method": method, "path": final["path"], "body": final["body"],

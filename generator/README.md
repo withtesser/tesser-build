@@ -168,6 +168,19 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
 
 `compositions/README.md` is the reference: every key each format takes, what
 the renderer derives, what it renders, and which rendered files are the
-agent's. Every composition in `compositions/` is gated: `scripts/verify
+agent's.
+
+A render answers these as problems (exit 1, nothing written) rather than
+crashing or rendering something broken: a path naming one `{field}` twice, and a
+sample list in `generator.toml` with no values (`borrower = []`). A root test
+skeleton is named for its method and every path segment, a parameter as
+`by_<field>` (`GET /loans` is `test_reading_loans.py`, `GET /loans/{loan_id}` is
+`test_reading_loans_by_loan_id.py`). A path parameter for an `int` field answers
+400 unless it is an integer (an optional `-` and at most 18 ASCII digits). A
+command with `takes = {}` renders a `<Command>Spec` whose constructor is `pass`.
+`scripts/verify` stops a served host only while it is the process it started
+(same start time), never signalling one that has already exited.
+
+Every composition in `compositions/` is gated: `scripts/verify
 generator` renders each one and runs the rendered tree's tessercheck,
 `mypy --strict`, and every test tier but the root.
