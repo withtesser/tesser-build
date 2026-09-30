@@ -15,25 +15,15 @@ A developer works through a multi-step piece of work with an agent (design somet
 
 Use these words, and not the ones after "not". Where a word below gives a name in backticks, the HTTP API uses that name exactly, as a route, JSON field, or value.
 
-- **story-drafting skill**: a procedure an agent follows with the developer, in fixed steps with checkpoints: story drafting for a job to be done, then wait for the developer's acceptance. (Not: harness, workflow, flow.)
-- **job to be done** (JTBD): what a developer needs done, written as "as / I want / so that", naming no solution. What the skill runs on: it holds its stories and has one checkpoint. (Not: job, task, goal, story draft, draft, run.) Its fields are `role` (the "as" part), `i_want`, and `so_that`; its identity is `jtbd_id`.
-- **story**: one given / when / then that would fulfil its job to be done, with a story state. (Not: user story, scenario, requirement, story draft.) A job to be done's stories are `stories`; each has `given`, `when`, `then`, and `state`. Stories take the same given / when / then shape as the stories in "What a developer must be able to do" below.
-- **story text**: the given / when / then a story drafting produces, before the job to be done gives it a state. (Not: drafted story, draft.)
-- **recording stories**: keeping a story drafting's story texts as the job to be done's stories, each drafted. (Not: saving stories, storing stories.)
+- **job to be done** (JTBD): what a developer needs done, written as "as / I want / so that", naming no solution. (Not: job, task, goal, story draft, draft, run.) Its fields are `role` (the "as" part), `i_want`, and `so_that`; its identity is `jtbd_id`.
+- **story**: one given / when / then that would fulfil a job to be done, with a story state. (Not: user story, scenario, requirement, story draft.) A job to be done's stories are `stories`; each has `given`, `when`, `then`, and `state`. Stories take the same given / when / then shape as the stories in "What a developer must be able to do" below.
 - **story state** (`state`): where a story stands: `drafted` (written, not yet decided), `accepted` (the developer keeps it), rejected (the developer does not). (Not: picked, approved, declined, pending.)
-- **story drafting**: the step in which story texts are written for a job to be done. A story drafting yields at least one story. (Not: drafting, composing, writing, generating.)
-- **status** (`status`): where a job to be done stands, following from its stories' states: `drafting_stories` (none yet), `awaiting_story_acceptance` (any story drafted).
-- **checkpoint**: a point in the procedure where the developer weighs in, fixed in advance, that the agent cannot skip. A job to be done has one: after story drafting, it waits for the developer's acceptance. (Not: gate, approval step.)
+- **story drafting**: writing the given / when / then of stories for a job to be done. (Not: drafting, composing, writing, generating.)
+- **status** (`status`): where a job to be done stands: `drafting_stories` (it has none yet) or `awaiting_story_acceptance` (its stories are drafted and undecided).
+- **checkpoint**: a point where the developer weighs in, fixed in advance, that the agent cannot skip. (Not: gate, approval step.)
+- **submit**: hand a job to be done to the story-drafting skill, so that it begins its story drafting. (Not: start, begin, open, create.)
+- **story-drafting skill**: a procedure an agent follows with the developer, in fixed steps with checkpoints. (Not: harness, workflow, flow.)
 - **accept**: what the developer does at the checkpoint: one decision over the drafted stories — the stories named are accepted, the rest rejected. (Not: pick, approve, choose, select.)
-- **reject** (not yet settled): the other half of the same decision: a drafted story the developer does not name when accepting. (Not: decline, discard, drop.)
-- **submit**: hand a job to be done to the story-drafting skill, which begins its story drafting. (Not: start, begin, open, create.)
-- **revise**: having a job to be done's stories drafted again with the developer's note. Out of scope; it would add story drafting rounds and reopen the one-round decision below.
-
-Decisions already made:
-
-- What holds one start of the skill? The job to be done itself. No separate story draft, draft set, or run.
-- How many stories does one acceptance take? Any number: one decision over the set — the stories named are accepted, the rest rejected. One acceptance per job to be done, made once.
-- Can a job to be done be drafted more than once? Not for now: one story drafting round, one checkpoint, and the job to be done's id is the key for that round. Revise would reopen this.
 
 ## What a developer must be able to do
 
