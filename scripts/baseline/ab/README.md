@@ -9,9 +9,9 @@ one disclosed deviation: it is told a Restate server is running and to build
 its workflow on it, because the generator picks that engine silently and no
 spec asks the user (see the memory "engine-choice-is-a-user-decision").
 
-Both arms use the same agent definitions (`~/.claude/agents/ab-{red,green,bare}-medium.md`,
-identical bodies, effort medium; the model is passed per call), spawned unnamed
-so the definition's effort applies. The same check (`check.py`) runs on each
+Every agent in both arms is the same definition (`~/.claude/agents/tesser-red-trial-medium.md`:
+effort medium, one generic body; the model is passed per call), spawned unnamed
+so the definition's effort applies, so all runs share one system prompt. The same check (`check.py`) runs on each
 arm's output: it serves the output, registers the Restate endpoint, and drives
 the two level-2 stories over HTTP, tolerant of what the specs leave open (id
 shape, extra keys, how long drafting takes).

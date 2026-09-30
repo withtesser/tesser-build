@@ -37,7 +37,7 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
-mkdir -p "$work"
+mkdir -p "$out" "$work"
 git -C "$work" init -q
 cat >"$out/run.json" <<JSON
 {"phase": "bare", "name": "$name", "slot": $slot, "worktree": "$work", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
