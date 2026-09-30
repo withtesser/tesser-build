@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import typing
 
@@ -87,17 +88,20 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
-        campaign_storage = os.environ.get("CAMPAIGN_STORAGE")
+        campaign_storage = self._environ.get("CAMPAIGN_STORAGE")
         if campaign_storage is None:
             raise errors.invalid("missing_env", "CAMPAIGN_STORAGE is required")
-        linkpolicy_storage = os.environ.get("LINKPOLICY_STORAGE")
+        linkpolicy_storage = self._environ.get("LINKPOLICY_STORAGE")
         if linkpolicy_storage is None:
             raise errors.invalid("missing_env", "LINKPOLICY_STORAGE is required")
-        http_host = os.environ.get("HTTP_HOST")
+        http_host = self._environ.get("HTTP_HOST")
         if http_host is None:
             raise errors.invalid("missing_env", "HTTP_HOST is required")
-        raw_port = os.environ.get("HTTP_PORT")
+        raw_port = self._environ.get("HTTP_PORT")
         if raw_port is None:
             raise errors.invalid("missing_env", "HTTP_PORT is required")
         try:
@@ -129,4 +133,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> PythonApp:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

@@ -168,8 +168,8 @@ def test_each_load_builds_its_own_app() -> None:
     second.close()
 
 
-def test_the_env_repository_reads_the_environment_the_runner_supplied() -> None:
-    app_config = app.EnvConfigRepository().get()
+def test_the_env_repository_reads_the_environment_it_is_handed() -> None:
+    app_config = app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"}).get()
 
     assert isinstance(app_config, app.AppConfig)
     assert app_config.campaign.storage == "memory"
@@ -177,6 +177,6 @@ def test_the_env_repository_reads_the_environment_the_runner_supplied() -> None:
 
 
 def test_each_read_returns_its_own_config() -> None:
-    env_config_repository = app.EnvConfigRepository()
+    env_config_repository = app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})
 
     assert env_config_repository.get() is not env_config_repository.get()

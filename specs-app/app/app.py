@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import typing
 
@@ -54,14 +55,17 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
-        storage = os.environ.get("SPECIFICATION_STORAGE")
+        storage = self._environ.get("SPECIFICATION_STORAGE")
         if storage is None:
             raise errors.invalid("missing_env", "SPECIFICATION_STORAGE is required")
-        http_host = os.environ.get("HTTP_HOST")
+        http_host = self._environ.get("HTTP_HOST")
         if http_host is None:
             raise errors.invalid("missing_env", "HTTP_HOST is required")
-        raw_port = os.environ.get("HTTP_PORT")
+        raw_port = self._environ.get("HTTP_PORT")
         if raw_port is None:
             raise errors.invalid("missing_env", "HTTP_PORT is required")
         try:
@@ -87,4 +91,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> SpecsApp:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

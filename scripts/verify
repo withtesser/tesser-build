@@ -77,40 +77,8 @@ run_python_app() {
   MYPYPATH=.:../../tesser-py mypy --strict protocol kernel campaign linkpolicy reports app srv tests conftest.py || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
-  # The app reads its own environment through the config repository, so the
-  # runner supplies one — the same job a deploy does. Tests never inject it.
-  step "pytest (every tier but the root, no host served)"
-  CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
-    pytest -q --ignore=tests || return 1
-  # The root tier plays the user: it reaches the app only through a running
-  # host, so the arm serves the HTTP host and passes its address to the tier
-  # as pytest's --host option. Locally the default port is 9240.
-  local port="${PYTHON_APP_PORT:-9240}"
-  local address="127.0.0.1:$port"
-  step "serve the HTTP host on $address"
-  (exec env CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" \
-    PYTHONPATH=.:../../tesser-py python3 -W ignore::RuntimeWarning -m srv.http.main >/dev/null) &
-  local host=$!
-  local serving=1
-  for _ in $(seq 1 50); do
-    if curl -sf "http://$address/reports/links-by-verdict" >/dev/null; then
-      serving=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$serving" -ne 0 ]; then
-    echo "python-app: the HTTP host did not answer on $address" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
-    return 1
-  fi
-  step "pytest (root tier against the HTTP host at $address)"
-  pytest -q tests --host "http://$address"
-  local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
-  [ "$status" -eq 0 ] || return 1
+  step "pytest (every tier; the root conftest serves the host)"
+  pytest -q || return 1
 }
 
 # The canonical application-ports tree: one context, two ports, an enum outcome
@@ -260,47 +228,16 @@ EOF
 # POST /jtbd/{id}/stories, and root-tier tests that play the user: one posts
 # a story over HTTP, one drives the page through Playwright — so this tree
 # needs a browser (python -m playwright install chromium) as well as the
-# Python tooling. The arm runs every tier but the root with no host served,
-# then serves the HTTP host as a process on SPECS_APP_PORT, runs the root tier
-# (pytest tests --host <its address>) against it, and stops it.
+# Python tooling. The root conftest serves the host itself on a port the OS
+# picks (docs/design-test-tiers.md), so the arm is the gates and one pytest.
 run_specs_app() {
   cd "$ROOT/specs-app" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../tesser-py mypy --strict protocol specification app srv tests conftest.py || return 1
-  step "pytest (every tier but the root, no host served)"
-  pytest -q --ignore=tests || return 1
-  local port="${SPECS_APP_PORT:-9283}"
-  local url="http://127.0.0.1:$port"
-  if curl -s -o /dev/null "$url/"; then
-    echo "specs-app: something already answers at $url; set SPECS_APP_PORT" >&2
-    return 1
-  fi
-  step "serve the HTTP host at $url"
-  SPECIFICATION_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" PYTHONPATH=.:../tesser-py PYTHONUNBUFFERED=1 \
-    python3 -W ignore::RuntimeWarning -m srv.http.main &
-  local host=$!
-  local ready=1
-  for _ in $(seq 1 50); do
-    if curl -sf -o /dev/null "$url/"; then
-      ready=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$ready" -ne 0 ] || ! kill -0 "$host" 2>/dev/null; then
-    echo "specs-app: the HTTP host did not come up at $url" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
-    return 1
-  fi
-  step "pytest tests (root tests against the host at $url)"
-  pytest -q tests --host "$url"
-  local status=$?
-  kill -TERM "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
-  return "$status"
+  step "pytest (every tier; the tests serve their own host)"
+  pytest -q || return 1
 }
 
 # The story-drafting app: a two-step agent skill backed by a durable

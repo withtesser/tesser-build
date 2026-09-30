@@ -355,7 +355,7 @@ is ruled.
   package, and each location fixes what the test may import (TB070). The
   root tests package plays the user: it reaches the app only through a
   running host, speaking `protocol` — a CLI host as a subprocess, an HTTP
-  host at an address the runner supplies — and imports nothing of the app,
+  host at the `host` fixture — and imports nothing of the app,
   `srv`, a context, or a kernel (a library tree with no host reaches its
   exported kernel instead). A context's `tests/` package plays a caller: it
   builds the component in-process, drives its client and handlers, fakes
