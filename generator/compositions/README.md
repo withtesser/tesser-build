@@ -81,9 +81,10 @@ a contract or a port; `composition.toml` never says what implements a
 contract; `implementations.toml` never declares a contract, and holds only the
 port-level mapping (`[implementations]` and `[environments]`): an
 `implementations.toml` that still carries `app`, `[engine]`, `[hosts]`, or
-`[variables]` is a problem saying each moved to `infra.toml`. Every name in
-`composition.toml` is a code name from `language.toml` (a snake_case field or
-operation, a PascalCase type) or a word the conventions derive (below).
+`[variables]` is a problem saying each moved to `infra.toml`. Names in
+`composition.toml` are words of the domain (`language.toml`'s terms) or words
+the conventions derive (below); the renderer checks one thing against the
+language, the key of a class of actions (below).
 
 ## Types
 
@@ -110,11 +111,16 @@ Every field named anywhere must get a type this way.
 
 ## 1 `language.toml`
 
-Read only to check it is TOML; everything in it is for people. Its shape (as in
-`library/language.toml`): `context = "<context>"`, then `[[terms]]` tables with
-`term`, `means`, `code_names = [...]`, and optionally `short`, `status`, `not`,
-`note`, and a `[conventions]` table. Write it first: every other file uses its
-code names.
+Read for one thing only: the names a class of actions may take. Everything else
+in it is for people, and it holds meanings only (no rules, no design, no tooling,
+no code names). Its shape (as in `story-drafting/language.toml`):
+`context = "<context>"`, then `[[terms]]` tables with `term` and `means`, and
+optionally `short`, `status`, `not` (the words not to use), and `note`. Write it
+first: every other file speaks its words. A `[actions.<key>]` class of actions is
+named for the domain term it acts on: the key must be the snake_case of a term's
+name (`story`, `job_to_be_done`) or of its `short` form (`jtbd`), or an entry of
+an optional `code_names = [...]` on a term (older compositions, such as
+`library`, still list them).
 
 ## 2 `story.toml`
 
@@ -422,11 +428,12 @@ calls_on = ["recorded"]               # ...required with commands: the outcomes 
 ```
 
 The class is `<Key>Actions`, and it is named for the domain term it acts on,
-never for its port: `<Key>` in PascalCase is exactly one of the language's
-code names (`loan` → `Loan`, so `LoanActions` on `LoanRepository`). A key that
-is not a code name is a problem, even when a code name contains it: `drafter`
-on `StoryDrafter` is refused, since `Drafter` is no term; the class is
-`story`. It may carry several operations; every one must be a step of the
+never for its port: `<Key>` in PascalCase is exactly the PascalCase of a
+term's name or short form in the language (`story` → `Story`, `jtbd` →
+`Jtbd`, so `StoryActions`), or an entry of a term's optional `code_names`
+(`loan` → `Loan` in `library`). A key that is none of those is a problem, even
+when a term contains it: `drafter` on `StoryDrafter` is refused, since
+`Drafter` is no term; the class is `story`. It may carry several operations; every one must be a step of the
 orchestrator operation. An action calls its port once.
 With `commands`, it matches the command's outcome: the outcomes in `calls_on`
 (each one of the command's `outcomes`) make the call, the others answer
@@ -579,8 +586,8 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 
 ## Checklist for a new composition
 
-1. `language.toml`: the terms and their code names, including the PascalCase
-   name of every term a class of actions acts on.
+1. `language.toml`: the terms and their meanings, including every term a class
+   of actions acts on (its name or short form is the class's key).
 2. `story.toml`: level-1 and level-2 stories, which between them name every
    enum value, client field, read, signal payload field, and non-success
    command outcome the composition lists; each level-2 story an HTTP

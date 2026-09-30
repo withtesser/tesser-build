@@ -416,9 +416,27 @@ class TestRenderingCompositions:
         )
 
         assert render_composition_response.problems == (
-            "[actions.drafter] is named for 'Drafter', which is not a code name in language.toml; a class of actions "
-            "is named for the domain term it acts on, never for its port (StoryDrafter)",
+            "[actions.drafter] is named for 'Drafter', which is neither a term nor a code name in language.toml; a class of "
+            "actions is named for the domain term it acts on (a term's name or its short form), never for its port (StoryDrafter)",
         )
+
+    def test_a_class_of_actions_is_named_for_a_term_or_its_short_form_with_no_code_names(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        (tmp_path / "composition").mkdir()
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "story-drafting" / f"{name}.toml").read_text()
+            if name == "language":
+                assert "code_names" not in text
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+        assert "class StoryActions" in (tmp_path / "out" / "drafting" / "application" / "story_actions.py").read_text()
+        assert "class JtbdActions" in (tmp_path / "out" / "drafting" / "application" / "jtbd_actions.py").read_text()
 
     def test_a_class_of_actions_named_for_the_term_it_acts_on_renders(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
