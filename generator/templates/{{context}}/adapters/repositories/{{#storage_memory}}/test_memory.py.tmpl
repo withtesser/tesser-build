@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import {{context}}.adapters.repositories as repositories
+import {{context}}.application.ports as ports
+
+
+class TestMemory{{Aggregate}}Store:
+
+    async def test_a_saved_{{aggregate}}_is_loaded_in_a_later_transaction(self) -> None:
+        memory_{{aggregate}}_store = repositories.Memory{{Aggregate}}Store()
+
+        async with memory_{{aggregate}}_store.transaction() as {{aggregate}}_repository:
+            {{save}}_response = await {{aggregate}}_repository.{{save}}(
+                ports.{{Save}}Request({{#record_fields}}{{field}}={{sample}}{{comma}}{{/record_fields}})
+            )
+        async with memory_{{aggregate}}_store.transaction() as {{aggregate}}_repository:
+            {{load}}_response = await {{aggregate}}_repository.{{load}}(
+                ports.{{Load}}Request({{identity}}={{identity_sample}})
+            )
+
+        assert {{save}}_response == ports.{{Save}}Response({{identity}}={{identity_sample}})
+        assert {{load}}_response.{{collection}} == (
+            ports.{{Aggregate}}({{#record_fields}}{{field}}={{sample}}{{comma}}{{/record_fields}}),
+        )
+
+    async def test_a_{{aggregate}}_never_saved_loads_nothing(self) -> None:
+        memory_{{aggregate}}_store = repositories.Memory{{Aggregate}}Store()
+
+        async with memory_{{aggregate}}_store.transaction() as {{aggregate}}_repository:
+            {{load}}_response = await {{aggregate}}_repository.{{load}}(
+                ports.{{Load}}Request({{identity}}={{identity_sample}})
+            )
+
+        assert {{load}}_response.{{collection}} == ()
+
+    async def test_two_stores_hold_two_separate_{{collection}}(self) -> None:
+        memory_{{aggregate}}_store = repositories.Memory{{Aggregate}}Store()
+        other_store = repositories.Memory{{Aggregate}}Store()
+
+        async with memory_{{aggregate}}_store.transaction() as {{aggregate}}_repository:
+            await {{aggregate}}_repository.{{save}}(
+                ports.{{Save}}Request({{#record_fields}}{{field}}={{sample}}{{comma}}{{/record_fields}})
+            )
+        async with other_store.transaction() as {{aggregate}}_repository:
+            {{load}}_response = await {{aggregate}}_repository.{{load}}(
+                ports.{{Load}}Request({{identity}}={{identity_sample}})
+            )
+
+        assert {{load}}_response.{{collection}} == ()

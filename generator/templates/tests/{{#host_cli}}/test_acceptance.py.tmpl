@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+import os
+import random
+import subprocess
+import sys
+{{#calling_start}}
+import time
+{{/calling_start}}
+
+
+class {{test_class}}:
+
+    def {{test_method}}(self) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        {{asserts}} = random.choice({{random_choices}})
+
+        {{write}} = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "srv.cli.main",
+                "{{write}}",
+{{#fields}}
+                {{#is_asserted}}str({{asserts}}){{/is_asserted}}{{^is_asserted}}{{sample_arg}}{{/is_asserted}},
+{{/fields}}
+            ],
+            capture_output=True, text=True, check=False, env=env,
+        )
+        {{read}} = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "{{read}}", {{write}}.stdout.strip()],
+            capture_output=True, text=True, check=False, env=env,
+        )
+{{#calling_start}}
+        deadline = time.monotonic() + 30
+        while {{read}}.returncode != 0 and time.monotonic() < deadline:
+            time.sleep(0.2)
+            {{read}} = subprocess.run(
+                [sys.executable, "-m", "srv.cli.main", "{{read}}", {{write}}.stdout.strip()],
+                capture_output=True, text=True, check=False, env=env,
+            )
+{{/calling_start}}
+
+        assert ({{write}}.returncode, {{write}}.stderr) == (0, "")
+        assert ({{read}}.returncode, {{read}}.stderr) == (0, "")
+        assert "{{asserts}}=" + str({{asserts}}) in {{read}}.stdout.splitlines()

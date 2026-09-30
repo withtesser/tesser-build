@@ -1,0 +1,271 @@
+# tesser-build — agent guide
+
+This repo is an **application-construction toolkit** (DDD + hex/onion/clean as
+inspiration, chosen for changeability, enforced where mechanically decidable;
+the build-side member of the tesser family): the Python analyzer
+(`tessercheck-py/` — the `TB0*` checks) and its packaged console entry points (`tessercheck-cli/` — the
+`tessercheck-check`, `tessercheck-rename`, `tessercheck-mark` and
+`tessercheck-hook` commands, so a consumer repo can run the analyzer, the
+repairs it carries, and the post-write hook that puts it in an agent's loop,
+from an install instead of a checkout), a Python runtime library (`tesser-py/` — `tesser.domain.ValueObject`,
+the repo's first shipped runtime dependency rather than a build-time checker;
+candidate mutation-testable VO base — the mutmut-visibility claim is asserted
+by the ecosystem test in `tesser-py/tests/ecosystem/mutmut/`), a generator
+(`generator/` — writes a starting tesser app tree from a TOML spec: a context
+whose service runs a Restate workflow, whose orchestrator runs one action, and
+whose action writes to its store, with its sibling tests, a user-facing host,
+and a root acceptance test that drives that host — `host = "cli" | "http"`,
+`storage = "postgres" | "memory"`; gated by generating every spec in `generator/specs/` and
+running the generated tree's own gates), an agent skill
+(`skills/tesser-build/` — Python construction guidance, copy-in distributed to
+consumers), and human docs (`docs/start-here.md`, `docs/faq.md`). If you are
+writing or changing domain objects here — or in a consumer repo — follow the
+conventions below, because this repo is what enforces them in CI.
+
+**Creating or modifying domain types (new type, field, constructor, validation),
+OR writing a handler/endpoint, a use-case / application or domain service, or
+persistence / repository code → read `skills/tesser-build/SKILL.md` and follow its
+routing.** This repo
+dogfoods its own skill; the `examples/*` trees are the worked examples (kept
+conformant by CI). When you change a convention, update every rendering of it
+in the same change (rules in `docs/skill-authoring.md`); bump `skill-version`
+in `skills/tesser-build/SKILL.md`.
+
+## The conventions (what the analyzers enforce)
+
+1. **Equality is by value, and the base owns it.** A value object subclasses
+   `ts.ValueObject`; same attributes ⇒ equal. Aggregates and entities are *not*
+   value objects and do not get value equality.
+2. **Every exported VO has explicit equality test coverage** — a
+   `test_*_equality` that locks equality semantics, so a later
+   field/comparability change is caught. *Exported* is the 2026-09-06
+   narrowing: a sibling test imports the packages around it, never the module
+   beside it, so a value object the package `__init__` does not re-export is
+   reachable only through the object that owns it and is tested there.
+   This convention stands, but is *not* machine-enforced.
+3. **The string form is for display, not equality.** `TB004` flags a
+   comparison of two `str()` calls, because that silently mis-equates
+   multi-representation VOs; compare by value.
+
+These three are the value-object core, not the whole enforced set. The
+analyzer also carries the identity taxonomy (`TB010`–`TB012`), the
+serialization norm (`TB015`–`TB018`), the comments norm (`TB020`), the annotations norm (`TB021` — an annotation is
+written unquoted, because the resolver treats a quoted one as opaque;
+`TB022` — a type names what the value is, so `Any`, `Callable`, and
+`Awaitable` are findings wherever a module names them, in an annotation or
+anywhere else), the function-placement norm (`TB023` — outside `adapters/`, a
+function is declared at module level or as a method, so a `lambda` anywhere and
+a `def` inside another function are findings; every rule about a function keys
+on its placement and a nested one has none. An `adapters/` implementation
+module is out of scope, because an adapter implements a contract it does not
+own — an SDK that registers a handler by decorating a function at construction
+time leaves no relocation to make — and a test beside one is still read), the
+import norm (`TB050`–`TB069` — every module in
+the tree carries an import row keyed on where it sits; there are no exempt
+modules, so a root module and a `conftest` are leaves that import nothing from
+the tree), and the testing norm (`TB030` — a test double is a hand-written
+fake, never a mocking library; `TB070` — placement carries the tier, so where a
+test lives fixes what it may import; `TB074` — every implementation module
+carries exactly one sibling test file named for it, and every sibling test
+file names the module beside it; `TB071`/`TB072`/`TB073` — the totality check over
+test modules: every module-level function is a test, a declared `@ts.helper`,
+a declared `@ts.assembly`, or a declared `@ts.fake` (`TB071`), a class is a
+`Test`-prefixed test class holding only test methods or a declared `@ts.fake`
+(`TB072`), and what does not classify is a finding; a helper mirrors the
+constructor it feeds — the same parameters, each defaulted, passed straight
+through — and an assembly puts a test input together from parts without
+control flow (`TB073`);
+`skills/tesser-build/testing.md`), and the construction norm (`TB080` — a
+value object takes one primitive or exactly one `ts.Spec`; `TB083` — a
+spec initializes its own object and does nothing else — read anywhere but
+the `__init__` of the object that takes it, or kept on an object, is a
+finding; a mapper is its target — `ts.Mapper` plus the spec or DTO it maps
+to, one `super().__init__`, nothing stored, no other method (`TB080`);
+`skills/tesser-build/value-objects.md`, `skills/tesser-build/python.md`), and
+the application-service types (a relay, `ts.Relay` in `application/relays/`,
+is the protocol whose far side is this same context across a
+durable-execution engine, declared with the messages it speaks and a
+snapshot — `ts.Serde` — for each; one relay kind, because lifetime is not a
+property of the protocol. It is named for its far side — the class of
+actions, orchestrator, or workflow its dispatchers reach through a handler —
+and carries any number of operations, each written `start_`, `run_`, or
+`await_` plus the operation; a relay that awaits a durable promise is named
+`<FarSide>SignalRelay` and carries only `await_` operations, and the
+promise's name is a constant in `application/relays/`. An orchestrator,
+`ts.Orchestrator` in `application/orchestrators/`, depends on relays and
+action ports; a class of actions, `ts.Actions`, has exactly one port and one
+call on it per method, never holds a relay, and is reached only through a
+`tesser.application.Client` in `application/client/`. Four adapter kinds
+carry the engine, and no call site writes a service or handler name: an
+activity, `ts.Activity` in `adapters/activities/`, registers one action's
+handler into the engine container it is handed and keeps it as
+`self.handler`; a workflow, `ts.Workflow` in `adapters/workflows/`, registers
+the workflow's `main` and builds the orchestrator for each invocation; a
+signal, `ts.Signal` in `adapters/dispatchers/`, registers a shared handler
+that resolves the workflow's promise, after getting the state the workflow's
+`main` sets (a relays constant named for the main's operation) and refusing
+with a terminal 412 when it is absent, because Restate runs a shared handler
+on a key whose `main` never ran; a dispatcher, `ts.Dispatcher` in
+`workflows/` or `dispatchers/`, implements a relay by holding the callee's
+instance and passing its `.handler` to the SDK's typed call
+(`wf_ctx.service_call(...)` inside an invocation, `workflow_call(...)` over
+HTTP from outside). Imports go one way, dispatchers → workflows →
+activities; only an activity imports the application client and only a
+workflow the orchestrators. The component builds the engine containers and
+publishes them beside its client, then builds activities → workflow →
+signals → dispatcher → services; TB085 derives every name from those typed
+references, and holds a registration class to one registered handler that
+performs its operation (an activity calls its application client, a signal
+resolves its promise), a container to unique handler names, a dispatcher to no
+engine call by name and to the call kind of its target, a relays constant
+to one assignment, and a state a `main` sets or a signal gets to a relays
+constant equal to that `main`'s operation — a guard that is required: every
+signal gets that started state before it resolves its promise, and a `main`
+whose container has a signal sets it; a `workflows/` module imports no HTTP client and reads no
+`restate` client factory (TB060), because a call from inside an invocation
+goes through its context, where the engine journals it.
+`ts.Runner`, `ts.Runtime`, `ts.DeprecatedWorkflow`,
+`adapters/runners/` and `adapters/runtimes/` are deprecated: their rules still
+run, but no tree uses them, and their removal is queued
+— `TB041`/`TB052`/`TB060`/`TB070`/`TB081`/`TB082`/`TB085`;
+`docs/design-app-service-types.md`, `skills/tesser-build/python.md`).
+The full check list with per-code rules is `tessercheck-py/RULES.md`.
+
+Build a VO the canonical way: private fields, a single validating constructor as
+the only construction path, value equality (not representation equality), and no
+representation leak. **Consistency is the point** — a value object built a
+different way each time buys nothing on the change-speed axis (see below).
+
+## Where the "why" lives — read before changing the analyzers or conventions
+
+The design docs (`docs/design-*.md`) carry the reasoning behind each
+convention family; read the one for the rule you are changing.
+
+Deeper rationale and provenance live in the brain at `~/workspace/brain`
+(`originals/changeability-silent-site-cost.md`,
+`originals/obligations-conformance-changeability.md`). Use `gbrain search` for
+semantic lookups across it.
+
+## Verify
+
+**`scripts/verify` runs every gate CI runs** — the same commands, from the
+same definitions, because the CI jobs call this script rather than inlining
+their own copies. If it is green, CI is green.
+
+```
+python3 -m venv .venv && source .venv/bin/activate
+scripts/install-dev                      # every tree's requirements-dev.txt
+scripts/verify                           # every Python tree, from manifest.json
+scripts/verify python-app serdepy        # or just the ones you touched
+```
+
+**Every directory says what it is** (`docs/design-repo-layout.md`).
+`manifest.json` has a row for every top-level directory and every `examples/*`
+directory — two kinds only, `app` and `ungated`, because everything is an app.
+Each tree that tessercheck runs on carries a `.tesser-root` file (first line
+`app`, then only `skip <dir>`, `export <dir>`, `import <package>`, and
+`stdlib <module>` lines —
+anything specific to one repo goes in this file, never in the analyzer's
+code; a `skip` line is added only with the user's explicit permission,
+because a skipped directory is outside every norm; at most one `export` line, because a tree has one exported kernel). A missing, unreadable, wrong, or
+nested `.tesser-root` is a `TB044` finding; a symlinked directory inside a
+declared tree is `TB045`; when either fires, it is the only finding reported —
+the analyzer says what the directory is before saying anything about its
+contents. The layout check is itself an app (`layout/` — domain rules, a
+filesystem reader, a client, and `srv/cli` entry points, gated at the same
+bar as every other tree). Run by `scripts/verify` as step 0 and by its own CI
+job, it fails when the directories on disk, the manifest, the `.tesser-root`
+files, and the CI jobs disagree in any direction, including a
+`requirements-dev.txt` at any depth outside an `app` row and a stated Python
+floor that is not **3.12** (`requires-python`, ruff `target-version`, and every
+`python-version:` pin in the workflow; the floor is the `FLOOR` constant in
+`layout/repo/domain/rules.py`). **Do not create a new top-level directory (or
+`examples/` subdirectory) without adding its manifest row**; the check exists
+precisely to make that impossible to do silently. `scripts/verify` reads its
+tree list from the manifest, so a new `app` row must come with a `run_*` arm
+in the script and a CI job.
+
+Two things to know:
+
+- **`scripts/verify` covers more than the tree you are editing.** The
+  shipped analyzer runs a zero-findings gate over every example tree
+  (the nine `examples/*` `app` rows in `manifest.json`: `asyncpg`,
+  `durable-execution`, `errorspy`, `llmport`, `minimal`, `ports`,
+  `python-app`, `serdepy`, `voice` — the other five `app` rows are `generator`,
+  `layout`, `specs-app`, `tesser-py`, and `tessercheck-py`), so a
+  layout change in an example can break the analyzer without touching a file
+  under `tessercheck-py/`. That is not hypothetical — it has happened.
+- **`scripts/verify tesser-py` shells out to the real mutmut CLI.** The
+  ecosystem gate (`tesser-py/tests/ecosystem/mutmut/`) runs `mutmut` — pinned
+  exact at `==3.7.0` in `tesser-py/requirements-dev.txt` — over two fixture
+  projects, so that arm is slower than the others and it can go red because
+  the ecosystem moved, not because this repo changed. That is the gate doing
+  its job: read the failure before re-pinning around it.
+
+Every tessercheck gate is a plain zero-findings check — there is no ratchet
+and no code-family off switch. A finding is either fixed or carries a
+site-level `# tesser:debt TB0xx` at the line it excuses. Bare codes, no
+brackets: a debt marker whose payload does not parse as codes suppresses
+nothing, and a debt marker that suppresses nothing is itself a finding. The one
+exception: `TB044` (the tree's `.tesser-root` file) and `TB045` (a symlinked
+directory) report on files that cannot carry a Python comment and run before
+the suppression filter — they are fixed, never suppressed.
+
+## Git & shipping
+
+**Never commit directly to `main`** (Chris ruling 2026-07-19, superseding the
+earlier trunk-based convention). For every change set: work on a **worktree
+branch** (`.claude/worktrees/<name>`), commit there, and open a **PR**; merge
+after CI is green. After a set of file changes, commit (on the branch)
+before returning control. Write a descriptive message. Don't ask permission
+to commit. Stage files individually — never `git add -A`/`.`.
+
+## GBrain Search Guidance (configured by /sync-gbrain)
+<!-- gstack-gbrain-search-guidance:start -->
+
+GBrain is set up and synced on this machine. The agent should prefer gbrain
+over Grep when the question is semantic or when you don't know the exact
+identifier yet.
+
+**This worktree is pinned to a worktree-scoped code source** via the
+`.gbrain-source` file in the repo root (kubectl-style context).
+`gbrain code-def`, `code-refs`, `code-callers`, `code-callees`, `search`, and
+`query` from anywhere under this worktree route to that source by default —
+no `--source` flag needed (gbrain >= 0.41.38.0; on older gbrain the call-graph
+commands need `--source "$(cat .gbrain-source)"`). Conductor sibling worktrees
+of the same repo each have their own pin and their own indexed pages, so
+semantic results match the code on disk here.
+
+Call-graph queries (`code-callers`/`code-callees`) also need the graph to be
+built first — run `/sync-gbrain --dream` (or `--full`) if they return
+`count: 0`. This only works if this source's gbrain schema pack extracts code
+symbols; on a non-code-aware pack `--dream` completes but the graph stays empty
+and reports a WARN. `code-def`/`code-refs` need the same extraction.
+
+Two indexed corpora available via the `gbrain` CLI:
+- This worktree's code (auto-pinned via `.gbrain-source`).
+- `~/.gstack/` curated memory (registered as `gstack-brain-<user>` source via
+  the existing federation pipeline).
+
+Prefer gbrain when:
+- "Where is X handled?" / semantic intent, no exact string yet:
+    `gbrain search "<terms>"` or `gbrain query "<question>"`
+- "Where is symbol Y defined?" / symbol-based code questions:
+    `gbrain code-def <symbol>` or `gbrain code-refs <symbol>`
+- "What calls Y?" / "What does Y depend on?":
+    `gbrain code-callers <symbol>` / `gbrain code-callees <symbol>`
+- "What did we decide last time?" / past plans, retros, learnings:
+    `gbrain search "<terms>" --source gstack-brain-<user>`
+
+Grep is still right for known exact strings, regex, multiline patterns, and
+file globs. Run `/sync-gbrain` after meaningful code changes; for ongoing
+auto-sync across all worktrees, run `gbrain autopilot --install` once per
+machine — gbrain's daemon handles incremental refresh on a schedule.
+
+Safety: don't run `/sync-gbrain` while `gbrain autopilot` is active — the
+orchestrator refuses destructive source ops when it detects a running autopilot
+to avoid racing it (#1734). Prefer registering user repos with `gbrain sources
+add --path <dir>` (no `--url`): URL-managed sources can auto-reclone, and the
+sync code walk for them requires an explicit `--allow-reclone` opt-in.
+
+<!-- gstack-gbrain-search-guidance:end -->

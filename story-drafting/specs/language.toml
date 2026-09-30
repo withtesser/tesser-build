@@ -1,0 +1,133 @@
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
+#
+# 1 LANGUAGE — What do our words mean? The ubiquitous language of one bounded
+# context: one term, one meaning; one concept, one term (skills/tesser-build/
+# strategic-design.md#ubiquitous-language). Written by the product owner with
+# the agent; first, because every other spec is written in its words. Stories
+# speak these terms; every name in the composition spec is a term's code name
+# or a convention word below; each code name belongs to one term. Review, no
+# analyzer yet.
+#
+# status: "settled" (ruled on), "proposed" (a default made in the spike, for
+# review), "open" (nothing downstream may use it until settled).
+
+context = "drafting"
+
+[[terms]]
+term = "story-drafting skill"
+status = "proposed"
+means = "A procedure an agent follows with the developer, in fixed steps with checkpoints: story drafting for a job to be done, then wait for the developer's acceptance."
+code_names = ["conduct_story_drafting"]   # the orchestrator operation that runs the whole procedure; the class is named by convention
+not = ["harness", "workflow", "flow"]
+
+[[terms]]
+term = "job to be done"
+short = "JTBD"
+status = "proposed"
+means = "What a developer needs done, written as / I want / so that, naming no solution. What the skill runs on: it holds its stories and has one checkpoint."
+code_names = ["Jtbd", "jtbd_id", "role", "i_want", "so_that"]   # "as" is a Python keyword; role is specs-app's name for it
+not = ["job", "task", "goal", "story draft", "draft", "run"]
+
+[[terms]]
+term = "story"
+status = "proposed"
+means = "One given / when / then that would fulfil its job to be done, with a story state."
+code_names = ["Story", "stories", "given", "when", "then"]
+not = ["user story", "scenario", "requirement", "story draft"]
+note = "The same shape story.toml uses for its own stories: the skill drafts what this spec is written in."
+
+[[terms]]
+term = "story text"
+status = "proposed"
+means = "The given / when / then a story drafting produces, before the job to be done gives it a state."
+code_names = ["StoryText", "story_texts"]
+not = ["drafted story", "draft"]
+
+[[terms]]
+term = "recording stories"
+status = "proposed"
+means = "Keeping a story drafting's story texts as the job to be done's stories, each drafted."
+code_names = ["record_stories", "recorded"]
+not = ["saving stories", "storing stories"]
+
+[[terms]]
+term = "story state"
+status = "proposed"
+means = "Where a story stands: drafted (written, not yet decided), accepted (the developer keeps it), rejected (the developer does not)."
+code_names = ["StoryState", "state", "drafted", "accepted"]
+not = ["picked", "approved", "declined", "pending"]
+
+[[terms]]
+term = "story drafting"
+status = "proposed"
+means = "The step in which story texts are written for a job to be done. A story drafting yields at least one story."
+code_names = ["draft_stories", "StoryDrafter"]
+not = ["drafting", "composing", "writing", "generating"]   # drafting alone does not say what is drafted
+
+[[terms]]
+term = "status"
+status = "proposed"
+means = "Where a job to be done stands, following from its stories' states: drafting stories (none yet), awaiting story acceptance (any story drafted)."
+code_names = ["status", "JtbdStatus", "drafting_stories", "awaiting_story_acceptance"]
+note = "stories_decided arrives with the accept story."
+
+[[terms]]
+term = "checkpoint"
+status = "proposed"
+means = "A point in the procedure where the developer weighs in, fixed in advance, that the agent cannot skip. A job to be done has one: after story drafting, it waits for the developer's acceptance."
+code_names = []                              # spoken through status (awaiting_story_acceptance) and the act at it (accept_stories)
+not = ["gate", "approval step"]
+
+[[terms]]
+term = "accept"
+status = "settled"                           # Chris, 2026-09-29
+means = "What the developer does at the checkpoint: one decision over the drafted stories — the stories named are accepted, the rest rejected."
+code_names = ["accept_stories"]
+not = ["pick", "approve", "choose", "select"]
+
+[[terms]]
+term = "reject"
+status = "open"
+means = "The other half of the same decision: a drafted story the developer does not name when accepting."
+code_names = []                              # no act of its own; the state is story state's
+not = ["decline", "discard", "drop"]
+note = "out of scope until the accept story"
+
+[[terms]]
+term = "submit"
+status = "proposed"
+means = "Hand a job to be done to the story-drafting skill, which begins its story drafting."
+code_names = ["submit_jtbd"]
+not = ["start", "begin", "open", "create"]
+note = "start_ is reserved for relay operations (TB085), so the story says submit too, and the story and the code share one word."
+
+[[terms]]
+term = "revise"
+status = "proposed"
+means = "Having a job to be done's stories drafted again with the developer's note. Out of scope; it would add story drafting rounds and reopen the one-round decision below."
+code_names = []
+
+# ---- convention words: technical vocabulary the code may use outside the terms
+
+[conventions]
+verbs = ["issue", "save", "load", "get"]             # identity, persistence, and read operations
+kinds = ["Repository", "Store", "Actions", "Orchestrator", "Client", "Service", "Spec", "View"]
+adapters = ["Uuid", "Memory", "Template"]                      # an adapter is named for how it works
+
+# ---- decisions made in the spike, for review ---------------------------------
+
+[[decisions]]
+question = "What holds one start of the skill?"
+decided = "The job to be done itself. No separate story draft, draft set, or run."
+
+[[decisions]]
+question = "How many stories does one acceptance take?"
+decided = "Any number: one decision over the set — the stories named are accepted, the rest rejected."
+consequence = "One durable promise per job to be done, resolved once."
+
+[[decisions]]
+question = "Can a job to be done be drafted more than once?"
+decided = "Not for now: one story drafting round, one checkpoint, and the job to be done's id keys the workflow. Revise would reopen this."

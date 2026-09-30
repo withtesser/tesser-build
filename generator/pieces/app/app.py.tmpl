@@ -1,0 +1,88 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import os
+{{#identity_seeded}}
+import secrets
+{{/identity_seeded}}
+import typing
+
+import tesser.app as ts
+
+import {{context}}.component as {{context}}_component
+import tesser.errors as errors
+{{#identity_seeded}}
+
+_IDENTITY_SEED_BITS: typing.Final[int] = 128
+{{/identity_seeded}}
+
+
+class Spec(ts.Spec):
+
+    def __init__(self, {{context}}: {{context}}_component.Config) -> None:
+        self.{{context}} = {{context}}
+
+
+class AppConfig(ts.Config):
+
+    def __init__(self, spec: Spec) -> None:
+        self.{{context}} = spec.{{context}}
+
+
+class {{App}}App(ts.App):
+
+    def __init__(self, app_config: AppConfig) -> None:
+        self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}})
+
+    async def open(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        await self.{{context}}.close()
+
+
+class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
+
+    def get(self) -> AppConfig: ...
+
+
+class EnvConfigRepository(AppConfigRepository):
+
+    def get(self) -> AppConfig:
+        ingress = os.environ.get("{{ingress_variable}}")
+        if ingress is None:
+            raise errors.invalid("missing_env", "{{ingress_variable}} is required")
+{{#locations}}
+        {{location_attr}} = os.environ.get("{{location_variable}}")
+        if {{location_attr}} is None:
+            raise errors.invalid("missing_env", "{{location_variable}} is required")
+{{/locations}}
+        return AppConfig(
+            Spec(
+                {{context}}={{context}}_component.Config(
+                    {{context}}_component.Spec(
+                        ingress=ingress,
+{{#identity_seeded}}
+                        identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
+{{/identity_seeded}}
+{{#locations}}
+                        {{location_attr}}={{location_attr}},
+{{/locations}}
+                    )
+                )
+            )
+        )
+
+
+class AppLoader(ts.Loader):
+
+    def __init__(self, app_config_repository: AppConfigRepository) -> None:
+        self._app_config_repository = app_config_repository
+
+    def load(self) -> {{App}}App:
+        return {{App}}App(self._app_config_repository.get())
+
+
+@ts.load
+def load() -> {{App}}App:
+    return AppLoader(EnvConfigRepository()).load()
