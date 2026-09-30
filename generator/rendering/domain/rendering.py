@@ -1122,12 +1122,16 @@ class Model(ts.Entity):
             pattern, description = PATTERNS[pattern_name]
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
                 raise ValueError(f"{where} names {name!r}, which is not a {description}")
-        code_names = {str(code_name) for term in language.get("terms", []) for code_name in term.get("code_names", [])}
+        domain_nouns = {str(code_name) for term in language.get("terms", []) for code_name in term.get("code_names", [])}
+        for term in language.get("terms", []):
+            for spelling in (term.get("term"), term.get("short")):
+                if spelling:
+                    domain_nouns.add(str(Word(re.sub(r"[^A-Za-z0-9]+", "_", str(spelling)).strip("_").lower()).pascal()))
         for key, table in composition.get("actions", {}).items():
-            if str(Word(str(key)).pascal()) not in code_names:
-                raise ValueError(f"[actions.{key}] is named for {str(Word(str(key)).pascal())!r}, which is not a code name in "
-                                 f"language.toml; a class of actions is named for the domain term it acts on, never for its "
-                                 f"port ({table.get('port', '')})")
+            if str(Word(str(key)).pascal()) not in domain_nouns:
+                raise ValueError(f"[actions.{key}] is named for {str(Word(str(key)).pascal())!r}, which is neither a term nor a "
+                                 f"code name in language.toml; a class of actions is named for the domain term it acts on "
+                                 f"(a term's name or its short form), never for its port ({table.get('port', '')})")
             for operation_name, operation in table.get("operations", {}).items():
                 if "builds" in operation and str(operation["builds"]) != self._Aggregate:
                     raise ValueError(f"actions.{key}.operations.{operation_name} builds {str(operation['builds'])!r}, and the "
