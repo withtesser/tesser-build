@@ -1,0 +1,197 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import asyncio
+import typing
+import uuid
+
+import tesser.testing as ts
+import httpx
+import hypercorn.asyncio as hypercorn_asyncio
+import hypercorn.config as hypercorn_config
+import hypercorn.typing as hypercorn_typing
+import restate
+
+import {{context}}.adapters.activities as activities
+import {{context}}.adapters.dispatchers as dispatchers
+import {{context}}.adapters.workflows as workflows
+import {{context}}.application.client as client
+import {{context}}.application.relays as relays
+{{#application_clients}}
+
+
+@ts.fake
+class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
+
+    def __init__(self, released: asyncio.Event) -> None:
+        self.released = released
+        self.received: list[{{received_type}}] = []
+{{#calls}}
+
+    async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
+        self.received.append({{operation}}_request)
+        await asyncio.wait_for(self.released.wait(), timeout=30.0)
+        return relays.{{Operation}}Response({{echo}})
+{{/calls}}
+{{/application_clients}}
+
+
+class Test{{Dispatcher}}:
+{{#start_methods}}
+
+    async def test_{{method}}_starts_the_workflow_the_engine_keys_by_the_{{identity}}_and_does_not_wait(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
+        workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
+        suffix = uuid.uuid4().hex
+        released = asyncio.Event()
+{{#containers}}
+        {{container_attr}} = restate.{{container_kind}}(f"{{container}}{suffix}")
+{{/containers}}
+        {{workflow_param}} = workflows.{{Workflow}}(
+            {{workflow_container_attr}},
+{{#workflow_activities}}
+            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
+{{/workflow_activities}}
+        )
+        port = free_port
+        hypercorn_config_config = hypercorn_config.Config()
+        hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
+        shutdown = asyncio.Event()
+        serving = asyncio.create_task(
+            hypercorn_asyncio.serve(
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([{{served_containers}}])),
+                hypercorn_config_config,
+                shutdown_trigger=shutdown.wait,
+            )
+        )
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
+        registered = httpx.Response(503)
+        started: list[dict[str, str]] = []
+        try:
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
+                registered = await admin.post(
+                    "/deployments",
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
+                )
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
+                    break
+                await asyncio.sleep(0.1)
+            assert registered.is_success, registered.text
+
+            try:
+                {{result}} = await asyncio.wait_for(
+                    dispatchers.{{Dispatcher}}(engine_url, {{workflow_param}}).{{method}}(
+                        relays.{{Request}}({{keyed_request_sample}})
+                    ),
+                    timeout=15.0,
+                )
+            except TimeoutError as timed_out:
+                raise AssertionError(
+                    "{{method}} did not return within 15 s although the workflow is held at its first step: "
+                    "the relay waits for the workflow to finish"
+                ) from timed_out
+            polling_until = asyncio.get_running_loop().time() + 30.0
+            while asyncio.get_running_loop().time() < polling_until:
+                invoked = await admin.post(
+                    "/query",
+                    headers={"accept": "application/json"},
+                    json={
+                        "query": "SELECT id, target_service_key, invoked_by, status FROM sys_invocation "
+                        f"WHERE target_service_name = '{{workflow_container}}{suffix}'"
+                    },
+                )
+                started = invoked.json()["rows"]
+                if started:
+                    break
+                await asyncio.sleep(0.1)
+
+            assert {{result}} == relays.{{Returns}}({{identity}}=workflow_key)
+            assert [(row["target_service_key"], row["invoked_by"], row["status"] != "completed") for row in started] == [
+                (workflow_key, "ingress", True)
+            ]
+        finally:
+            released.set()
+            for row in started:
+                await admin.patch(f"/invocations/{row['id']}/kill")
+            if registered.is_success:
+                await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
+            await admin.aclose()
+            shutdown.set()
+            await asyncio.wait([serving], timeout=1.0)
+            serving.cancel()
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
+{{/start_methods}}
+{{#run_methods}}
+
+    async def test_{{method}}_runs_the_workflow_the_engine_keys_by_the_{{identity}}_and_answers_what_it_answered(
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
+    ) -> None:
+        workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
+        suffix = uuid.uuid4().hex
+        released = asyncio.Event()
+        released.set()
+{{#containers}}
+        {{container_attr}} = restate.{{container_kind}}(f"{{container}}{suffix}")
+{{/containers}}
+        {{workflow_param}} = workflows.{{Workflow}}(
+            {{workflow_container_attr}},
+{{#workflow_activities}}
+            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
+{{/workflow_activities}}
+        )
+        port = free_port
+        hypercorn_config_config = hypercorn_config.Config()
+        hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
+        shutdown = asyncio.Event()
+        serving = asyncio.create_task(
+            hypercorn_asyncio.serve(
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([{{served_containers}}])),
+                hypercorn_config_config,
+                shutdown_trigger=shutdown.wait,
+            )
+        )
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
+        registered = httpx.Response(503)
+        started: list[dict[str, str]] = []
+        try:
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
+                registered = await admin.post(
+                    "/deployments",
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
+                )
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
+                    break
+                await asyncio.sleep(0.1)
+            assert registered.is_success, registered.text
+
+            {{result}} = await dispatchers.{{Dispatcher}}(
+                engine_url, {{workflow_param}}
+            ).{{method}}(relays.{{Request}}({{keyed_request_sample}}))
+            invoked = await admin.post(
+                "/query",
+                headers={"accept": "application/json"},
+                json={
+                    "query": "SELECT id, target_service_key, invoked_by, status FROM sys_invocation "
+                    f"WHERE target_service_name = '{{workflow_container}}{suffix}'"
+                },
+            )
+            started = invoked.json()["rows"]
+
+            assert isinstance({{result}}, relays.{{Returns}})
+            assert [(row["target_service_key"], row["invoked_by"], row["status"]) for row in started] == [
+                (workflow_key, "ingress", "completed")
+            ]
+        finally:
+            for row in started:
+                await admin.patch(f"/invocations/{row['id']}/kill")
+            if registered.is_success:
+                await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
+            await admin.aclose()
+            shutdown.set()
+            await asyncio.wait([serving], timeout=1.0)
+            serving.cancel()
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
+{{/run_methods}}

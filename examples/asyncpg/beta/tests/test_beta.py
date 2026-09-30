@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+
+import beta.client as client
+import beta.component as component
+import pgdatabase.database as pgdatabase_database
+
+
+class TestBetaContext:
+
+    async def test_a_held_key_is_reported_held_and_an_unknown_key_is_not(self, storage_url: str) -> None:
+        config = component.Config(component.Spec(storage=storage_url))
+        database = pgdatabase_database.Database(config.database)
+        await database.open()
+        beta = component.Beta(config, database)
+        hold_key_response = await beta.client.hold_key(client.HoldKeyRequest(key="ctx-beta"))
+        checked = await beta.client.check_key(client.CheckKeyRequest(key="ctx-beta"))
+        unknown = await beta.client.check_key(client.CheckKeyRequest(key="ctx-beta-never-held"))
+        await beta.close()
+        await database.close()
+        assert hold_key_response.key == "ctx-beta"
+        assert checked.held == "yes"
+        assert unknown.held == "no"

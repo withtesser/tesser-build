@@ -1,0 +1,42 @@
+app_name = "library"
+bounded_context_name = "loans"
+aggregate_root_class_name = "Loan"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "loan_id"
+identity_port_operation_name = "issue_loan_id"
+
+[aggregate_fields]
+borrower_name = "str"
+days = "int"
+
+[sample_values]
+loan_id = ["loan-1", "loan-2"]
+borrower_name = ["Ada", "Grace"]
+days = [7, 14]
+
+[client]
+write_operation_name = "lend_book"
+read_operation_name = "get_loan"
+read_response_fields = ["loan_id", "borrower_name", "days"]
+
+[orchestrator]
+operation_name = "arrange_loan"
+
+[action]
+operation_name = "record_loan"
+
+[repository]
+save_operation_name = "save_loan"
+load_operation_name = "load_loan"
+load_response_collection_name = "loans"
+
+[acceptance_test]
+test_class_name = "TestLendingBooks"
+test_method_name = "test_a_lent_book_is_read_back_with_its_days"
+asserted_field = "days"
+random_values = [7, 14, 21, 28]
+
+[environment_variables]
+engine_url = "RESTATE_URL"

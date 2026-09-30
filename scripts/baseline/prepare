@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+#
+# Prepare one baseline run: a fresh worktree and a fresh Restate server for a
+# subagent to work one phase of the story-drafting build in.
+#
+#   scripts/baseline/prepare red   story-drafting-scaffold-v2 <run-name> <slot>
+#   scripts/baseline/prepare red-specs story-drafting-scaffold-s1 <run-name> <slot>
+#   scripts/baseline/prepare green-specs story-drafting-scaffold-g5 <run-name> <slot>
+#   scripts/baseline/prepare green <red-run-branch>  <run-name> <slot>
+#
+# The worktree is .claude/worktrees/run-<run-name> on branch
+# baseline/runs/<run-name>, cut from <base-ref>, so every run of a phase
+# starts from the same commit: a red run from the empty scaffold tag (the
+# story-drafting tree on the branch is a finished green run, not a start; the
+# scaffold is cut by scripts/baseline/scaffold). The slot (0-9) gives the run its own Restate
+# container (tesser-story-drafting-restate-<slot>, engine URL on port 38080+100*slot,
+# admin 39070+100*slot) and ten host ports from 9300+10*slot, so runs in
+# different slots go side by side; the container is replaced, so a run never
+# inherits another's registrations. The filled prompt lands in
+# .baseline-runs/<run-name>/prompt.md for the orchestrating session to hand to
+# a subagent; afterwards scripts/baseline/measure reads the transcript, and
+# scripts/baseline/record commits the numbers (.baseline-runs/ is gitignored:
+# transcripts carry machine-local paths).
+#
+set -euo pipefail
+
+if [ $# -ne 4 ]; then
+  echo "usage: scripts/baseline/prepare red|red-specs|green|green-specs <base-ref> <run-name> <slot>" >&2
+  exit 2
+fi
+phase=$1
+base=$2
+name=$3
+slot=$4
+case "$slot" in [0-9]) ;; *) echo "baseline: slot is 0-9" >&2; exit 2 ;; esac
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+prompt="$HERE/prompts/$phase.md"
+[ -f "$prompt" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
+
+# A {name} the prompt uses that is not a run value stops the prepare here,
+# before it starts a container or cuts a worktree it would leave behind.
+python3 - "$prompt" <<'PY'
+import re, sys
+known = {"worktree", "venv", "engine_url", "admin", "port_last", "port", "spec", "log"}
+text = re.sub(r"\{\{(?:FILE|SECTION|EXAMPLE):[^}]+\}\}", "", open(sys.argv[1]).read())
+unknown = sorted({m for m in re.findall(r"(?<!\{)\{([a-z_]+)\}(?!\})", text) if m not in known})
+if unknown:
+    sys.exit(f"baseline: the prompt names {', '.join('{' + n + '}' for n in unknown)}, which is not a run value")
+PY
+
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+wt="$MAIN/.claude/worktrees/run-$name"
+branch="baseline/runs/$name"
+out="$MAIN/.baseline-runs/$name"
+[ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
+[ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
+
+engine_port=$((38080 + 100 * slot))
+admin_port=$((39070 + 100 * slot))
+host_port=$((9300 + 10 * slot))
+container="tesser-story-drafting-restate-$slot"
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker run -d --name "$container" -p "$engine_port:8080" -p "$admin_port:9070" \
+  --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
+for _ in $(seq 1 50); do
+  if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
+  sleep 0.2
+done
+
+# A prepare that fails from here on removes what it made, so the same run
+# can be prepared again.
+prepared=no
+undo() {
+  [ "$prepared" = yes ] && return
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  git branch -D "$branch" >/dev/null 2>&1 || true
+  rm -rf "$out"
+  docker rm -f "$container" >/dev/null 2>&1 || true
+}
+trap undo EXIT
+mkdir -p "$out"
+base_sha=$(git rev-parse "$base^{commit}")
+git worktree add -q -b "$branch" "$wt" "$base_sha"
+
+cat >"$out/run.json" <<JSON
+{"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "engine_url": "http://localhost:$engine_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+JSON
+
+# A red trial is shown a generated tree, rendered from a gated spec by the
+# worktree's own generator (library: http over memory), so the prompt can
+# carry what a generated host answers before the trial generates its own.
+# A red-specs trial writes the five-spec formats instead, so it is shown the
+# library composition's rendered tree (generator/compositions/library/).
+if [ "$phase" = red-specs ]; then
+  (cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.render \
+    compositions/library "$out/example/library" >/dev/null)
+else
+  (cd "$wt/generator" && PYTHONPATH=.:../tesser-py "$MAIN/.venv/bin/python3" -m srv.cli.generate \
+    specs/library.toml "$out/example/library" >/dev/null)
+fi
+
+# The prompt is a template. {name} is a run value; {{FILE:path}} is a file
+# from the trial's worktree at its base commit, {{SECTION:path#Heading}} one
+# "## Heading" section of such a file (to the next "## "), and
+# {{EXAMPLE:path}} a file of the example tree, each pasted verbatim (run
+# values are not filled inside them). A name, path, or heading that does not
+# resolve stops the prepare. {{AGENT_FILES}} is every tracked, non-empty
+# Python file of the worktree's story-drafting/ that carries no generated mark,
+# outside its acceptance tests: the files a red design leaves to green, which
+# differ with the design.
+WT="$wt" VENV="$MAIN/.venv" ENGINE_URL="http://localhost:$engine_port" ADMIN="http://localhost:$admin_port" \
+  PORT="$host_port" PORT_LAST="$((host_port + 9))" SPEC="$out/spec.toml" LOG="$out/verify.log" EXAMPLE="$out/example" \
+  python3 - "$prompt" "$out/prompt.md" <<'PY'
+import os, pathlib, re, subprocess, sys
+values = {"worktree": "WT", "venv": "VENV", "engine_url": "ENGINE_URL", "admin": "ADMIN", "port_last": "PORT_LAST", "port": "PORT", "spec": "SPEC", "log": "LOG"}
+roots = {"FILE": pathlib.Path(os.environ["WT"]), "EXAMPLE": pathlib.Path(os.environ["EXAMPLE"])}
+def fill(text):
+    def value(match):
+        if match.group(1) not in values:
+            sys.exit(f"baseline: the prompt names {{{match.group(1)}}}, which is not a run value")
+        return os.environ[values[match.group(1)]]
+    return re.sub(r"(?<!\{)\{([a-z_]+)\}(?!\})", value, text)
+def include(match):
+    kind, target = match.group(1), match.group(2)
+    relative, _, heading = target.partition("#") if kind == "SECTION" else (target, "", "")
+    path = roots["FILE" if kind == "SECTION" else kind] / relative
+    if not path.is_file():
+        sys.exit(f"baseline: the prompt includes {kind}:{target}, which is not a file")
+    text = path.read_text()
+    if kind == "SECTION":
+        found = re.search(r"^## " + re.escape(heading) + r"[^\n]*\n.*?(?=^## |\Z)", text, re.M | re.S)
+        if found is None:
+            sys.exit(f"baseline: the prompt includes {kind}:{target}, which names no section")
+        text = found.group(0)
+    return text.rstrip("\n")
+def agent_files():
+    tree = roots["FILE"] / "story-drafting"
+    listed = subprocess.run(["git", "ls-files", "--", "*.py"], cwd=tree, capture_output=True, text=True, check=True).stdout.split()
+    blocks = []
+    for relative in sorted(listed):
+        text = (tree / relative).read_text()
+        if relative.startswith("tests/") or not text.strip() or text.startswith("# pragma: tesser-generated"):
+            continue
+        blocks.append(f"`story-drafting/{relative}`:\n\n```python\n{text.rstrip(chr(10))}\n```")
+    if not blocks:
+        sys.exit("baseline: the prompt includes AGENT_FILES, and the tree has none")
+    return "\n\n".join(blocks)
+parts = re.split(r"(\{\{(?:(?:FILE|SECTION|EXAMPLE):[^}]+|AGENT_FILES)\}\})", open(sys.argv[1]).read())
+out = []
+for part in parts:
+    if part == "{{AGENT_FILES}}":
+        out.append(agent_files())
+        continue
+    token = re.fullmatch(r"\{\{(FILE|SECTION|EXAMPLE):([^}]+)\}\}", part)
+    out.append(include(token) if token else fill(part))
+open(sys.argv[2], "w").write("".join(out))
+PY
+prepared=yes
+echo "$out/prompt.md"

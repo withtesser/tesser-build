@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import collections.abc as collections_abc
+import os
+import secrets
+import typing
+
+import tesser.app as ts
+
+import {{context}}.component as {{context}}_component
+{{#storage_postgres}}
+import pgdatabase.database as pgdatabase_database
+{{/storage_postgres}}
+import tesser.errors as errors
+
+_IDENTITY_SEED_BITS: typing.Final[int] = 128
+
+
+class Spec(ts.Spec):
+
+    def __init__(self, {{context}}: {{context}}_component.Config) -> None:
+        self.{{context}} = {{context}}
+
+
+class AppConfig(ts.Config):
+
+    def __init__(self, spec: Spec) -> None:
+        self.{{context}} = spec.{{context}}
+
+
+class {{App}}App(ts.App):
+
+    def __init__(self, app_config: AppConfig) -> None:
+{{#storage_postgres}}
+        self.database = pgdatabase_database.Database(app_config.{{context}}.database)
+        self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}}, self.database)
+{{/storage_postgres}}
+{{#storage_memory}}
+        self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}})
+{{/storage_memory}}
+
+    async def open(self) -> None:
+{{#storage_postgres}}
+        await self.database.open()
+{{/storage_postgres}}
+{{#storage_memory}}
+        return None
+{{/storage_memory}}
+
+    async def close(self) -> None:
+        await self.{{context}}.close()
+{{#storage_postgres}}
+        await self.database.close()
+{{/storage_postgres}}
+
+
+class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
+
+    def get(self) -> AppConfig: ...
+
+
+class EnvConfigRepository(AppConfigRepository):
+
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
+    def get(self) -> AppConfig:
+{{#storage_postgres}}
+        {{context}}_storage = self._environ.get("{{storage_env}}")
+        if {{context}}_storage is None:
+            raise errors.invalid("missing_env", "{{storage_env}} is required")
+{{/storage_postgres}}
+        engine_url = self._environ.get("{{engine_url_env}}")
+        if engine_url is None:
+            raise errors.invalid("missing_env", "{{engine_url_env}} is required")
+        return AppConfig(
+            Spec(
+                {{context}}={{context}}_component.Config(
+                    {{context}}_component.Spec(
+{{#storage_postgres}}
+                        storage={{context}}_storage,
+{{/storage_postgres}}
+                        engine_url=engine_url,
+                        identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
+                    )
+                )
+            )
+        )
+
+
+class AppLoader(ts.Loader):
+
+    def __init__(self, app_config_repository: AppConfigRepository) -> None:
+        self._app_config_repository = app_config_repository
+
+    def load(self) -> {{App}}App:
+        return {{App}}App(self._app_config_repository.get())
+
+
+@ts.load
+def load() -> {{App}}App:
+    return AppLoader(EnvConfigRepository(os.environ)).load()

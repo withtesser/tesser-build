@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+import tesser.application as ts
+
+import beta.application.ports as ports
+import beta.client as client
+import beta.domain as domain
+import tesser.errors as errors
+
+
+class MapToHasKeyRequest(ts.Mapper, ports.HasKeyRequest):
+
+    def __init__(self, key: domain.Key) -> None:
+        super().__init__(key=str(key))
+
+
+class BetaService(ts.ApplicationService):
+
+    def __init__(self, key_repository: ports.KeyRepository) -> None:
+        self._key_repository = key_repository
+
+    def check_key(self, check_key_request: client.CheckKeyRequest) -> client.CheckKeyResponse:
+        try:
+            key = domain.Key(check_key_request.key)
+        except errors.DomainError as domain_error:
+            raise client.KeyRejected(domain_error.code, domain_error.message) from domain_error
+        has_key_response = self._key_repository.has_key(MapToHasKeyRequest(key))
+        return client.CheckKeyResponse(held=has_key_response.outcome.value)

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#
+# A cold codex review of one tree the A/B experiment produced.
+#
+#   scripts/baseline/ab/codex-review <label> <source-dir> [--with-tesser-py]
+#
+# Copies <source-dir> (no .git, virtualenv, or caches) to
+# $AB_REVIEW_ROOT/<label>/app (default /private/tmp/claude-501/codex-review),
+# beside a tesser-py copy for a tree that imports it, and writes the
+# requirements the tree was built from (the prose prompt, without its
+# running instructions) to REQUIREMENTS.md. Codex reads it with no session
+# context and is not told how the tree was made. The review lands in
+# $AB_REVIEW_ROOT/<label>/review.txt; the run has a 25 minute limit.
+#
+set -uo pipefail
+[ $# -ge 2 ] || { echo "usage: scripts/baseline/ab/codex-review <label> <source-dir> [--with-tesser-py]" >&2; exit 2; }
+label=$1
+src=$2
+with_tesser_py=${3:-}
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+root="${AB_REVIEW_ROOT:-/private/tmp/claude-501/codex-review}/$label"
+rm -rf "$root"; mkdir -p "$root/app"
+rsync -a --exclude .git --exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude .mypy_cache \
+  --exclude .coverage --exclude coverage.json --exclude .tesser "$src"/ "$root/app"/
+if [ "$with_tesser_py" = "--with-tesser-py" ]; then
+  rsync -a --exclude __pycache__ --exclude .pytest_cache --exclude .mypy_cache "$MAIN/tesser-py"/ "$root/tesser-py"/
+fi
+python3 - "$HERE/prompts/bare.md" "$root/app/REQUIREMENTS.md" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+body = text[text.index("Build the story-drafting HTTP API."):]
+body = body[:body.index("## Running it")].rstrip() + "\n"
+open(sys.argv[2], "w").write("# Requirements this code was built from\n\n" + body)
+PY
+source ~/.claude/skills/gstack/bin/gstack-codex-probe
+eval "$(~/.claude/skills/gstack/bin/gstack-paths)"
+TMPERR=$(mktemp "$TMP_ROOT/codex-err-XXXXXX")
+PROMPT='IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. Stay inside this directory and, if present, its sibling tesser-py directory (a library the code imports).
+
+You are a cold reviewer with no context about how this code was made. The code in this directory (`app`) was written to satisfy REQUIREMENTS.md. Review it adversarially, as you would before agreeing to own it. Cover: correctness against each requirement (run the code or its tests if you can; the sandbox is read-only, so copy what you need to a temp directory first), race conditions and failure handling, requirements the tests do not exercise, security and input handling, and how hard the code is to change. Report a numbered list, most severe first, each item with file:line, the input or scenario that fails, and the consequence. Then give a short changeability verdict: what would adding the "accept stories" step (the out-of-scope story in REQUIREMENTS.md) require, and where would it go? Write the list as soon as you have ten solid findings; do not keep exploring after that.'
+_gstack_codex_timeout_wrapper 1500 codex exec "$PROMPT" -C "$root/app" --skip-git-repo-check -s read-only -c "model=\"${GSTACK_CODEX_MODEL:-gpt-6-astra}\"" -c 'model_reasoning_effort="high"' -c 'web_search="cached"' --json < /dev/null 2>"$TMPERR" | PYTHONUNBUFFERED=1 python3 -u -c "
+import sys, json
+tc=0
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try:
+        o=json.loads(line); t=o.get('type','')
+        if t=='item.completed' and 'item' in o:
+            it=o['item']
+            if it.get('type')=='agent_message' and it.get('text'): print(it['text'], flush=True)
+        elif t=='turn.completed':
+            tc+=1; u=o.get('usage',{}); print('tokens used: %s' % (u.get('input_tokens',0)+u.get('output_tokens',0)), flush=True)
+        elif t=='turn.failed': print('[codex turn FAILED] '+str(o.get('error',{}).get('message','')), flush=True)
+    except Exception: pass
+if tc==0: print('[codex warning] No turn.completed event received')
+" > "$root/review.txt"
+echo "DONE $label -> $root/review.txt"

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# Install every tree's dev tooling into the active environment, so one
+# environment can run scripts/verify over all of them.
+#
+#   python3 -m venv .venv && source .venv/bin/activate
+#   scripts/install-dev
+#   scripts/verify
+#
+# It installs each app tree's own requirements-dev.txt rather than a curated union,
+# so this cannot drift when a tree adds a tool. The union today is mypy,
+# pytest, import-linter, and ruff floor-pinned, plus mutmut pinned exact
+# (==3.7.0 — the ecosystem test asserts that version's observed behavior).
+# No conflicts today, which is why a single environment works at all; the
+# exact pin is the one constraint that could collide if another tree ever
+# pins mutmut differently.
+#
+# CI does NOT use this: each job installs only its own tree's requirements, and
+# that isolation is load-bearing — it proves each requirements-dev.txt is
+# sufficient on its own. A shared environment would hide a missing entry.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT"
+
+# Every app row of manifest.json, the list scripts/verify reads too, so a tree
+# added to the manifest is installed without editing this script. (A fixed
+# list here once missed generator/, specs-app/ and story-drafting/, whose
+# tests need restate_sdk[harness].) Read with a while loop, not mapfile:
+# mapfile is a bash 4 builtin and macOS ships bash 3.2. CI does not run this
+# script at all, so nothing but a local run would ever catch a bash-4-ism here.
+files=()
+while IFS= read -r f; do
+  files+=("$f")
+done < <(python3 -c 'import json, os; [print(d + "/requirements-dev.txt") for d, kind in sorted(json.load(open("manifest.json")).items()) if kind == "app" and os.path.isfile(d + "/requirements-dev.txt")]')
+
+# Guard the empty case explicitly. Installing nothing and reporting success is
+# the same failure scripts/verify guards against when its tree list comes back
+# empty, and on bash 3.2 the bare "${files[@]}" below would otherwise fail as
+# an unbound variable rather than saying what went wrong.
+if [ ${#files[@]} -eq 0 ]; then
+  echo "install-dev: found no requirements-dev.txt files" >&2
+  exit 1
+fi
+
+echo "installing dev tooling from ${#files[@]} requirements files:"
+printf '  %s\n' "${files[@]}"
+
+args=()
+for f in "${files[@]}"; do
+  args+=(-r "$f")
+done
+
+pip install "${args[@]}"
+
+echo
+echo "done — run scripts/verify"

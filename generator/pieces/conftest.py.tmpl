@@ -1,0 +1,154 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+import contextlib
+import os
+{{#root_tier}}
+import pathlib
+import signal
+{{/root_tier}}
+import socket
+import subprocess
+import sys
+{{#root_tier}}
+import time
+{{/root_tier}}
+import typing
+
+{{#root_tier}}
+import httpx
+{{/root_tier}}
+import pytest
+import restate.harness as restate_harness
+
+_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _root)
+for _rel in (("..",), ("..", ".."), ("..", "..", "..")):
+    _candidate = os.path.abspath(os.path.join(_root, *_rel, "tesser-py"))
+    if os.path.isdir(_candidate):
+        sys.path.insert(0, _candidate)
+        break
+
+RESTATE_IMAGE: typing.Final[str] = "docker.io/restatedev/restate:1.7"
+{{#root_tier}}
+DEADLINE_SECONDS: typing.Final[float] = 30.0
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption("--host", help="the base URL of a host already served; without it the run serves its own")
+{{/root_tier}}
+{{#restate_engine}}
+
+
+@pytest.fixture(scope="session")
+def engine() -> typing.Iterator[restate_harness.RestateContainer]:
+    with private_engine() as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def engine_url(engine: restate_harness.RestateContainer) -> str:
+    return f"http://{engine.get_container_host_ip()}:{engine.get_exposed_port(8080)}"
+
+
+@pytest.fixture(scope="session")
+def engine_admin_url(engine: restate_harness.RestateContainer) -> str:
+    return f"http://{engine.get_container_host_ip()}:{engine.get_exposed_port(9070)}"
+
+
+@pytest.fixture(scope="session")
+def engine_callback_host() -> str:
+    return "host.docker.internal"
+{{/restate_engine}}
+{{#root_tier}}
+
+
+@pytest.fixture(scope="session")
+def host(request: pytest.FixtureRequest{{#located}}, tmp_path_factory: pytest.TempPathFactory{{/located}}) -> typing.Iterator[str]:
+    address = request.config.getoption("--host")
+    if address:
+        yield str(address)
+        return
+{{#located}}
+    locations = tmp_path_factory.mktemp("locations")
+{{/located}}
+    with private_engine() as host_engine:
+        port = unused_port()
+        served = subprocess.Popen(
+            [sys.executable, "-m", "srv.http.main"],
+            cwd=pathlib.Path(__file__).resolve().parent,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(sys.path),
+                "{{engine_url_variable}}": f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(8080)}",
+{{#locations}}
+                "{{location_variable}}": str(locations / "{{location_attr}}"),
+{{/locations}}
+                "{{listen_port_variable}}": str(port),
+            },
+            start_new_session=True,
+        )
+        with watchdog(["kill", "-KILL", f"-{served.pid}"]):
+            try:
+                register(
+                    served,
+                    f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(9070)}",
+                    f"http://host.docker.internal:{port}{{engine_path}}",
+                )
+                yield f"http://127.0.0.1:{port}"
+            finally:
+                os.killpg(served.pid, signal.SIGKILL)
+                served.wait()
+{{/root_tier}}
+
+
+@pytest.fixture
+def free_port() -> int:
+    return unused_port()
+
+
+def unused_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("0.0.0.0", 0))
+        return int(probe.getsockname()[1])
+{{#root_tier}}
+
+
+def register(served: subprocess.Popen[bytes], admin_url: str, uri: str) -> None:
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    answer = ""
+    while time.monotonic() < deadline:
+        if served.poll() is not None:
+            pytest.fail(f"the host exited with {served.returncode} before it could be registered")
+        try:
+            registered = httpx.post(f"{admin_url}/deployments", json={"uri": uri}, timeout=5.0)
+        except httpx.HTTPError as not_yet:
+            answer = repr(not_yet)
+        else:
+            if registered.is_success:
+                return
+            answer = registered.text
+        time.sleep(0.2)
+    pytest.fail(f"could not register {uri} at {admin_url} within {DEADLINE_SECONDS}s: {answer}")
+{{/root_tier}}
+
+
+@contextlib.contextmanager
+def private_engine() -> typing.Iterator[restate_harness.RestateContainer]:
+    with restate_harness.create_restate_container(restate_image=RESTATE_IMAGE) as container:
+        with watchdog(["docker", "rm", "-f", str(container.get_wrapped_container().id)]):
+            yield container
+
+
+@contextlib.contextmanager
+def watchdog(command: list[str]) -> typing.Iterator[None]:
+    guard = subprocess.Popen(
+        ["sh", "-c", 'cat >/dev/null; exec "$@"', "watchdog", *command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        yield
+    finally:
+        guard.kill()
+        guard.wait()

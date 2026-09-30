@@ -1,0 +1,44 @@
+app_name = "helpdesk"
+bounded_context_name = "tickets"
+aggregate_root_class_name = "Ticket"
+durable_execution_engine = "restate"
+storage = "postgres"
+host = "http"
+identity_field_name = "ticket_id"
+identity_port_operation_name = "issue_ticket_id"
+
+[aggregate_fields]
+subject = "str"
+priority = "int"
+
+[sample_values]
+ticket_id = ["ticket-1", "ticket-2"]
+subject = ["Printer jam", "Lost badge"]
+priority = [1, 2]
+
+[client]
+write_operation_name = "open_ticket"
+read_operation_name = "get_ticket"
+read_response_fields = ["ticket_id", "subject", "priority"]
+
+[orchestrator]
+operation_name = "triage_ticket"
+calling_mode = "start"
+
+[action]
+operation_name = "record_ticket"
+
+[repository]
+save_operation_name = "save_ticket"
+load_operation_name = "load_ticket"
+load_response_collection_name = "tickets"
+
+[acceptance_test]
+test_class_name = "TestOpeningTickets"
+test_method_name = "test_an_opened_ticket_is_read_back_with_its_subject"
+asserted_field = "subject"
+random_values = ["Printer jam", "Lost badge", "No network"]
+
+[environment_variables]
+storage_url = "TICKETS_STORAGE"
+engine_url = "RESTATE_URL"

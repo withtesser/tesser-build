@@ -1,0 +1,73 @@
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
+#
+# 1 LANGUAGE — What do our words mean? The ubiquitous language of one bounded
+# context: one term, one meaning; one concept, one term. Meanings only: no
+# rules, no design, no tooling, no code names. A rule belongs in a story, a
+# design choice in the composition or infra, a scope decision in the story
+# spec's [scope]. Stories speak these terms; a class of actions in the
+# composition is named for one of them (the term's name, or its short form).
+# Review, no analyzer yet.
+#
+# status: "settled" (ruled on), "proposed" (written by the agent, awaiting the
+# product owner's review), "open" (nothing downstream may use it until settled).
+
+context = "drafting"
+
+[[terms]]
+term = "job to be done"
+short = "JTBD"
+status = "proposed"
+means = "What a developer needs done, written as \"as / I want / so that\", naming no solution."
+not = ["job", "task", "goal", "story draft", "draft", "run"]
+
+[[terms]]
+term = "story"
+status = "proposed"
+means = "One given / when / then that would fulfil a job to be done, with a story state."
+not = ["user story", "scenario", "requirement", "story draft"]
+
+[[terms]]
+term = "story state"
+status = "proposed"
+means = "Where a story stands: drafted (written, not yet decided), accepted (the developer keeps it), rejected (the developer does not)."
+not = ["picked", "approved", "declined", "pending"]
+
+[[terms]]
+term = "story drafting"
+status = "proposed"
+means = "Writing the given / when / then of stories for a job to be done."
+not = ["drafting", "composing", "writing", "generating"]   # drafting alone does not say what is drafted
+
+[[terms]]
+term = "status"
+status = "proposed"
+means = "Where a job to be done stands: drafting stories (it has none yet) or awaiting story acceptance (its stories are drafted and undecided)."
+
+[[terms]]
+term = "checkpoint"
+status = "proposed"
+means = "A point where the developer weighs in, fixed in advance, that the agent cannot skip."
+not = ["gate", "approval step"]
+
+[[terms]]
+term = "submit"
+status = "proposed"
+means = "Hand a job to be done to the story-drafting skill, so that it begins its story drafting."
+not = ["start", "begin", "open", "create"]
+
+[[terms]]
+term = "story-drafting skill"
+status = "proposed"
+means = "A procedure an agent follows with the developer, in fixed steps with checkpoints."
+not = ["harness", "workflow", "flow"]
+
+# ---- a word for a thing not built yet (no story uses it) -------------------------
+
+[[terms]]
+term = "accept"
+status = "settled"                           # Chris, 2026-09-29
+means = "What the developer does at the checkpoint: one decision over the drafted stories — the stories named are accepted, the rest rejected."
+not = ["pick", "approve", "choose", "select"]

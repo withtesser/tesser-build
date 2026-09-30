@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#
+# Cut a red scaffold: an orphan root commit carrying HEAD's tree with the
+# story-drafting app reduced to the specs a trial starts from
+# (story-drafting/specs/language.toml, story.toml and infra.toml, when HEAD has them), then
+# tag it.
+#
+#   scripts/baseline/scaffold story-drafting-scaffold-v4
+#
+# Orphan, so a trial's `git log` shows one commit and nothing of the history
+# that built the tools it is measured with. scripts/verify's story-drafting
+# arm is main's: the render check, tessercheck, mypy, and a plain pytest whose
+# rendered root conftest starts the engines and serves the host, so a red
+# trial writes no harness code.
+#
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+  echo "usage: scripts/baseline/scaffold <tag>" >&2
+  exit 2
+fi
+tag=$1
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || { echo "baseline: tag $tag exists" >&2; exit 1; }
+
+tmp=$(mktemp -d)
+trap 'git worktree remove --force "$tmp/tree" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+git worktree add -q --detach "$tmp/tree" HEAD
+(
+  cd "$tmp/tree"
+  git ls-files story-drafting | grep -v -E '^story-drafting/specs/(language|story|infra)\.toml$' | xargs git rm -q --
+  # The generator's own story-drafting composition is the answer a red-specs
+  # trial designs, so a scaffold never carries it.
+  if git ls-files --error-unmatch generator/compositions/story-drafting >/dev/null 2>&1; then
+    git rm -q -r generator/compositions/story-drafting
+  fi
+  # Earlier trials' recorded decisions (results/<trial>/, LEARNINGS.md, the
+  # A/B records and reviews) are answers too: a scaffold never carries the
+  # baseline's own records.
+  for recorded in scripts/baseline/results scripts/baseline/LEARNINGS.md scripts/baseline/ab/results; do
+    if git ls-files --error-unmatch "$recorded" >/dev/null 2>&1; then
+      git rm -q -r "$recorded"
+    fi
+  done
+  tree=$(git write-tree)
+  commit=$(git commit-tree "$tree" -m "story-drafting red scaffold")
+  git tag -a "$tag" "$commit" -m "Red scaffold: story-drafting holds only its two input specs"
+  echo "$tag $commit"
+)

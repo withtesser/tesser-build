@@ -1,0 +1,22 @@
+# 3 INFRA — what the app runs on, and what an operator must provide. See ../README.md.
+
+app = "library"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+[engine.restate]
+body = "supported"
+engine_path = "/restate"
+engine_url_variable = "RESTATE_URL"
+
+[hosts.http]
+serves = "interfaces.http"
+listen_port_variable = "LIBRARY_PORT"
+
+[storage.memory]
+
+[variables]
+RESTATE_URL = "the engine's URL, the one the client starts workflows through"
+LIBRARY_PORT = "the port the HTTP host listens on"
