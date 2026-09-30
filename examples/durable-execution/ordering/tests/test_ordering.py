@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -75,9 +73,9 @@ class TestOrderingContext:
 
 class TestOrderingThroughTheEngine:
 
-    async def test_each_declared_situation_reaches_the_caller_as_its_own_error(self) -> None:
+    async def test_each_declared_situation_reaches_the_caller_as_its_own_error(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         ordering = component.Ordering(
-            component.Config(component.Spec(engine_url=os.environ["RESTATE_URL"]))
+            component.Config(component.Spec(engine_url=engine_url))
         )
         containers: list[restate.Service | restate.Workflow] = [
             ordering.order_actions_service,
@@ -85,9 +83,7 @@ class TestOrderingThroughTheEngine:
             ordering.purchase_actions_service,
             ordering.purchase_orchestrator_workflow,
         ]
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -98,13 +94,13 @@ class TestOrderingThroughTheEngine:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break

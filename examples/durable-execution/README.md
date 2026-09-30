@@ -864,12 +864,14 @@ The activities, workflows, and dispatchers are tested against the real engine
 (`testing.md` rule 10: an adapter's dependency is exercised, not doubled).
 Each test builds the objects it tests over containers named with a fresh
 `uuid4` suffix, serves them on a port of its own with hypercorn, registers
-that endpoint with the Restate admin API at `DURABLE_CALLBACK_HOST`, calls
-the engine's URL with the objects' `.handler`s or the dispatcher under
-test, reads what the engine recorded in `sys_invocation`, and removes the
-deployment. The fresh names keep a test's rows apart from every earlier run on
-a shared server, and from the context test's registration of the component's
-own names. The test-side containers are not
+that endpoint with the Restate admin API (the root conftest's
+`engine_admin_url`) at `engine_callback_host`, calls the engine's URL
+(`engine_url`) with the objects' `.handler`s or the dispatcher under test,
+reads what the engine recorded in `sys_invocation`, and removes the
+deployment. The engine is private to the run — the root `conftest.py` starts
+it in a container on first use and removes it at the end — and the fresh names
+keep a test's rows apart from the context test's registration of the
+component's own names on it. The test-side containers are not
 ingress-private, which is what lets the activities test call an action
 at the engine's URL at all. What each test asks the engine to show is the one
 thing the tests around it cannot see: that Restate is really in the path
@@ -902,10 +904,10 @@ protocols; nothing stands in for Restate.
   row; a repeat run answers `ALREADY_STARTED`.
 
 The root `tests/` package plays the user (`docs/design-test-tiers.md`): it
-imports nothing of the app and reaches it only through the host the arm
-serves, at the address the arm passes as pytest's `--host` option (the
-`host` fixture in `tests/conftest.py`, which fails loudly when none was
-passed). It posts an
+imports nothing of the app and reaches it only through a served host, at
+the address the root conftest's `host` fixture answers: a second private
+engine, and `srv.http.main` served on a free port as a subprocess and
+registered with it (or, with `--host <url>`, a host already served). It posts an
 order to `POST /orders` and a purchase to `POST /purchases` and reads the
 totals and the payment reference off the answers, so the served host's own
 wiring — its client, the Restate endpoint it mounts, the catalog and the
@@ -917,17 +919,16 @@ own names and registers them the way the adapter tests do, and drives the
 client until each declared situation — `OrderAlreadyStarted`,
 `OrderNotConfirmed`, `ProductPriceNotFound`, `PaymentDeclined` — reaches it as
 its own error. Container names are literals, so this registration and the
-served host would claim the same names on the engine; the arm keeps them apart
-in time rather than renaming either. It runs `pytest --ignore=tests` first,
-with no host served, then serves the host and registers it (forcing over what
-the context test left), then runs `pytest tests` against it. `tests` is not in
-the tree's `testpaths`: pytest does not apply `--ignore` to a configured test
-path, and the root tier has nothing to reach until the host is served.
+served host would claim the same names on one engine; the two tiers use two
+engines rather than renaming either (`docs/design-test-tiers.md`, "The tests
+own their infrastructure"). So a plain `pytest` from this directory runs every
+tier, in any order, with nothing served beforehand and nothing read from the
+environment: Docker is the one thing it needs.
 
 What the engine cannot be made to say from a sibling test is not asserted
 there. A refusal that is not the already-invoked wording — a `409` saying
 `killed` or `cancelled` — reaches only the caller that created the invocation
-and only while its endpoint is unreachable, which the arm's own host cannot
+and only while its endpoint is unreachable, which the served host cannot
 arrange mid-suite; it was measured instead (below). And a body no Restate
 server sends — a `409` that is not JSON, a `200` that is not the workflow's
 result — is a conversation this adapter does not have, so no test provokes
@@ -969,8 +970,16 @@ Mounting under a prefix works because the SDK parses the tail: `parse_path`
 
 ## Running it
 
+The tests need only Docker:
+
 ```
 pip install -r requirements-dev.txt
+pytest                                              # every tier, on private engines
+```
+
+By hand:
+
+```
 docker run -d --name restate -p 18080:8080 -p 19070:9070 \
   --add-host=host.docker.internal:host-gateway docker.io/restatedev/restate:latest
 PYTHONPATH=.:../../tesser-py RESTATE_URL=http://localhost:18080 \
