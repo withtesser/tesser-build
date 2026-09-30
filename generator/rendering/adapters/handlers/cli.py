@@ -7,7 +7,9 @@ import tesser.adapters as ts
 import protocol
 import rendering.client as client
 
-_RENDER_USAGE: typing.Final[str] = "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir>"
+_RENDER_USAGE: typing.Final[str] = (
+    "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path>]..."
+)
 
 
 class Handler(ts.Handler):
@@ -16,12 +18,13 @@ class Handler(ts.Handler):
         self._rendering_client = rendering_client
 
     def render(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:
-        cli_request.no_options(_RENDER_USAGE)
-        composition_dir = cli_request.arg(0, "composition-dir", _RENDER_USAGE)
-        out_dir = cli_request.arg(1, "out-dir", _RENDER_USAGE)
-        cli_request.no_extra_args(2, _RENDER_USAGE)
+        positional, printed = cli_request.take_option("--print", "rendered-path", _RENDER_USAGE)
+        positional.no_options(_RENDER_USAGE)
+        composition_dir = positional.arg(0, "composition-dir", _RENDER_USAGE)
+        out_dir = positional.arg(1, "out-dir", _RENDER_USAGE)
+        positional.no_extra_args(2, _RENDER_USAGE)
         render_composition_response = self._rendering_client.render_composition(
-            client.RenderCompositionRequest(composition_dir=composition_dir, out_dir=out_dir)
+            client.RenderCompositionRequest(composition_dir=composition_dir, out_dir=out_dir, printed=printed)
         )
         if render_composition_response.problems:
             lines = "\n".join(f"render: {problem}" for problem in render_composition_response.problems)
@@ -29,6 +32,10 @@ class Handler(ts.Handler):
         return protocol.CliResponse.ok(
             "\n".join(render_composition_response.written)
             + "".join(f"\nkept {path}" for path in render_composition_response.kept)
+            + "".join(
+                f"\n\n--- {printed_file.path}\n{printed_file.text.removesuffix('\n')}"
+                for printed_file in render_composition_response.printed
+            )
         )
 
     def check(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:

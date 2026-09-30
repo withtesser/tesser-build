@@ -57,6 +57,21 @@ tessercheck_tree() {
   (cd "$ROOT/tessercheck-py" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.main "$1")
 }
 
+# stop_host <pid> <signal>: signals a served host, gives it two seconds to
+# exit, then kills it. A host whose Restate endpoint holds a suspended
+# invocation otherwise outlives its root tier by Restate's inactivity timeout
+# (about a minute), because cancelling that invocation's task waits on Restate.
+stop_host() {
+  kill "-$2" "$1" 2>/dev/null
+  local _
+  for _ in $(seq 1 20); do
+    kill -0 "$1" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -KILL "$1" 2>/dev/null
+  wait "$1" 2>/dev/null
+}
+
 run_llmport() {
   cd "$ROOT/examples/llmport" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -454,15 +469,13 @@ run_story_drafting() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
+    stop_host "$host" TERM
     return 1
   fi
   step "pytest the root tier (against the host on :$port)"
   pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
+  stop_host "$host" INT
   return "$status"
 }
 
@@ -672,16 +685,14 @@ run_generated_tree() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "generator: could not register $deployment with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
+    stop_host "$host" TERM
     return 1
   fi
   step "$spec: pytest the root tier against the served host"
   (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
     "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests ${root_args[@]+"${root_args[@]}"})
   local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
+  stop_host "$host" INT
   return "$status"
 }
 

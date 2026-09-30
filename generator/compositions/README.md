@@ -5,12 +5,16 @@ and writes a complete tesser app tree:
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path>]...
 ```
 
 It prints the path of every file it wrote, one per line (then `kept <path>` for
 each agent-owned file it left alone), and exits 0; or it prints every problem
-on stderr as `render: <problem>`, exits 1, and writes nothing.
+on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
+(repeatable) names a rendered path, relative to the output directory; after
+the list, each one follows as a `--- <path>` line and then the file verbatim,
+as the render leaves it (so a kept agent-owned file prints as it stands). A
+`--print` path the composition does not render is a problem.
 
 **The output directory** may already hold files, and rendering again is how a
 tree follows its composition:
@@ -133,7 +137,17 @@ when = "I POST them as JSON to /loans"          # says the method and the path
 then = "I get back 201 with its loan_id"        # says the status
 route = "POST /loans"                           # the method, a space, and the path
 status = 201                                    # the 2xx it answers with
-reached_by = "..."                              # optional, for the acceptance test's given
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-b-1"
+given = "the loan_id of a lent book"
+when = "I GET /loans/{loan_id}"
+then = "I get back 200 with its borrower and title"
+route = "GET /loans/{loan_id}"
+status = 200
+reached_by = [                                  # optional: the calls that reach the given, in order
+  { route = "POST /loans" },                    # a level-2 story's route, called with sample values
+]                                               # a step may add until = { <field> = <value> }: poll for it
 ```
 
 A route is observable, so it belongs to the level-2 story: each level-2 story
@@ -143,8 +157,26 @@ parameters — and its `status`, the 2xx it answers with. The `given`, `when`,
 and `then` stay prose, and the prose must state the route word for word: the
 method and the path are words of the `when` (`I GET /loans/{loan_id}`) and the
 status is a word of the `then` (`I get back 200 ...`). A level-2 story with a
-route that no client operation serves is a problem. Acceptance tests are
-written by hand from the level-2 stories; the renderer writes none.
+route that no client operation serves is a problem.
+
+`reached_by` says how the story's given is reached, as calls on the host: each
+step is a level-2 story's `route`, called with the sample values of its
+operation's request, and optionally an `until` of one response field and the
+value to poll for (at most 40 calls, a quarter second apart, then on). A
+`{field}` in a route's path — a step's, or the story's own — takes the value a
+step before it answered; one nothing before it answers is a problem.
+
+**Root test skeletons.** For each level-2 story with a route, the renderer
+writes an agent-owned `tests/test_<words>.py` (and `tests/__init__.py`), named
+for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
+replacing, `PATCH` updating, `DELETE` deleting) and the path's literal
+segments, so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
+`GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds.py`. It reaches the host
+through `ts.served("<APP>_HOST")`, reaches the given as `reached_by` says,
+calls the story's route, and asserts its `status`; where the then goes it
+fails with one placeholder assertion whose message is the story's `then`,
+verbatim. So a freshly rendered tree is red at each then until the author
+writes it, and rendering again keeps the edited test.
 
 ## 3 `composition.toml`
 
@@ -392,8 +424,9 @@ Every rendered file says on its first line who owns it:
   and render again, never the file (`--check` catches an edit).
 - `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
   agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
-  `test_<aggregate>.py`, and each `body = "agent"` implementation
-  (`<context>/adapters/gateways/<class>.py` and its test). A stub answers
+  `test_<aggregate>.py`, each `body = "agent"` implementation
+  (`<context>/adapters/gateways/<class>.py` and its test), and the root
+  test skeletons in `tests/` (above). A stub answers
   placeholders and never raises: a str read answers what the spec holds, a
   command its last outcome, an enum read its first value, a gateway
   `""`, `0`, or an empty list for each field it answers.
@@ -406,8 +439,14 @@ snapshots, `client/` application clients, `orchestrators/`), `adapters`
 (Restate `activities/`, `workflows/`, `dispatchers/`, the `handlers/http.py`
 HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
 `protocol/`, `srv/http/main.py` (the HTTP host serving the routes with the
-Restate endpoint at `engine_path`), `pyproject.toml`, `requirements-dev.txt`,
-`conftest.py`, and `.tesser-root`. Every module has its sibling test.
+Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons),
+`pyproject.toml`, `requirements-dev.txt`, `conftest.py`, and `.tesser-root`.
+Every module has its sibling test.
+
+A gate that serves `srv/http/main.py` for the root tier stops it with SIGINT
+and kills it if it has not exited two seconds later: a Restate endpoint
+holding a suspended invocation otherwise keeps the host alive until Restate's
+inactivity timeout, about a minute.
 
 **Derived names** (never written in a spec): `<Aggregate>Service`,
 `<Aggregate>Orchestrator` and its `<Aggregate>OrchestratorRelay`,
@@ -425,7 +464,8 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    name of every term a class of actions acts on.
 2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
    route serves carries its `route` and `status`, and its `when` and `then`
-   say them word for word.
+   say them word for word; a story whose given needs calls first says them in
+   `reached_by`.
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; exactly one orchestrator operation whose request holds
@@ -434,4 +474,5 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 4. `implementations.toml`: `app`; an implementation for every port;
    `[engine.restate]` with its three variables; an environment; `[hosts.http]`.
 5. `generator.toml`: two sample values for every field.
-6. Render into a fresh directory and run the gate on it.
+6. Render into a fresh directory and run the gate on it; then write each root
+   test's then where its skeleton's placeholder stands.

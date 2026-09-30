@@ -20,6 +20,26 @@ class MapToReadCompositionRequest(ts.Mapper, ports.ReadCompositionRequest):
 
 class MapToRenderedTreeSpec(ts.Mapper, domain.RenderedTreeSpec):
 
+    def __init__(
+        self, read_composition_response: ports.ReadCompositionResponse, render_composition_request: client.RenderCompositionRequest
+    ) -> None:
+        super().__init__(
+            documents=tuple(
+                (document_record.name, document_record.state.value, document_record.text)
+                for document_record in read_composition_response.documents
+            ),
+            pieces=tuple((piece_record.path, piece_record.text) for piece_record in read_composition_response.pieces),
+            target=read_composition_response.target.state.value,
+            existing=tuple(
+                (existing_file_record.path, existing_file_record.text)
+                for existing_file_record in read_composition_response.target.files
+            ),
+            printed=render_composition_request.printed,
+        )
+
+
+class MapToRenderedTreeSpecWhenChecked(ts.Mapper, domain.RenderedTreeSpec):
+
     def __init__(self, read_composition_response: ports.ReadCompositionResponse) -> None:
         super().__init__(
             documents=tuple(
@@ -32,6 +52,7 @@ class MapToRenderedTreeSpec(ts.Mapper, domain.RenderedTreeSpec):
                 (existing_file_record.path, existing_file_record.text)
                 for existing_file_record in read_composition_response.target.files
             ),
+            printed=(),
         )
 
 
@@ -57,13 +78,17 @@ class MapToRenderCompositionResponseWhenWritten(ts.Mapper, client.RenderComposit
             ),
             written=write_rendering_response.paths,
             kept=tuple(str(text) for text in rendered_tree.kept()),
+            printed=tuple(
+                client.PrintedFile(path=str(rendered_file.path()), text=str(rendered_file.content()))
+                for rendered_file in rendered_tree.printed()
+            ),
         )
 
 
 class MapToRenderCompositionResponseWithProblems(ts.Mapper, client.RenderCompositionResponse):
 
     def __init__(self, rendered_tree: domain.RenderedTree) -> None:
-        super().__init__(problems=tuple(str(text) for text in rendered_tree.problems()), written=(), kept=())
+        super().__init__(problems=tuple(str(text) for text in rendered_tree.problems()), written=(), kept=(), printed=())
 
 
 class MapToReadCompositionRequestWhenChecked(ts.Mapper, ports.ReadCompositionRequest):
@@ -97,7 +122,7 @@ class RenderingService(ts.ApplicationService):
         read_composition_response = self._composition_reader.read_composition(
             MapToReadCompositionRequest(render_composition_request)
         )
-        rendered_tree = domain.RenderedTree(MapToRenderedTreeSpec(read_composition_response))
+        rendered_tree = domain.RenderedTree(MapToRenderedTreeSpec(read_composition_response, render_composition_request))
         match rendered_tree.health():
             case domain.Health.CLEAN:
                 write_rendering_response = self._rendering_writer.write_rendering(
@@ -113,5 +138,5 @@ class RenderingService(ts.ApplicationService):
         read_composition_response = self._composition_reader.read_composition(
             MapToReadCompositionRequestWhenChecked(check_composition_request)
         )
-        rendered_tree = domain.RenderedTree(MapToRenderedTreeSpec(read_composition_response))
+        rendered_tree = domain.RenderedTree(MapToRenderedTreeSpecWhenChecked(read_composition_response))
         return MapToCheckCompositionResponse(rendered_tree)

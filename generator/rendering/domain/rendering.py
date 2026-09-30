@@ -65,6 +65,10 @@ READ: typing.Final[str] = "read"
 ROUTE: typing.Final[re.Pattern[str]] = re.compile(r"(GET|POST|PUT|PATCH|DELETE) (/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\})(?:/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\}))*)")
 
 PATH_FIELD: typing.Final[re.Pattern[str]] = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
+GERUNDS: typing.Final[dict[str, str]] = {
+    "GET": "reading", "POST": "submitting", "PUT": "replacing", "PATCH": "updating", "DELETE": "deleting",
+}
+POLLS: typing.Final[int] = 40
 
 WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 
@@ -2215,6 +2219,7 @@ class Model(ts.Entity):
         probes: list[dict[str, object]] = []
         answers: list[str] = []
         routed_stories: set[str] = set()
+        answered_by: dict[str, dict[str, object]] = {}
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             routed = [str(story) for story in operation.get("serves", []) if "route" in stories.get(str(story), {})]
@@ -2258,6 +2263,11 @@ class Model(ts.Entity):
             path_params = {field: json.loads(str(self._samples.value(t))) for t in request.targets()
                            for field in [str(t.field())] if field in path_fields}
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
+            answered_by[str(story["route"])] = {
+                "method": method, "path": path, "path_fields": path_fields,
+                "body": repr(json.dumps(body).encode()) if body else "None",
+                "responds": [str(t.field()) for t in response.targets()],
+            }
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
                 "status": str(status_code), "inputs": inputs, "has_inputs": [{}] if inputs else [],
@@ -2283,6 +2293,60 @@ class Model(ts.Entity):
         unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)
         if unserved:
             raise ValueError(f"{', '.join(unserved)} has a route, and no client operation serves it")
+        root_tests: list[dict[str, object]] = []
+        for story_id in sorted(routed_stories):
+            story = stories[story_id]
+            reached_by = story.get("reached_by", [])
+            if not isinstance(reached_by, list) or not all(isinstance(step, dict) for step in reached_by):
+                raise ValueError(f"{story_id}'s reached_by is not a list of steps like {{ route = \"POST /loans\" }}")
+            calls: list[tuple[dict[str, object], list[dict[str, str]]]] = []
+            for step in reached_by:
+                step_route = str(step.get("route", ""))
+                if step_route not in answered_by:
+                    raise ValueError(f"{story_id}'s reached_by names {step_route!r}, which is no level-2 story's route")
+                until = step.get("until", {})
+                if not isinstance(until, dict) or len(until) > 1:
+                    raise ValueError(f"{story_id}'s reached_by step {step_route} polls until one field has one value, "
+                                     "like until = { status = \"drafted\" }")
+                polling: list[dict[str, str]] = []
+                for until_field, until_value in until.items():
+                    if until_field not in typing.cast(list[str], answered_by[step_route]["responds"]):
+                        raise ValueError(f"{story_id}'s reached_by polls {step_route} until {until_field}, "
+                                         "which it does not answer")
+                    if not isinstance(until_value, (str, int)) or isinstance(until_value, bool):
+                        raise ValueError(f"{story_id}'s reached_by polls until {until_field} is text or an integer")
+                    polling.append({"until_field": str(until_field), "until_value": repr(until_value), "polls": str(POLLS)})
+                calls.append((answered_by[step_route], polling))
+            calls.append((answered_by[str(story["route"])], []))
+            reaching: list[dict[str, object]] = []
+            bound: set[str] = set()
+            for index, (call, polling) in enumerate(calls):
+                for field in typing.cast(list[str], call["path_fields"]):
+                    if field not in bound:
+                        raise ValueError(f"{story_id} reaches {call['method']} {call['path']}, and nothing before it "
+                                         f"in its reached_by answers {field}")
+                later = {field for later_call, _ in calls[index + 1:] for field in typing.cast(list[str], later_call["path_fields"])}
+                responds = typing.cast(list[str], call["responds"])
+                reaching.append({
+                    "method": call["method"], "path": PATH_FIELD.sub(r"{given_\1}", str(call["path"])), "body": call["body"],
+                    "once": [] if polling else [{}], "polling": polling,
+                    "binds": [{"field": field} for field in responds if field in later and field not in bound],
+                })
+                bound.update(responds)
+            final = reaching.pop()
+            method, path = str(calls[-1][0]["method"]), str(calls[-1][0]["path"])
+            words = "_".join([GERUNDS[method]] + [segment.replace("-", "_") for segment in path.strip("/").split("/")
+                                                   if not PATH_FIELD.fullmatch(segment)])
+            root_tests.append({
+                "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
+                "method": method, "path": final["path"], "body": final["body"],
+                "status": str(story["status"]), "given": reaching,
+                "polls": [{}] if any(step["polling"] for step in reaching) else [],
+                "reached": [{}] if reaching else [],
+                "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
+            })
+        self._binding["root_tests"] = root_tests
+        self._binding["host_variable"] = f"{self._app.upper()}_HOST"
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
         self._binding["route_probe_answers"] = ", ".join(answers)
@@ -2343,11 +2407,13 @@ class RenderedTreeSpec(ts.Spec):
         pieces: tuple[tuple[str, str], ...],
         target: str,
         existing: tuple[tuple[str, str], ...],
+        printed: tuple[str, ...],
     ) -> None:
         self.documents = documents
         self.pieces = pieces
         self.target = target
         self.existing = existing
+        self.printed = printed
 
 
 class RenderedTree(ts.AggregateRoot):
@@ -2421,6 +2487,11 @@ class RenderedTree(ts.AggregateRoot):
                 written.append(rendered_file)
             else:
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
+        on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
+        on_disk.update({str(path): RenderedFile(RenderedFileSpec(path=str(path), content=existing[str(path)])) for path in kept})
+        found.extend(Text(f"--print names {path}, which the composition does not render")
+                     for path in spec.printed if path not in on_disk and path not in paths)
+        self._printed = () if found else tuple(on_disk[path] for path in spec.printed)
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
@@ -2441,6 +2512,9 @@ class RenderedTree(ts.AggregateRoot):
 
     def kept(self) -> tuple[Text, ...]:
         return self._kept
+
+    def printed(self) -> tuple[RenderedFile, ...]:
+        return self._printed
 
     def drift(self) -> tuple[Text, ...]:
         return self._drift

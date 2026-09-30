@@ -53,7 +53,7 @@ class TestRenderingService:
         )
 
         render_composition_response = rendering_service.render_composition(
-            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out")
+            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out", printed=())
         )
 
         assert render_composition_response.problems == (
@@ -69,7 +69,7 @@ class TestRenderingService:
         fake_composition_reader = FakeCompositionReader(documents=(), pieces=())
 
         application.RenderingService(fake_composition_reader, FakeRenderingWriter()).render_composition(
-            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out")
+            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out", printed=())
         )
 
         assert [

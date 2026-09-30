@@ -36,6 +36,7 @@ id = "s-1-a-2"
 when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower"
 route = "GET /loans/{loan_id}"
+reached_by = [{ route = "POST /loans" }]
 status = 200
 """,
         ),
@@ -131,11 +132,30 @@ listen_port_variable = "LIBRARY_PORT"
     ),
     target: str = "absent",
     existing: tuple[tuple[str, str], ...] = (),
+    printed: tuple[str, ...] = (),
 ) -> domain.RenderedTreeSpec:
-    return domain.RenderedTreeSpec(documents=documents, pieces=pieces, target=target, existing=existing)
+    return domain.RenderedTreeSpec(documents=documents, pieces=pieces, target=target, existing=existing, printed=printed)
 
 
 class TestRenderedTree:
+
+    def test_a_printed_path_answers_what_the_render_leaves_there(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(
+            existing=(("lending/domain/loan.txt", "an edited loan\n"),),
+            printed=("routes.txt", "lending/domain/loan.txt"),
+        ))
+
+        assert [(str(printed.path()), str(printed.content())) for printed in rendered_tree.printed()] == [
+            ("routes.txt", "POST /loans 201\nGET /loans/{loan_id} 200\n"),
+            ("lending/domain/loan.txt", "an edited loan\n"),
+        ]
+
+    def test_a_printed_path_the_composition_does_not_render_is_a_problem(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(printed=("tests/test_nope.py",)))
+
+        assert ([str(problem) for problem in rendered_tree.problems()], rendered_tree.printed()) == (
+            ["--print names tests/test_nope.py, which the composition does not render"], (),
+        )
 
     def test_a_piece_renders_once_for_each_item_its_path_enters(self) -> None:
         rendered_tree = domain.RenderedTree(rendered_tree_spec())

@@ -20,7 +20,7 @@ class TestRendering:
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tmp_path / "pieces"))))
 
         render_composition_response = rendering.client.render_composition(
-            client.RenderCompositionRequest(composition_dir=str(tmp_path / "nowhere"), out_dir=str(tmp_path / "out"))
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "nowhere"), out_dir=str(tmp_path / "out"), printed=())
         )
         rendering.close()
 
