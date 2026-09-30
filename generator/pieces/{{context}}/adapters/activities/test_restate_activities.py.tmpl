@@ -60,12 +60,13 @@ class Test{{Activity}}:
         admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
         registered = httpx.Response(503)
         try:
-            for _ in range(50):
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
                 registered = await admin.post(
                     "/deployments",
                     json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
                 )
-                if registered.is_success:
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
@@ -84,7 +85,7 @@ class Test{{Activity}}:
             shutdown.set()
             await asyncio.wait([serving], timeout=1.0)
             serving.cancel()
-            await asyncio.gather(serving, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 {{/activities}}
 {{#first_activity}}
 
@@ -110,12 +111,13 @@ class TestRestateEngineRefusals:
         admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
         registered = httpx.Response(503)
         try:
-            for _ in range(50):
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
                 registered = await admin.post(
                     "/deployments",
                     json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
                 )
-                if registered.is_success:
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
@@ -137,7 +139,7 @@ class TestRestateEngineRefusals:
             shutdown.set()
             await asyncio.wait([serving], timeout=1.0)
             serving.cancel()
-            await asyncio.gather(serving, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 
     async def test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service(self) -> None:
         {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}", ingress_private=True)
@@ -158,12 +160,13 @@ class TestRestateEngineRefusals:
         admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
         registered = httpx.Response(503)
         try:
-            for _ in range(50):
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
                 registered = await admin.post(
                     "/deployments",
                     json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
                 )
-                if registered.is_success:
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
@@ -183,5 +186,5 @@ class TestRestateEngineRefusals:
             shutdown.set()
             await asyncio.wait([serving], timeout=1.0)
             serving.cancel()
-            await asyncio.gather(serving, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 {{/first_activity}}
