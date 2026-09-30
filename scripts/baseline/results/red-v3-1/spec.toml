@@ -1,0 +1,41 @@
+app_name = "story_drafting"
+bounded_context_name = "drafting"
+aggregate_root_class_name = "Run"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "run_id"
+identity_port_operation_name = "issue_run_id"
+
+[aggregate_fields]
+job = "str"
+
+[sample_values]
+run_id = ["run-1", "run-2"]
+job = ["Plan a trip", "Ship a release"]
+
+[client]
+write_operation_name = "open_run"
+read_operation_name = "get_run"
+read_response_fields = ["run_id", "job"]
+
+[orchestrator]
+operation_name = "draft_stories"
+
+[action]
+operation_name = "record_run"
+
+[repository]
+save_operation_name = "save_run"
+load_operation_name = "load_run"
+load_response_collection_name = "runs"
+
+[acceptance_test]
+test_class_name = "TestOpeningRuns"
+test_method_name = "test_an_opened_run_waits_for_a_pick_among_drafted_stories"
+asserted_field = "job"
+random_values = ["Plan a trip", "Ship a release", "Book a clinic visit"]
+
+[environment_variables]
+restate_ingress_url = "RESTATE_INGRESS"
+host_url = "STORY_DRAFTING_HOST"

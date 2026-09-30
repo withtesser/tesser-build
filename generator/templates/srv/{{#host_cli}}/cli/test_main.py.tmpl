@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+
+
+class TestCliHost:
+
+    def test_no_command_is_answered_with_the_usage_on_exit_two(self) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main"],
+            capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert (completed.returncode, completed.stdout) == (2, "")
+        assert completed.stderr.startswith("usage: python -m srv.cli.main <command> [args]\n")
+
+    def test_an_unknown_command_is_answered_with_the_usage_on_exit_two(self) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "nope"],
+            capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert (completed.returncode, completed.stdout) == (2, "")
+        assert "  {{read}} <{{identity}}>" in completed.stderr
+
+    def test_a_missing_argument_is_a_usage_error_on_exit_two(self) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "{{read}}"],
+            capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert (completed.returncode, completed.stdout, completed.stderr) == (
+            2,
+            "",
+            "missing argument <{{identity}}>\nusage: {{read}} <{{identity}}>\n",
+        )
+
+    def test_a_{{read}}_of_an_unknown_{{identity}}_exits_one_without_leaking_the_failure(self) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        completed = subprocess.run(
+            [sys.executable, "-m", "srv.cli.main", "{{read}}", "never-issued"],
+            capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert (completed.returncode, completed.stdout, completed.stderr) == (1, "", "unexpected error\n")

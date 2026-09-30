@@ -1,0 +1,33 @@
+# 1 LANGUAGE — the words of the loans context. See ../README.md.
+
+context = "loans"
+
+[[terms]]
+term = "loan"
+means = "A book lent to a borrower, from lending until it is returned."
+code_names = ["Loan", "loan_id", "loans"]
+
+[[terms]]
+term = "borrower"
+means = "The person a book is lent to."
+code_names = ["borrower"]
+
+[[terms]]
+term = "title"
+means = "The title of the book lent."
+code_names = ["title"]
+
+[[terms]]
+term = "lend"
+means = "Hand a book to a borrower, which opens a loan."
+code_names = ["lend_book", "arrange_loan", "record_loan"]
+
+[[terms]]
+term = "notice"
+means = "The note the borrower gets when a loan is opened."
+code_names = ["send_notice", "NoticeSender"]
+
+[[terms]]
+term = "return"
+means = "The borrower bringing the book back, which ends the loan."
+code_names = ["return_book"]

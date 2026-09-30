@@ -1,0 +1,42 @@
+app_name = "story_drafting"
+bounded_context_name = "drafting"
+aggregate_root_class_name = "Jtbd"
+durable_execution_engine = "restate"
+storage = "memory"
+host = "http"
+identity_field_name = "jtbd_id"
+identity_port_operation_name = "issue_jtbd_id"
+
+[aggregate_fields]
+job = "str"
+
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+job = ["design a schema, get sign-off, then build it", "draft a migration plan and review it"]
+
+[client]
+write_operation_name = "submit_jtbd"
+read_operation_name = "check_status"
+read_response_fields = ["jtbd_id", "job"]
+
+[orchestrator]
+operation_name = "work_through_jtbd"
+calling_mode = "start"
+
+[action]
+operation_name = "record_jtbd"
+
+[repository]
+save_operation_name = "save_jtbd"
+load_operation_name = "load_jtbd"
+load_response_collection_name = "jtbds"
+
+[acceptance_test]
+test_class_name = "TestSubmittingAJtbd"
+test_method_name = "test_a_just_submitted_jtbd_is_drafting"
+asserted_field = "job"
+random_values = ["design an api, get my sign-off, then build it", "plan a release, get my sign-off, then ship it", "sketch a data model, get my sign-off, then migrate it"]
+
+[environment_variables]
+restate_ingress_url = "RESTATE_INGRESS"
+host_url = "STORY_DRAFTING_HOST"

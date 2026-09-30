@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tesser"
+version = "0.1.0"
+description = "Runtime library for the tesser-build domain-construction conventions (Python)"
+# PEP 695 type parameters (the generic serdes an engine binds, and the trees
+# that use them) are a SyntaxError before 3.12, so 3.11 could never import this
+# package.
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["tesser*"]
+
+[tool.setuptools.package-data]
+tesser = ["py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tesser", "tests"]
+
+[tool.mypy]
+strict = true
+files = ["tesser", "tests"]
+# The mutmut fixture projects are standalone mutation targets, each shipping
+# its own `vo` package — checking them here would collide on the module name.
+exclude = ['tests/ecosystem/mutmut/fixtures/']

@@ -1,0 +1,43 @@
+# The architecture rules ruff already enforces better than a hand-written AST
+# walk could — the environment is read only at the host edge, and only the edge
+# exits — plus dead imports, which the example tree should not teach. Selected
+# explicitly, one code at a time: nothing in ruff's default set is on, so every
+# rule here is a decision someone made on purpose.
+#
+# `banned-api` matches attribute access AND the `from os import getenv` alias
+# form, which is why it replaced `_env_reads` in tests/test_enforcement.py: the
+# hand-written detector only saw `os.getenv(...)`.
+#
+# `target-version` is the repo's Python floor, which is also CI's interpreter.
+# Neither TID251 nor PLR1722 is version-gated, and consumers copy this tree.
+#
+# Teeth: tests/test_architecture_teeth.py injects violations and asserts this
+# config still fails on them. A widened `per-file-ignores` is otherwise a
+# silent hole — the rule stops firing and CI stays green.
+
+target-version = "py312"
+
+# F823 catches `x = x.Thing(...)` where `x` is also a module alias: the
+# assignment makes `x` function-local for the whole body, so the read on the
+# right-hand side raises UnboundLocalError at runtime. mypy --strict does not
+# see it. Role packages make it likely — a module alias is now a concept noun
+# (`money`, `service`) rather than a role noun (`domain`, `client`), and concept
+# nouns are what locals get named.
+[lint]
+select = ["TID251", "PLR1722", "F401", "F823"]
+
+[lint.flake8-tidy-imports.banned-api]
+"os.getenv" = { msg = "read the environment only in app/app.py — the config repository decodes it (skills/tesser-build/app.md)" }
+"os.environ" = { msg = "read the environment only in app/app.py — the config repository decodes it (skills/tesser-build/app.md)" }
+"sys.exit" = { msg = "exit only from srv/*/main.py — everything below returns or raises (skills/tesser-build/srv.md)" }
+"os._exit" = { msg = "exit only from srv/*/main.py — everything below returns or raises (skills/tesser-build/srv.md)" }
+
+# Two edges, each lifted in exactly one file. `app/app.py` names the
+# environment, and it is the config repository that decodes it;
+# `srv/*/main.py` is the only frame that may exit. Neither pattern crosses a
+# directory separator, so a deeper module never inherits the exemption. Bare
+# `exit`/`quit` stay banned everywhere via PLR1722 — they are site builtins,
+# never the edge's exit.
+[lint.per-file-ignores]
+"app/app.py" = ["TID251"]
+"srv/*/main.py" = ["TID251"]

@@ -1,0 +1,418 @@
+# Norm: testing
+
+<!-- tb-status: partial -->
+
+**v0 of the testing norm covers how a test is written and what it must
+prove — not how the suite is laid out.** Rules 1, 9 and 10 are machine-checked
+today — rule 10 rides `TB072`, the same clause that carries rule 9's fakes;
+rule 2 is ruled doctrine whose checker is specified by its fixture pair
+and lands next; the rest is guidance enforced by review. What is genuinely undecided is
+listed as open at the bottom rather than smuggled in as prose (Chris ruling
+2026-07-20).
+
+The per-component `## Tests you must write` sections say *what* to test. This
+file says *how*, and it is the cross-cutting layer they assume.
+
+## The norm
+
+1. **Test doubles are hand-written.** Never a mocking library — not
+   `unittest.mock`, not the `mock` backport, not `pytest-mock`'s `mocker`, and
+   not pytest's `monkeypatch`/`MonkeyPatch` runtime patchers. Write a double
+   that implements the collaborator's interface and inject it through the interface.
+   Two tiers, both hand-written:
+   - **isolated unit test** — a small hand-written double standing in for one
+     collaborator;
+   - **orchestration / integration test** — a real in-memory implementation of
+     the port (an in-memory repository), not a bespoke stub.
+
+   A mock library couples the test to the *call shape* instead of the
+   *observable outcome*, and it is blind to interface drift: change the
+   collaborator's signature and the mock-based test stays green while the real
+   integration is broken. A hand-written double fails loudly at exactly that
+   change, which is the point.
+
+2. **Every spec-constructed type has one completeness test.** Construct a valid
+   instance from a full spec, then assert that *every* spec field round-tripped
+   to its accessor — compared against the spec's value, never a hardcoded
+   literal.
+
+   ```python
+   def test_constructs_from_spec() -> None:
+       spec = _valid_spec()
+       link = ShortLink(spec)
+       assert str(link.slug) == spec.slug
+       assert str(link.target_url) == spec.target_url
+       assert link.active is spec.active
+   ```
+
+   A field added to the spec but never asserted is a silent site: construction
+   can drop or mis-assign it and nothing fails. This test is the one place the
+   full construction contract is stated, which is why it is exhaustive where
+   behavior tests deliberately are not (rule 3). Comparing against `spec.X`
+   rather than a literal is what makes it a round-trip rather than a
+   restatement of the fixture.
+
+3. **Assert only what you control or what was computed.** Two categories are
+   legitimate: a value you explicitly set in the test input, and a value the
+   code under test computed. Anything else is a **hidden default** — a value
+   supplied by a fixture or constructor default that the test never chose.
+   Asserting it couples the test to the fixture's internals, so an unrelated
+   default change breaks tests that were never about it. Golden rule: *if you
+   cannot trace where a value came from in your test input, do not assert it.*
+
+   The completeness test (rule 2) is the deliberate exception: proving complete
+   construction *is* its claim, so it asserts the full field set.
+
+4. **Test one claim.** One test proves one thing. The "unit" is the claim, not
+   the function count — a claim that spans two operations is still one claim.
+   A test that would need "and" to describe it is two tests.
+
+5. **Trust your layers.** Exhaustive edge cases belong at the value-object
+   layer; composition and orchestration at entities and aggregates; real
+   scenarios and error paths at services. Do **not** re-test a lower layer's
+   edge cases higher up — if `Slug` already proves it rejects malformed input,
+   the aggregate's tests prove the aggregate *uses* `Slug`, not that `Slug`
+   validates. Re-asserting the same claim at every layer means one rule change
+   edits N suites.
+
+6. **Fail fast on what invalidates the rest.** A bare `assert` already
+   halts, so the discipline is ordering: establish that the object
+   constructed before asserting anything about it.
+
+7. **Arrange-Act-Assert, structurally.** Separate the three phases with blank
+   lines. Never with comments — `comments.md` is zero, tests included, so the
+   comment-delimited form of AAA is unavailable here by construction.
+
+8. **Name the scenario and the outcome.** `test_rejects_duplicate_slug_at_construction`,
+   not `test_duplicate` or `test_1`. The name is what a failure report shows;
+   it should say what broke without opening the file.
+
+9. **A test helper builds a spec or a DTO, and mirrors the constructor it
+   feeds.** A helper's entire job is to hold the values a test does not care
+   about, so the test can state only the one or two that make it *that* test.
+   It takes exactly the constructor's parameters — the same names, the types
+   spelled as the constructor spells them — each with a default, and its body
+   passes every one of them straight through. It never returns a constructed
+   domain object or a relay record, and it never calls anything but another
+   helper.
+
+   ```python
+   @ts.helper
+   def _spec(
+       slug: str = "spring-sale", target_url: str = "https://a.example", active: bool = True
+   ) -> ShortLinkSpec:
+       return ShortLinkSpec(slug=slug, target_url=target_url, active=active)
+
+
+   def test_deactivate_is_guarded() -> None:
+       link = ShortLink(_spec(active=False))
+       ...
+   ```
+
+   The construction stays in the test, where the reader can see it. `active=False`
+   is the whole reason this test exists, and it is the only argument written.
+
+   The consequences, each of which is the rule doing its work:
+
+   - **Never return a constructed domain object.** `_money(...) -> Money` hides
+     the construction the test is about; `_spec(...) -> MoneySpec` and
+     `Money(_spec(...))` at the call site does not. If a helper returns an
+     aggregate, the test that "sets up a campaign" no longer shows what a
+     campaign is.
+   - **Mirror the constructor; invent nothing.** Every constructor parameter is
+     a helper parameter with the same name and type, and the body is
+     `return Target(field=field, ...)`. A value written into the body is a value
+     no test can reach — the same defect as a functional option nobody wrote —
+     and a helper that takes a child's attributes (`_order_spec(line_quantity=3)`)
+     has hidden a construction the test needs to show.
+   - **Compose, one helper per object.** A field that holds another spec or
+     record defaults to that record's helper, and a test that cares about the
+     child passes one: `_order_spec(lines=(_line_spec(quantity=3),))`. A
+     default holds values — a literal, an enum member, another helper's or an
+     assembly's result, a config built from those, or a tuple of those — never
+     a domain object, never a record built in place, never a service or
+     adapter, and never a module constant. Write a helper only where a test
+     needs one, above the helper whose default calls it: a default runs once,
+     when the function is defined, and every call shares that instance, which
+     is safe because a record is never changed after construction.
+   - **No helper for a relay record.** A relay request or response carries
+     domain objects, and a domain object is built in the test, so a relay
+     record has no value a helper could hold. The test writes it out:
+     `relays.ConfirmOrderRequest(order=domain.Order(_order_spec(quantity=3)))`
+     — the spec helper still holds the order's defaults.
+   - **Never call.** A helper that invokes a service, a builder, or a
+     composition root is not holding defaults, it is performing the arrangement
+     — and the arrangement is what the test needs to show. `_campaign_with_link(svc)`
+     reads as one line and hides two service calls; write them out. This is the
+     same defect as a helper that is a pure rename of the thing it wraps. A
+     helper's result in a default is not a call of this kind: a helper is pure
+     construction, so it arranges nothing.
+   - **Defaults go in keyword arguments, not functional options.** The
+     functional-options form declares every field three times (draft class,
+     per-field `with_` function, final mapping) — 63 lines against 26 — nested
+     specs compose worse because names flatten to positional, and a field
+     nobody wrote an option for is silently unreachable.
+   - **A spec field holds a primitive or another spec, never a converted type.**
+     This is what keeps the rule above achievable: building a child spec needs
+     no parsing, so every override is a plain assignment. A converted field
+     (a `Decimal`, a parsed timestamp) forces the helper to parse and handle
+     failure, and a helper with error handling in it is logic.
+
+   **Threshold: two fields or more.** A single-field type is constructed
+   directly — `MoneyAmount("1.5")` needs no helper and a helper would only
+   hide it. Two or more fields earns one, because that is where the defaults
+   start costing the reader.
+
+   **Assertion helpers are out of scope**, deliberately. A helper that asserts
+   is a different tool with different trade-offs; a library can provide those.
+   This rule is about construction.
+
+   **An assembly puts a test input together from parts.** When a test needs
+   an input that is not one record — a tree of source files, a codebase handed
+   to an analyzer — built by joining a fixed base with the test's own parts,
+   it is an `@ts.assembly`, not a helper. An assembly returns construction
+   data and defaults every parameter, like a helper, but it may concatenate,
+   format and replace. It has no control flow (no branch, loop, comprehension
+   or assert) and calls nothing in the code under test. The kind is minimal on
+   purpose; its full design is open.
+
+10. **An adapter's dependency is exercised, not doubled.** An adapter exists to
+    talk to something the context does not own — a database, an execution
+    engine, a vendor's API — and what is worth proving is that the real
+    conversation works. In order of preference:
+
+    1. **An integration test against the real service, storage, or engine.**
+    2. **A test implementation the dependency itself provides** — an emulator,
+       a stubber, an official test double. It is trustworthy because its author
+       builds it against the same model the real client uses.
+    3. **One written as a separate package, outside this repo's purview** —
+       its own distribution. Not an in-repo directory the analyzer does not
+       govern: a `skip` line in `.tesser-root` is added only with the user's
+       explicit permission, because a skipped directory is outside every
+       norm, not only this one.
+
+    When none of the three exists — a vendor with no emulator and no
+    published double — ask the user how the adapter is to be tested; do not
+    write the double into the tree.
+
+    **So no double of an external dependency is defined in an adapter's test
+    module.** A fake of a *tesser* contract — an application port, a client —
+    stays legal there, because it implements something the type checker can
+    see: change the contract and the fake fails `mypy --strict`, which is the
+    fail-loudly property rule 1 is about. A double of a foreign SDK class
+    implements nothing and is cast into place at the call site, so it asserts
+    call shape and stays green when the SDK moves — the mock defect rule 1
+    rejects, wearing a hand-written coat. `TB072` is what refuses it.
+
+    An emulator is not a double: it is the same implementation in a different
+    deployment, which is why step 2 outranks step 3. And there is no scheduled
+    tier — a suite run against a third party on a timer mostly reports that
+    vendor's uptime, which is not this repo's subject.
+
+## Where the norm applies
+
+- **Constructed-app code** — the tests the skill routes you to write in a
+  consumer repo, at every layer.
+- **The example trees** (`examples/`) — the norm's verified impls; they conform
+  and are gated in CI.
+- **Not the toolkit's own internals** (analyzers, generator), which are
+  outside the governed surface, same as `comments.md`.
+
+## How the machine sees it
+
+- **`TB030` (no-mock-libraries)** — rule 1. Flags a mocking-library import in
+  any shape (`unittest.mock`, the `mock` backport, the
+  `import unittest` → `unittest.mock.patch` reach-through) and
+  `pytest.MonkeyPatch`; the import branches are **global**, because domain code
+  has no business importing a mock library either. The `monkeypatch` / `mocker`
+  **fixture-parameter** branch is narrower on purpose — it fires only inside a
+  pytest-shaped function (`test_*` or a `@fixture` factory), since a parameter
+  with that name anywhere else is an ordinary identifier.
+
+  **The escape hatch, and its one honest use.** A test that must patch a boundary it
+  cannot inject through carries `# tesser:debt` (suppression scans the
+  reported statement's whole line span, so it works on a formatter-wrapped
+  import). Today the only sanctioned uses are the composition-root wiring tests
+  in `examples/python-app`, which patch a wiring module's own `build` function
+  to force a partial-failure path — there is no injection point above the
+  composition root, which is exactly why they qualify. Note this is a *narrower*
+  claim than "a process boundary": giving `bootstrap` an injectable builder would
+  let those tests use a hand-written double and delete the suppressions
+  entirely. That is tracked as a follow-up, not a blessed pattern to copy.
+- **`TB031` (construction-completeness)** — rule 2. **Not shipped yet:** its
+  contract is fixed by the reviewed fixture pair
+  (`tessercheck-py/testdata/tb031/{good_tree,bad_tree}/`), authored before the
+  checker per the fixtures-first discipline. When it lands it will compare a
+  spec-constructed type's field set against the fields asserted in its
+  completeness test and flag the difference. Until then rule 2 is enforced by
+  review.
+- **`TB074` (one implementation file, one test file)** — every implementation
+  module carries exactly one sibling `test_<module>.py` beside it, and every
+  sibling test file names the module beside it. Exempt by construction:
+  `application/ports` modules, declaration-only modules (every class is a
+  declared DTO/Protocol block and methods stop at `__init__` — `client.py` is
+  the canonical case), `__init__.py`, `conftest`, and everything in a `tests/`
+  package (a tests package pairs with its app or context, not a module). There are no
+  temporary exemptions: a module that genuinely cannot be tested (one exists —
+  an srv module bound to an uninstallable vendor SDK) carries a site-level
+  `# tesser:debt TB074` where the finding lands, as visible debt.
+- **`TB071` + `TB072` + `TB073` (test-module totality)** — rule 9, and the analyzer's
+  first **totality** check (they superseded the frozen-dataclass era's
+  `TB032`). `TB072`'s fake clause does double duty: requiring a fake to name
+  the contract it doubles is also what refuses rule 10's foreign double, since
+  a stand-in for a vendor's SDK class implements no tesser contract and so
+  declares nothing the analyzer can read. Every other check hunts a known-bad shape and stays quiet
+  otherwise. That is the wrong instrument here, because the failure mode is
+  *variety* — there is no single bad helper to match, and new ways to smuggle
+  logic into a test module arrive with every feature. So this one inverts it:
+  **every module-level function in a test module must classify**, and what does
+  not is reported. Read the output as a worklist, not an accusation.
+
+  Classification is declared, never inferred: a test module holds tests,
+  **`@ts.helper`** builders, **`@ts.assembly`** inputs, and **`@ts.fake`**
+  doubles, and a module-level function that is none of those is a `TB071`
+  finding. Tests come in two
+  shapes: a module-level `test_*` function, or a `test_*` method on a
+  **`Test`-prefixed test class** — grouping a subject's scenarios under a
+  test class is allowed, and a test class holds *only* test methods (any
+  other method on it is a `TB071` finding — including pytest's xunit hooks:
+  `setup_method`, `teardown_method`, and `@pytest.fixture` methods are
+  findings too; shared arrangement goes through module-level `@ts.helper`
+  builders, and per-test setup is written in the test where the reader can
+  see it). The totality reaches the whole class body: a nested class or a
+  loose statement inside a test class is a finding, exactly as it would be
+  at module level — nesting is not an escape hatch. The `Test` prefix
+  matches pytest's default collection glob (`python_classes = Test*`); the
+  analyzer assumes that default, so a tree that overrides `python_classes`
+  is out of contract. A class that is neither
+  `Test`-prefixed nor a declared `@ts.fake` is a `TB072` finding. The
+  `Test` prefix is load-bearing: it is what pytest collects, so a test
+  class named anything else would hold tests that silently never run.
+
+  **A fake mirrors its port**, and that is `TB072`'s second clause: a
+  `@ts.fake` names as a base the contract it doubles — an application port, a
+  store, a protocol port, a client, an actions client, a relay, or a
+  config repository — and a fake that names none of those is a finding. The
+  base is what makes the double checkable: it is how the analyzer knows which
+  methods the fake owes, and it is what breaks the test when the port's
+  signature changes. A fake that names nothing is a second, unversioned copy
+  of a contract nobody can see.
+
+  The consequence worth stating, because it is where the reaching goes wrong:
+  **if you want to fake a single callable behavior and there is no port to
+  mirror, the missing thing is the port, not a new kind of fake.** A bare
+  function handed to the thing under test is a dependency declared
+  anonymously — `TB022` says so in type position and `TB023` says so in value
+  position — and the fix is the same in a test as in production: declare the
+  `ts.Port` in `application/ports/`, then fake it. Do not reach for a
+  one-method class to satisfy the letter of this rule; reach for the port the
+  one-method class is standing in for. `TB073` is the shape
+  half: a declared helper mirrors the constructor of the spec or DTO it
+  builds, defaults every parameter, and passes each one straight through
+  (rule 9); a declared assembly returns construction data, defaults every
+  parameter, has no control flow, and calls nothing in the code under test.
+  A function that fits neither — a wired object graph for an end-to-end test,
+  an async context manager that serves an engine — has no sanctioned shape
+  yet and is an open question; the declaration half is never optional.
+
+  Two scope facts worth knowing before you argue with a finding:
+  **a fake's methods are not judged** — every method on a `@ts.fake` class
+  is a hand-written double's surface, which rule 1 *requires*, so judging
+  them would report the norm's own mandated shape as a violation (a *test
+  class's* methods ARE judged — see above: test methods only). And **a test module is
+  one whose basename starts with `test_`**; a helper-only module beside the
+  tests is not a sanctioned parking spot — a non-test, non-conftest module
+  under a `tests` package is a placement finding outright (TB041), and even
+  an excused one still answers for its imports like a test placed there
+  (TB070). A `conftest.py` answers to the universal checks (TB004, TB020,
+  TB021, TB022, TB023, TB030, TB033) and carries its location's import row: at
+  the tree root it is a leaf that imports nothing from its tree (TB065); inside
+  a tests location it reaches exactly what a test placed there reaches (TB070).
+
+- Rules 3-8 are **guidance, not checked.** Each is either a semantic judgment
+  (3, 4, 5) or not mechanically decidable in a way worth the false positives
+  (6, 7, 8). That is deliberate: semantic correctness is test territory,
+  structure is analyzer territory.
+- Rule 10 is **half-checked, and the half that is checked is the half that
+  matters.** `TB072` refuses the double — a fake implementing no tesser
+  contract is a finding wherever it sits — but nothing can tell from a test
+  whether it reached a real engine or a stub, so the ladder's ordering
+  (real service, then a provided test implementation, then one packaged
+  outside this repo's purview) is guidance. The teeth are on the shape that
+  goes wrong silently; the preference order is a judgment a reader makes.
+
+## Open — deliberately not decided in v0
+
+These have no ruling and are **not yet materialized** — no rule here, no
+example, no checker. They are listed so their absence is visible rather than
+silently filled by whatever the examples happen to do. If you hit one,
+**don't invent a convention**: ask, or leave the existing shape alone until it
+is ruled.
+
+- **Test file layout.** Ruled: placement carries the
+  tier — a test lives beside its subject (sibling in a role or adapter kind
+  package), in its context's `tests/` package, or in the root `tests/`
+  package, and each location fixes what the test may import (TB070). The
+  root tests package plays the user: it reaches the app only through a
+  running host, speaking `protocol` — a CLI host as a subprocess, an HTTP
+  host at an address the runner supplies — and imports nothing of the app,
+  `srv`, a context, or a kernel (a library tree with no host reaches its
+  exported kernel instead). A context's `tests/` package plays a caller: it
+  builds the component in-process, drives its client and handlers, fakes
+  neighbouring contexts at the port, and serves a durable workflow from the
+  test process under the component's own names. A story's acceptance test is
+  a root test; its behaviour scenarios are context tests. A root test reaches
+  a CLI host by running `python -m <module>` with `subprocess.run` (its
+  `PYTHONPATH` is the test's `sys.path`), and an HTTP host at the address
+  `ts.served(VAR)` reads, and uses its own data, because every root test shares the served
+  host. The runner runs every other tier first with no host served, then
+  serves the hosts, then runs the root tier (`docs/design-test-tiers.md`).
+- **Test grouping / structure.** Partially ruled (2026-08-23): grouping
+  scenarios under a `Test`-prefixed class is **allowed** — the analyzer
+  admits test classes and requires that they hold only test methods
+  (`TB071`/`TB072`). Still open: whether test classes will be *required*
+  (the intent is to eventually enforce specific classes — e.g. a test class
+  per aggregate — but that is not ruled), and at what grain ("unit" = a
+  type, a callable, or a concern).
+- **Table tests / `@pytest.mark.parametrize`.** Prior art points both ways.
+  Currently used for rejection cases in the worked trees; not ruled.
+- **Coverage stance.** No percentage gate anywhere, and v0 inherits that —
+  binary pass/fail. Revisit only if live use shows coverage gaming.
+- **An equality-test tripwire.** A checker requiring each value object to carry
+  an explicit equality test is a candidate for a later wave, not a v0 rule.
+
+## Common mistakes
+
+- **The mock that can't fail.** `sender.send.assert_called_once_with(...)`
+  passes forever, including after `send` changes shape. Assert the observable
+  outcome through a hand-written double instead.
+- **The foreign double.** A hand-written `FakeVendorContext` that implements no
+  contract and is `typing.cast` into place, asserting that the SDK was called a
+  particular way. It cannot notice when the SDK changes — the same defect as
+  the mock above, in a class you wrote yourself. Exercise the dependency
+  instead (rule 10).
+- **The skipped double.** A hand-written stand-in for a vendor's API put in a
+  directory the tree's `.tesser-root` skips, so the analyzer never reads it.
+  It is the foreign double above, moved out of sight — and the skip line
+  takes the user's explicit permission (rule 10).
+- **Asserting the fixture.** `assert money.currency == "USD"` when the test
+  never set a currency — the helper's default leaked into the claim.
+- **The re-tested layer.** Proving invalid input is rejected at the aggregate
+  when the value object already proves it. One rule, one home.
+- **The literal round-trip.** A completeness test asserting
+  `str(link.slug) == "spring-sale"` instead of `== spec.slug` — it restates the
+  fixture rather than proving the spec reached the field.
+- **The partial completeness test.** Constructing from a full spec and
+  asserting one field. That is a behavior test wearing the completeness test's
+  name; the other fields are unproven.
+- **The helper that arranges.** `id = _campaign_with_link(svc)` reads as one
+  line and performs two service calls. Eight tests shared that line and not one
+  of them showed what it was arranging.
+- **The rename in helper's clothing.** `def json_body(resp): return decode_body(resp.body)`
+  supplies no default and saves no reader anything — it just adds a name they
+  have to learn. If a helper has no default in it, it is not a helper.
+- **The over-supplied call.** `_spec(slug="spring-sale")` in a test that does
+  not depend on the slug. The argument reads as significant and is not; it
+  buries the one that is. The converse holds too: a test that depends on a
+  value passes it, even where it equals the default — otherwise the claim
+  rests on a default the test never stated (*asserting the fixture*, above).
