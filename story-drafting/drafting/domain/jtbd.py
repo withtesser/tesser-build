@@ -96,6 +96,34 @@ class StoryView(ts.ValueObject):
         return self._state
 
 
+class DraftedStory(ts.ValueObject):
+
+    _view: StoryView
+
+    def __init__(self, spec: StoryTextSpec) -> None:
+        object.__setattr__(
+            self,
+            "_view",
+            StoryView(StoryViewSpec(given=spec.given, when=spec.when, then=spec.then, state=StoryState.DRAFTED)),
+        )
+
+    @property
+    def view(self) -> StoryView:
+        return self._view
+
+
+class StoryDrafts(ts.ValueObject):
+
+    _stories: tuple[StoryView, ...]
+
+    def __init__(self, spec: RecordStoriesSpec) -> None:
+        object.__setattr__(self, "_stories", tuple(DraftedStory(text).view for text in spec.story_texts))
+
+    @property
+    def stories(self) -> tuple[StoryView, ...]:
+        return self._stories
+
+
 class Jtbd(ts.AggregateRoot):
 
     def __init__(self, spec: JtbdSpec) -> None:
@@ -110,6 +138,7 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def record_stories(self, record_stories_spec: RecordStoriesSpec) -> RecordStoriesOutcome:
+        self._stories = StoryDrafts(record_stories_spec).stories
         return RecordStoriesOutcome.RECORDED
 
     @property
@@ -130,6 +159,8 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
+        if self._stories:
+            return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
         return Text(JtbdStatus.DRAFTING_STORIES.value)
 
     @property
