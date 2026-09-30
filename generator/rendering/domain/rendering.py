@@ -2025,6 +2025,7 @@ class Model(ts.Entity):
         memory_repositories: list[dict[str, object]] = []
         uuid_repositories: list[dict[str, object]] = []
         gateways: list[dict[str, object]] = []
+        agent_stores: list[dict[str, object]] = []
         seeded = False
         for port_name, operations in self._port_ops.items():
             if port_name not in chosen:
@@ -2037,6 +2038,15 @@ class Model(ts.Entity):
             if body == "agent":
                 if "class" not in implementation:
                     raise ValueError(f"[implementations.{port_name}.{key}] is the agent's and names no class")
+                if port_name in self._stores:
+                    Store = str(implementation["class"])
+                    agent_stores.append(dict(
+                        self._frames[("store", port_name)], module=str(Word(Store).snake()), Repository=Store + "Transaction", Store=Store,
+                        store=str(Word(Store).snake()), repository=str(Word(port_name).snake()),
+                    ))
+                    shared_stores.append({"store_attr": str(Word(Store).snake()), "store_expr": f"repositories.{Store}()"})
+                    port_exprs[port_name] = f"self._{Word(Store).snake()}"
+                    continue
                 Gateway = str(implementation["class"])
                 gateway_operations: list[dict[str, object]] = []
                 for operation in operations:
@@ -2081,6 +2091,7 @@ class Model(ts.Entity):
                 raise ValueError(f"{port_name} is implemented by {key}, a type the toolkit does not support; say body = \"agent\"")
         self._binding["gateways"] = gateways
         self._binding["memory_repositories"] = memory_repositories
+        self._binding["agent_stores"] = agent_stores
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
         self._binding["identity_seeded"] = [{}] if seeded else []
@@ -2210,7 +2221,7 @@ class Model(ts.Entity):
             imported.add("dispatchers")
         if gateways:
             imported.add("gateways")
-        if memory_repositories or uuid_repositories:
+        if memory_repositories or uuid_repositories or agent_stores:
             imported.add("repositories")
         self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
 

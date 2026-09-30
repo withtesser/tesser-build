@@ -170,6 +170,12 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
 the renderer derives, what it renders, and which rendered files are the
 agent's.
 
+A port in `implementations.toml` with `body = "agent"` and a `class` renders an
+agent-owned stub: a gateway for a gateway port, and, for a store port (one that
+carries the aggregate), a store under `<context>/adapters/repositories/` that
+starts as a working in-memory store, so an agent can swap in a durable body
+(a file, SQLite) inside its own file without touching a generated one.
+
 The composition holds only what current stories require: every enum value,
 client operation request and response field, aggregate read, signal payload
 field, and non-success command outcome (the success outcome is the first one

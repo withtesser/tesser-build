@@ -431,6 +431,57 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert (tmp_path / "out" / "drafting" / "application" / "story_actions.py").is_file()
 
+    def test_an_agent_owned_store_renders_a_working_store_stub_the_component_wires_and_keeps_it_on_a_second_render(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "implementations.toml": [(
+                "[implementations.LoanRepository.memory]\nbody = \"supported\"",
+                "[implementations.LoanRepository.file]\nclass = \"FileLoanStore\"\nbody = \"agent\"",
+            ), ('LoanRepository = "memory"', 'LoanRepository = "file"')],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "loans/adapters/repositories", "loans/component"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "loans"], cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        store_path = tmp_path / "out" / "loans" / "adapters" / "repositories" / "file_loan_store.py"
+        edited = store_path.read_text() + "# the agent's edit\n"
+        store_path.write_text(edited)
+        second_response = rendering.client.render_composition(render_composition_request)
+        check_composition_response = rendering.client.check_composition(
+            client.CheckCompositionRequest(composition_dir=str(tmp_path / "composition"), tree_dir=str(tmp_path / "out")),
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        assert store_path.read_text().startswith("# pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here\n")
+        assert "class FileLoanStore(ts.Repository):" in store_path.read_text()
+        assert "async def transaction(self)" in store_path.read_text()
+        assert (tmp_path / "out" / "loans" / "adapters" / "repositories" / "test_file_loan_store.py").read_text().startswith(
+            "# pragma: tesser-agent-owned;")
+        assert not (tmp_path / "out" / "loans" / "adapters" / "repositories" / "memory_loan_repository.py").exists()
+        assert "repositories.FileLoanStore()" in (tmp_path / "out" / "loans" / "component" / "component.py").read_text()
+        assert store_path.read_text() == edited
+        assert "loans/adapters/repositories/file_loan_store.py" in second_response.kept
+        assert check_composition_response.problems == ()
+        assert check_composition_response.drifted == ()
+
     def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_given(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))

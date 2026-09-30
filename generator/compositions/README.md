@@ -444,8 +444,17 @@ The implementation types:
   rendered in full.
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
   and answers one field; issues version-4 UUIDs from a seed, rendered in full.
-- any key with `body = "agent"` and a `class`: a stub gateway of that class,
-  agent-owned (below).
+- any key with `body = "agent"` and a `class` on a gateway port: a stub gateway
+  of that class, agent-owned (below).
+- any key with `body = "agent"` and a `class` on a store port (one that carries
+  the aggregate): a stub store of that class, agent-owned, in
+  `<context>/adapters/repositories/<class>.py` with its sibling test. The class
+  is the store (it satisfies the `<Name>Store` the actions and service take and
+  has `transaction()`); its repository is `<class>Transaction`. The stub starts
+  as a working in-memory store, equal to `memory`, so the tree passes every gate
+  before the agent replaces the body with a durable one (a file, SQLite); no
+  sample beyond the aggregate's is needed. The port's kind decides gateway or
+  store, not a key.
 
 ## 5 `generator.toml`
 
@@ -474,7 +483,8 @@ Every rendered file says on its first line who owns it:
 - `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
   agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
   `test_<aggregate>.py`, each `body = "agent"` implementation
-  (`<context>/adapters/gateways/<class>.py` and its test), and the root
+  (`<context>/adapters/gateways/<class>.py` and its test, or for a store port
+  `<context>/adapters/repositories/<class>.py` and its test), and the root
   test skeletons in `tests/` (above). A stub answers
   placeholders and never raises: a str read answers what the spec holds, a
   command its first outcome (the success outcome), an enum read its first value, a gateway
