@@ -5,3 +5,6 @@ from {{context}}.adapters.repositories.{{module}} import {{Store}} as {{Store}}
 {{#uuid_repositories}}
 from {{context}}.adapters.repositories.{{module}} import {{Repository}} as {{Repository}}
 {{/uuid_repositories}}
+{{#agent_stores}}
+from {{context}}.adapters.repositories.{{module}} import {{Store}} as {{Store}}
+{{/agent_stores}}

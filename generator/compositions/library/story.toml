@@ -37,7 +37,7 @@ so_that = "s-1 is fulfilled"
 
 [[jtbds.stories.jtbds.stories]]
 id = "s-1-b-1"
-given = "the loan_id of a lent book"
+given = "I have created a loan with POST /loans"
 when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower and title"
 route = "GET /loans/{loan_id}"

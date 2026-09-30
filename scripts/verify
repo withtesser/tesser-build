@@ -57,6 +57,37 @@ tessercheck_tree() {
   (cd "$ROOT/tessercheck-py" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.main "$1")
 }
 
+# host_identity <pid>: the start time of a process, empty when there is none.
+# Captured right after a host is launched, it is what makes a pid mean "the
+# host we started": a pid the OS has handed to another process starts at
+# another time.
+host_identity() {
+  ps -o lstart= -p "$1" 2>/dev/null
+}
+
+# stop_host <pid> <signal> <identity>: signals a served host, gives it two
+# seconds to exit, then kills it. A host whose Restate endpoint holds a
+# suspended invocation otherwise outlives its root tier by Restate's
+# inactivity timeout (about a minute), because cancelling that invocation's
+# task waits on Restate. It signals only a process whose start time is the
+# identity captured at launch, at every step: a host that has exited is never
+# signalled again (its pid may be another process's by then), and a pid that
+# now names a different process is not mistaken for the host.
+stop_host() {
+  local pid=$1 signal=$2 identity=$3 _
+  if [ -n "$identity" ] && [ "$(host_identity "$pid")" = "$identity" ]; then
+    kill "-$signal" "$pid" 2>/dev/null
+    for _ in $(seq 1 20); do
+      [ "$(host_identity "$pid")" = "$identity" ] || break
+      sleep 0.1
+    done
+    if [ "$(host_identity "$pid")" = "$identity" ]; then
+      kill -KILL "$pid" 2>/dev/null
+    fi
+    wait "$pid" 2>/dev/null
+  fi
+}
+
 run_llmport() {
   cd "$ROOT/examples/llmport" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -443,6 +474,8 @@ run_story_drafting() {
   (exec env RESTATE_INGRESS="$ingress" STORY_WRITER=canned PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
+  local host_started
+  host_started=$(host_identity "$host")
   local registered=1
   for _ in $(seq 1 50); do
     if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
@@ -454,15 +487,13 @@ run_story_drafting() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
+    stop_host "$host" TERM "$host_started"
     return 1
   fi
   step "pytest the root tier (against the host on :$port)"
   pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
+  stop_host "$host" INT "$host_started"
   return "$status"
 }
 
@@ -570,10 +601,13 @@ run_layout() {
 # generator/compositions/ is rendered by the composition-driven renderer
 # (srv.cli.render) into a scratch directory and the rendered tree is gated:
 # tessercheck zero findings, mypy --strict, and pytest over every tier but the
-# root (a rendered tree has no root tier; its acceptance tests are written by
-# hand; each render is first checked against its composition with
+# root (a rendered tree's root tier is its skeletons, red at each placeholder
+# until their author writes them, so the arm does not run it; a runner that
+# does passes the served host as pytest tests --host <url>, which the rendered
+# tests/conftest.py answers; each render is first checked against its composition with
 # srv.cli.render --check), against the same Restate server, reached through the variables its
-# implementations.toml names for the engine.
+# infra.toml names for the engine, with every storage location variable its
+# infra.toml declares set to a fresh temporary path.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -602,8 +636,11 @@ run_rendered_tree() {
   local admin="${RESTATE_ADMIN:-http://localhost:49070}"
   local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
   local names ingress_env admin_env callback_env
-  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/implementations.toml") || return 1
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
   read -r ingress_env admin_env callback_env <<<"$names"
+  local location_names location_name locations
+  local location_env=()
+  location_names=$(python3 -c 'import sys, tomllib; print(" ".join(s["location_variable"] for s in tomllib.load(open(sys.argv[1], "rb")).get("storage", {}).values() if "location_variable" in s))' "$composition/infra.toml") || return 1
   step "render $composition into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
   step "$composition: the rendered tree matches its composition (srv.cli.render --check)"
@@ -619,8 +656,15 @@ run_rendered_tree() {
   step "$composition: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
   step "$composition: pytest every tier but the root, with no host served"
+  locations=$(mktemp -d) || return 1
+  for location_name in $location_names; do
+    location_env+=("$location_name=$locations/$location_name")
+  done
+  local tested=0
   (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
-    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests)
+    ${location_env[@]+"${location_env[@]}"} PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || tested=$?
+  rm -rf "$locations"
+  return "$tested"
 }
 
 run_generated_tree() {
@@ -656,11 +700,13 @@ run_generated_tree() {
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
   step "$spec: pytest every tier but the root, with no host served"
   (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests) || return 1
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || return 1
   step "$spec: serve the generated $host_kind host's Restate endpoint on :$port and register it at $admin"
   (cd "$out" && exec env "${env_vars[@]}" PYTHONPATH=".:$ROOT/tesser-py" \
     python3 -m "$module" "0.0.0.0:$port") &
   local host=$!
+  local host_started
+  host_started=$(host_identity "$host")
   local registered=1
   for _ in $(seq 1 50); do
     if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
@@ -672,16 +718,14 @@ run_generated_tree() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "generator: could not register $deployment with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
+    stop_host "$host" TERM "$host_started"
     return 1
   fi
   step "$spec: pytest the root tier against the served host"
   (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
     "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests ${root_args[@]+"${root_args[@]}"})
   local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
+  stop_host "$host" INT "$host_started"
   return "$status"
 }
 

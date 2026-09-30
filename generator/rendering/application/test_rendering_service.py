@@ -21,6 +21,7 @@ class FakeCompositionReader(ports.CompositionReader):
             documents=self._documents,
             pieces=self._pieces,
             target=ports.TargetRecord(state=ports.TargetState.ABSENT, files=()),
+            composition="compositions/lending",
         )
 
 
@@ -45,7 +46,7 @@ class TestRenderingService:
             FakeCompositionReader(
                 documents=tuple(
                     ports.DocumentRecord(name=name, state=ports.DocumentState.MISSING, text="")
-                    for name in ("language", "story", "composition", "implementations", "generator")
+                    for name in ("language", "story", "infra", "composition", "implementations", "generator")
                 ),
                 pieces=(),
             ),
@@ -53,12 +54,13 @@ class TestRenderingService:
         )
 
         render_composition_response = rendering_service.render_composition(
-            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out")
+            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out", printed=())
         )
 
         assert render_composition_response.problems == (
             "the composition's language.toml is missing",
             "the composition's story.toml is missing",
+            "the composition's infra.toml is missing, and it says what the app runs on and what an operator must provide",
             "the composition's composition.toml is missing",
             "the composition's implementations.toml is missing",
             "the composition's generator.toml is missing",
@@ -69,7 +71,7 @@ class TestRenderingService:
         fake_composition_reader = FakeCompositionReader(documents=(), pieces=())
 
         application.RenderingService(fake_composition_reader, FakeRenderingWriter()).render_composition(
-            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out")
+            client.RenderCompositionRequest(composition_dir="/compositions/lending", out_dir="/out", printed=())
         )
 
         assert [

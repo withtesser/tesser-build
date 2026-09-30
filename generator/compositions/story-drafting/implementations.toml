@@ -1,63 +1,42 @@
-# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
-# 5 generator. Each fact lives in the one spec whose question it answers; what a
-# convention derives (TB085 names, a class named for its aggregate) is in none.
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
 #
-# 4 IMPLEMENTATIONS — Which adapter implementations and hosts are used, in which
-# environment? Written by you or a tech lead, reviewed. Changing it changes what
-# runs; each implementation named here satisfies a contract in composition.toml.
-# The composition root (component/component.py) and the hosts (srv/) are the code
-# that reads it.
-
-app = "story_drafting"
+# 5 IMPLEMENTATIONS — Which adapter implementation satisfies each port, in which
+# environment? Written by red, reviewed. Changing it changes what runs; each
+# implementation named here satisfies a contract in composition.toml, and a store
+# port's implementation is named for a storage infra.toml declares. The engine,
+# the hosts, and the variables are infra.toml's. The composition root
+# (component/component.py) is the code that reads it.
 
 # ---- implementations: what satisfies each contract --------------------------
 # Each names its type. The generator stubs every implementation against the
 # contract it satisfies; the body is the agent's, except for a type the toolkit
-# supports (memory, uuid, postgres, restate), whose body follows from the type
-# and the contract.
+# supports (memory, uuid, postgres), whose body follows from the type and the
+# contract.
 
 [implementations.StoryDrafter.template]
 class = "TemplateStoryDrafter"         # deterministic: fills fixed templates with the job to be done's parts
 body = "agent"
 
-[implementations.JtbdRepository.memory]
-body = "supported"
+[implementations.JtbdRepository.sqlite]  # the storage infra.toml declares
+class = "SqliteJtbdRepository"         # agent-owned: rendered once as a working in-memory stub
+body = "agent"
 
 [implementations.JtbdIdentityRepository.uuid]
 body = "supported"
-
-[engine.restate]                       # implements composition's relays and signal: activities, workflows, dispatchers
-body = "supported"
-ingress_variable = "RESTATE_INGRESS"     # the variables below, by the part each plays for the engine
-admin_variable = "RESTATE_ADMIN"
-callback_host_variable = "RESTATE_CALLBACK_HOST"
 
 # ---- environments -----------------------------------------------------------
 # gate: what scripts/verify and CI run. local: a developer's machine.
 # A contract with one implementation in every environment needs no selector variable.
 
 [environments.gate]
-implementations = { StoryDrafter = "template", JtbdRepository = "memory", JtbdIdentityRepository = "uuid" }
+implementations = { StoryDrafter = "template", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
 
 [environments.local]
-implementations = { StoryDrafter = "template", JtbdRepository = "memory", JtbdIdentityRepository = "uuid" }
+implementations = { StoryDrafter = "template", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
-
-# ---- hosts ------------------------------------------------------------------
-
-[hosts.http]
-serves = "interfaces.http"             # composition.toml
-mounts_engine_endpoint = true          # the Restate endpoint is served at /restate in the same process
-engine_path = "/restate"
-listen_port_variable = "STORY_DRAFTING_PORT"
-
-# ---- environment variables --------------------------------------------------
-
-[variables]
-RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
-RESTATE_ADMIN = "the Restate admin URL the host registers its endpoint with"
-RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
-STORY_DRAFTING_PORT = "the port the HTTP host listens on"

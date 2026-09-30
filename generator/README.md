@@ -158,8 +158,10 @@ and runs the generated tree's own gates.
 
 ## Rendering a composition
 
-The second entry point renders a tree from a composition directory (the five
-spec formats of `compositions/<name>/`) instead of a fixed-shape spec:
+The second entry point renders a tree from a composition directory (the six
+spec formats of `compositions/<name>/`, read in order: `language.toml`,
+`story.toml`, `infra.toml`, `composition.toml`, `implementations.toml`,
+`generator.toml`) instead of a fixed-shape spec:
 
 ```sh
 cd generator
@@ -168,6 +170,50 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
 
 `compositions/README.md` is the reference: every key each format takes, what
 the renderer derives, what it renders, and which rendered files are the
-agent's. Every composition in `compositions/` is gated: `scripts/verify
+agent's.
+
+`infra.toml` holds what the app runs on and what an operator must provide: the
+app, the runtime, the engine (with `engine_path` and its variables), the host,
+each storage (`[storage.<name>]`, with the `location_variable` that locates it,
+for every storage but `memory`), and the variables. `implementations.toml`
+holds only the port-level mapping (`[implementations]` and `[environments]`);
+one that still carries `app`, `[engine]`, `[hosts]`, or `[variables]` is a
+problem saying they moved.
+
+A port in `implementations.toml` with `body = "agent"` and a `class` renders an
+agent-owned stub: a gateway for a gateway port, and, for a store port (one that
+carries the aggregate), a store under `<context>/adapters/repositories/` that
+starts as a working in-memory store, so an agent can swap in a durable body
+(a file, SQLite) inside its own file without touching a generated one. A store
+port's implementation key names a storage `infra.toml` declares; when that
+storage has a `location_variable`, the app reads it at load, the component
+passes it to the store as `location: str`, and the stub takes it and ignores it
+until the agent writes the durable body.
+
+The composition holds only what current stories require: every enum value,
+client operation request and response field, aggregate read, signal payload
+field, and non-success command outcome (the success outcome is the first one
+listed) must be named, as a whole word, in a story's given, when, or then. A
+piece no story names is a problem that says which piece, and the fix is to write
+it in a story or remove it from the composition (`compositions/README.md`).
+
+A render answers these as problems (exit 1, nothing written) rather than
+crashing or rendering something broken: a path naming one `{field}` twice, and a
+sample list in `generator.toml` with no values (`borrower = []`). A root test
+skeleton is named for its method and every path segment, a parameter as
+`by_<field>` (`GET /loans` is `test_reading_loans.py`, `GET /loans/{loan_id}` is
+`test_reading_loans_by_loan_id.py`), and holds two placeholders the agent
+writes: the story's given (how the host reaches it, and any path value the
+route needs) and its then. It takes the served host's address as the `host`
+fixture, which the generated `tests/conftest.py` answers from pytest's
+`--host` option (`pytest tests --host <url>`); a run without it fails loudly. A story file with `reached_by` is a problem: the
+key is no longer part of the format. A path parameter for an `int` field answers
+400 unless it is an integer (an optional `-` and at most 18 ASCII digits). A
+command with `takes = {}` renders a `<Command>Spec` whose constructor is `pass`.
+`scripts/verify` stops a served host only while it is the process it started
+(same start time), never signalling one that has already exited.
+
+Every composition in `compositions/` is gated: `scripts/verify
 generator` renders each one and runs the rendered tree's tessercheck,
-`mypy --strict`, and every test tier but the root.
+`mypy --strict`, and every test tier but the root, with every storage
+`location_variable` its `infra.toml` declares set to a fresh temporary path.

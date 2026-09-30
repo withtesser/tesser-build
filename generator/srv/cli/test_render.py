@@ -37,13 +37,62 @@ class TestRenderHost:
         )
 
         assert completed.returncode == 2
-        assert completed.stderr == "missing argument <out-dir>\nusage: python -m srv.cli.render [--check] <composition-dir> <out-dir>\n"
+        assert completed.stderr == "missing argument <out-dir>\nusage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path>]...\n"
+
+    def test_a_printed_path_follows_the_list_with_its_header_and_the_file_as_written(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+
+        completed = subprocess.run(
+            [
+                sys.executable, "-m", "srv.cli.render", str(tree / "compositions" / "story-drafting"), str(tmp_path / "out"),
+                "--print", "tests/test_reading_jtbds_by_jtbd_id.py", "--print", "tests/test_submitting_jtbds.py",
+            ],
+            capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        listed, reading, submitting = completed.stdout.split("\n\n--- ")
+        assert "tests/test_reading_jtbds_by_jtbd_id.py" in listed.splitlines()
+        assert reading == "tests/test_reading_jtbds_by_jtbd_id.py\n" + (tmp_path / "out" / "tests" / "test_reading_jtbds_by_jtbd_id.py").read_text().removesuffix("\n")
+        assert submitting == "tests/test_submitting_jtbds.py\n" + (tmp_path / "out" / "tests" / "test_submitting_jtbds.py").read_text()
+
+    def test_a_printed_path_it_does_not_render_exits_one_and_writes_nothing(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+
+        completed = subprocess.run(
+            [
+                sys.executable, "-m", "srv.cli.render", str(tree / "compositions" / "library"), str(tmp_path / "out"),
+                "--print", "tests/test_nope.py",
+            ],
+            capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+        )
+
+        assert (completed.returncode, completed.stdout) == (1, "")
+        assert completed.stderr == "render: --print names tests/test_nope.py, which the composition does not render\n"
+        assert not (tmp_path / "out").exists()
+
+    def test_a_root_test_skeleton_edited_by_its_author_is_kept_by_the_next_render(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        render = [sys.executable, "-m", "srv.cli.render", str(tree / "compositions" / "library"), str(tmp_path / "out")]
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+        subprocess.run(render, capture_output=True, text=True, check=True, env=env)
+        skeleton = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
+        written = skeleton.read_text().replace("assert False, ", "assert True, ")
+        skeleton.write_text(written)
+
+        completed = subprocess.run(render, capture_output=True, text=True, check=False, env=env)
+
+        assert completed.returncode == 0, completed.stderr
+        assert "kept tests/test_reading_loans_by_loan_id.py" in completed.stdout.splitlines()
+        assert skeleton.read_text() == written
 
     def test_a_tree_rendered_beside_its_own_specs_keeps_every_file_it_does_not_write(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         library = tmp_path / "library"
         (library / "specs").mkdir(parents=True)
-        for name in ("language", "story", "composition", "implementations", "generator"):
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             (library / "specs" / f"{name}.toml").write_text((tree / "compositions" / "library" / f"{name}.toml").read_text())
         (library / "README.md").write_text("# library\n")
 
@@ -145,7 +194,7 @@ class TestRenderHost:
         ):
             composition = tmp_path / str(len(answered)) / "composition"
             composition.mkdir(parents=True)
-            for name in ("language", "story", "composition", "implementations", "generator"):
+            for name in ("language", "story", "infra", "composition", "implementations", "generator"):
                 text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
                 (composition / f"{name}.toml").write_text(text.replace(replaced, replacement) if name == "composition" else text)
             completed = subprocess.run(

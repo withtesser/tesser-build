@@ -20,6 +20,7 @@ TEMPLATE_SUFFIX: typing.Final[str] = ".tmpl"
 AGENT_MARKER: typing.Final[str] = "# pragma: tesser-agent-owned;"
 
 GENERATED_MARKER: typing.Final[str] = "# pragma: tesser-generated;"
+RENDERED_FROM: typing.Final[str] = ".tesser-rendered"
 
 SNAKE: typing.Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 
@@ -58,13 +59,22 @@ PATTERNS: typing.Final[dict[str, tuple[re.Pattern[str], str]]] = {
     "path": (ENGINE_PATH, "URL path of lowercase segments, like /restate"),
 }
 
-DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
+DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "infra", "composition", "implementations", "generator")
+
+HOLDS: typing.Final[dict[str, str]] = {"infra": "what the app runs on and what an operator must provide"}
+
+MOVED_TO_INFRA: typing.Final[tuple[tuple[str, str], ...]] = (
+    ("app", "app"), ("engine", "[engine]"), ("hosts", "[hosts]"), ("variables", "[variables]"),
+)
 
 READ: typing.Final[str] = "read"
 
 ROUTE: typing.Final[re.Pattern[str]] = re.compile(r"(GET|POST|PUT|PATCH|DELETE) (/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\})(?:/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\}))*)")
 
 PATH_FIELD: typing.Final[re.Pattern[str]] = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
+GERUNDS: typing.Final[dict[str, str]] = {
+    "GET": "reading", "POST": "submitting", "PUT": "replacing", "PATCH": "updating", "DELETE": "deleting",
+}
 
 WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 
@@ -959,9 +969,10 @@ class Echo(ts.ValueObject):
 
 class ModelSpec(ts.Spec):
 
-    def __init__(self, language: str, story: str, composition: str, implementations: str, generator: str) -> None:
+    def __init__(self, language: str, story: str, infra: str, composition: str, implementations: str, generator: str) -> None:
         self.language = language
         self.story = story
+        self.infra = infra
         self.composition = composition
         self.implementations = implementations
         self.generator = generator
@@ -971,14 +982,19 @@ class Model(ts.Entity):
 
     def __init__(self, spec: ModelSpec) -> None:
         self._story = tomllib.loads(spec.story)
+        self._infra = tomllib.loads(spec.infra)
         self._composition = tomllib.loads(spec.composition)
         self._implementations = tomllib.loads(spec.implementations)
+        moved = [f"implementations.toml declares {shown}, which moved to infra.toml: implementations.toml holds only "
+                 f"[implementations] and [environments]" for key, shown in MOVED_TO_INFRA if key in self._implementations]
+        if moved:
+            raise ValueError(*moved)
         self._generator = tomllib.loads(spec.generator)
         language = tomllib.loads(spec.language)
         composition = self._composition
         aggregate_table = composition["aggregate"]
         self._context = str(composition["context"])
-        self._app = str(self._implementations["app"])
+        self._app = str(self._infra["app"])
         self._Aggregate = str(aggregate_table["name"])
         self._aggregate = str(Word(self._Aggregate).snake())
         self._identity = str(aggregate_table["identity"])
@@ -998,6 +1014,9 @@ class Model(ts.Entity):
             tuple(self._spec_fields),
         )
         self._types = Types(TypesSpec(*self._types_args))
+        for sampled_field, sampled in dict(self._generator.get("sample_values", {})).items():
+            if isinstance(sampled, list) and not sampled:
+                raise ValueError(f"generator.toml lists no sample values for {sampled_field}")
         self._sample_values = json.dumps(self._generator.get("sample_values", {}))
         self._samples = Samples(SamplesSpec(values=self._sample_values, index=0, types=TypesSpec(*self._types_args)))
         self._registry: dict[str, str] = dict(self._spec_fields)
@@ -1087,14 +1106,18 @@ class Model(ts.Entity):
             for key, implementation in choices.items():
                 if implementation.get("body") == "agent":
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
-        engine = self._implementations.get("engine", {}).get("restate", {})
+        engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
                      for key in ("ingress_variable", "admin_variable", "callback_host_variable") if key in engine)
-        host = self._implementations.get("hosts", {}).get("http", {})
+        if "engine_path" in engine:
+            named.append(("path", "[engine.restate] engine_path", str(engine["engine_path"])))
+        for storage_name, storage in self._infra.get("storage", {}).items():
+            named.append(("snake", "[storage]", str(storage_name)))
+            if "location_variable" in storage:
+                named.append(("variable", f"[storage.{storage_name}] location_variable", str(storage["location_variable"])))
+        host = self._infra.get("hosts", {}).get("http", {})
         if "listen_port_variable" in host:
             named.append(("variable", "[hosts.http] listen_port_variable", str(host["listen_port_variable"])))
-        if "engine_path" in host:
-            named.append(("path", "[hosts.http] engine_path", str(host["engine_path"])))
         for pattern_name, where, name in named:
             pattern, description = PATTERNS[pattern_name]
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
@@ -1105,6 +1128,10 @@ class Model(ts.Entity):
                 raise ValueError(f"[actions.{key}] is named for {str(Word(str(key)).pascal())!r}, which is not a code name in "
                                  f"language.toml; a class of actions is named for the domain term it acts on, never for its "
                                  f"port ({table.get('port', '')})")
+            for operation_name, operation in table.get("operations", {}).items():
+                if "builds" in operation and str(operation["builds"]) != self._Aggregate:
+                    raise ValueError(f"actions.{key}.operations.{operation_name} builds {str(operation['builds'])!r}, and the "
+                                     f"one aggregate it can build is {self._Aggregate!r}")
         self._messages: dict[tuple[str, str], Record] = {}
         self._port_of: dict[str, str] = {}
         self._port_ops: dict[str, list[str]] = {}
@@ -1137,6 +1164,9 @@ class Model(ts.Entity):
                 Operation = str(Word(operation_name).pascal())
                 declared.append(("ports", module, Operation + "Request", "Request", request, False, port_name, False))
                 declared.append(("ports", module, Operation + "Response", "Response", response, False, port_name, False))
+                if operation_name in self._port_of:
+                    raise ValueError(f"ports {self._port_of[operation_name]} and {port_name} both declare {operation_name}, and "
+                                     f"ports exports one {Operation}Request and one {Operation}Response, so one port declares it")
                 self._port_of[operation_name] = port_name
                 self._port_ops[port_name].append(operation_name)
         for step in [step for operation in composition.get("client", {}).get("operations", {}).values()
@@ -1877,7 +1907,7 @@ class Model(ts.Entity):
                 seen.add(spec_name)
                 ordered.append((spec_name, fields))
         for spec_name, fields in ordered:
-            specs.append({"Spec": spec_name, "fields": [
+            specs.append({"Spec": spec_name, "no_fields": [] if fields else [{}], "fields": [
                 {"field": field, "spec_type": (
                     f"tuple[{str(types.element(type_text)) if str(types.element(type_text)).endswith('Spec') else str(types.element(type_text)) + 'Spec'}, ...]"
                     if str(types.kind(type_text)) == "array" else type_text)}
@@ -1892,7 +1922,7 @@ class Model(ts.Entity):
             targets = self._domain_targets[Command + "Spec"]
             commands.append({
                 "command": str(command), "Spec": Command + "Spec", "Outcome": Command + "Outcome",
-                "outcomes": [{"MEMBER": outcome.upper()} for outcome in outcomes], "answer": outcomes[-1].upper(),
+                "outcomes": [{"MEMBER": outcome.upper()} for outcome in outcomes], "answer": outcomes[0].upper(),
                 "command_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in targets),
             })
         self._binding["commands"] = commands
@@ -1978,13 +2008,14 @@ class Model(ts.Entity):
         implementations = self._implementations
         identity = self._identity
         Orchestrator = self._Orchestrator
-        engines = implementations.get("engine", {})
+        infra = self._infra
+        engines = infra.get("engine", {})
         if list(engines) != ["restate"]:
-            raise ValueError("implementations.toml names an engine other than restate, the one this renderer renders")
+            raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
         engine = engines["restate"]
-        for key in ("ingress_variable", "admin_variable", "callback_host_variable"):
+        for key in ("ingress_variable", "admin_variable", "callback_host_variable", "engine_path"):
             if key not in engine:
-                raise ValueError(f"[engine.restate] does not say which variable is the {key.removesuffix('_variable').replace('_', ' ')}")
+                raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
         chosen: dict[str, str] = {}
         if not implementations.get("environments"):
@@ -2001,16 +2032,22 @@ class Model(ts.Entity):
                 raise ValueError(f"environment {environment_name} runs no restate engine")
             if list(environment.get("hosts", [])) != ["http"]:
                 raise ValueError(f"environment {environment_name} serves hosts other than http, the one this renderer renders")
-        host = implementations.get("hosts", {}).get("http")
+        host = infra.get("hosts", {}).get("http")
         if host is None:
-            raise ValueError("implementations.toml declares no [hosts.http]")
+            raise ValueError("infra.toml declares no [hosts.http]")
         self._binding["listen_port_variable"] = str(host["listen_port_variable"])
-        self._binding["engine_path"] = str(host["engine_path"])
+        storages = {str(name): dict(storage) for name, storage in infra.get("storage", {}).items()}
+        for storage_name, storage in storages.items():
+            if storage_name != "memory" and "location_variable" not in storage:
+                raise ValueError(f"[storage.{storage_name}] names no location_variable: every storage but memory says which "
+                                 f"variable locates it")
         port_exprs: dict[str, str] = {}
         shared_stores: list[dict[str, object]] = []
         memory_repositories: list[dict[str, object]] = []
         uuid_repositories: list[dict[str, object]] = []
         gateways: list[dict[str, object]] = []
+        agent_stores: list[dict[str, object]] = []
+        locations: list[dict[str, object]] = []
         seeded = False
         for port_name, operations in self._port_ops.items():
             if port_name not in chosen:
@@ -2019,10 +2056,31 @@ class Model(ts.Entity):
             implementation = implementations.get("implementations", {}).get(port_name, {}).get(key)
             if implementation is None:
                 raise ValueError(f"{port_name} is implemented by {key}, which [implementations.{port_name}] does not declare")
+            if port_name in self._stores and key not in storages:
+                raise ValueError(f"{port_name} is a store implemented by {key}, a storage infra.toml does not declare: declare "
+                                 f"[storage.{key}] in infra.toml, or implement {port_name} by a declared storage")
             body = implementation.get("body")
             if body == "agent":
                 if "class" not in implementation:
                     raise ValueError(f"[implementations.{port_name}.{key}] is the agent's and names no class")
+                if port_name in self._stores:
+                    Store = str(implementation["class"])
+                    location_variable = storages[key].get("location_variable")
+                    location_attr = f"{key}_location"
+                    if location_variable is not None and not any(entry["location_attr"] == location_attr for entry in locations):
+                        locations.append({"location_attr": location_attr, "location_variable": str(location_variable)})
+                    agent_stores.append(dict(
+                        self._frames[("store", port_name)], module=str(Word(Store).snake()), Repository=Store + "Transaction", Store=Store,
+                        store=str(Word(Store).snake()), repository=str(Word(port_name).snake()),
+                        located=[{}] if location_variable is not None else [],
+                    ))
+                    shared_stores.append({
+                        "store_attr": str(Word(Store).snake()),
+                        "store_expr": f"repositories.{Store}(location=config.{location_attr})" if location_variable is not None
+                        else f"repositories.{Store}()",
+                    })
+                    port_exprs[port_name] = f"self._{Word(Store).snake()}"
+                    continue
                 Gateway = str(implementation["class"])
                 gateway_operations: list[dict[str, object]] = []
                 for operation in operations:
@@ -2067,6 +2125,9 @@ class Model(ts.Entity):
                 raise ValueError(f"{port_name} is implemented by {key}, a type the toolkit does not support; say body = \"agent\"")
         self._binding["gateways"] = gateways
         self._binding["memory_repositories"] = memory_repositories
+        self._binding["agent_stores"] = agent_stores
+        self._binding["locations"] = locations
+        self._binding["located"] = [{}] if locations else []
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
         self._binding["identity_seeded"] = [{}] if seeded else []
@@ -2196,7 +2257,7 @@ class Model(ts.Entity):
             imported.add("dispatchers")
         if gateways:
             imported.add("gateways")
-        if memory_repositories or uuid_repositories:
+        if memory_repositories or uuid_repositories or agent_stores:
             imported.add("repositories")
         self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
 
@@ -2207,6 +2268,9 @@ class Model(ts.Entity):
         while pending:
             node = pending.pop()
             stories[str(node.get("id", ""))] = node
+            if "reached_by" in node:
+                raise ValueError(f"{node.get('id', '')} has reached_by, which is no longer part of the story format; "
+                                 "write in its given how it is reached, and write the calls in its root test")
             for child_key in ("jtbds", "stories"):
                 children = node.get(child_key, [])
                 if isinstance(children, list):
@@ -2215,6 +2279,7 @@ class Model(ts.Entity):
         probes: list[dict[str, object]] = []
         answers: list[str] = []
         routed_stories: set[str] = set()
+        answered_by: dict[str, dict[str, object]] = {}
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             routed = [str(story) for story in operation.get("serves", []) if "route" in stories.get(str(story), {})]
@@ -2233,20 +2298,27 @@ class Model(ts.Entity):
             if not isinstance(status_code, int) or isinstance(status_code, bool) or not 200 <= status_code < 300:
                 raise ValueError(f"{routed[0]} has no status, the 2xx its route answers with, like 201")
             method, path = route.group(1), route.group(2)
+            if f"{method} {path}" in answered_by:
+                raise ValueError(f"client operations {answered_by[f'{method} {path}']['operation']} and {operation_name} are both "
+                                 f"{method} {path}, and HTTP reaches only one of them")
             when = str(story.get("when", ""))
             then = str(story.get("then", ""))
             if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
                 raise ValueError(f"{routed[0]} is {method} {path} answering {status_code}, and its own when and then "
                                  f"do not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
+            for repeated in sorted({field for field in path_fields if path_fields.count(field) > 1}):
+                raise ValueError(f"{path} names {{{repeated}}} more than once, and a path parameter is bound once")
             request = self._messages[("client", Operation + "Request")]
             response = self._messages[("client", Operation + "Response")]
             inputs: list[dict[str, object]] = []
             body: dict[str, object] = {}
             for target in request.targets():
                 field = str(target.field())
+                if field in path_fields and str(target.type_text()) not in ("str", "int"):
+                    raise ValueError(f"{path} names {{{field}}}, a {target.type_text()}, and a path carries only text or an integer")
                 if field in path_fields:
-                    inputs.append({"field": field, "reader": "path_param"})
+                    inputs.append({"field": field, "reader": "path_param" if str(target.type_text()) == "str" else "integer_path_param"})
                 elif str(target.kind()) == "scalar":
                     inputs.append({"field": field, "reader": "text" if str(target.type_text()) == "str" else "integer"})
                     body[field] = json.loads(str(self._samples.value(target)))
@@ -2255,9 +2327,14 @@ class Model(ts.Entity):
             for field in path_fields:
                 if field not in [str(t.field()) for t in request.targets()]:
                     raise ValueError(f"{path} names {{{field}}}, which {operation_name} does not take")
-            path_params = {field: json.loads(str(self._samples.value(t))) for t in request.targets()
+            path_params = {field: str(json.loads(str(self._samples.value(t)))) for t in request.targets()
                            for field in [str(t.field())] if field in path_fields}
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
+            answered_by[str(story["route"])] = {
+                "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
+                "body": repr(json.dumps(body).encode()) if body else "None",
+                "path_types": {str(t.field()): str(t.type_text()) for t in request.targets() if str(t.field()) in path_fields},
+            }
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
                 "status": str(status_code), "inputs": inputs, "has_inputs": [{}] if inputs else [],
@@ -2269,7 +2346,11 @@ class Model(ts.Entity):
                 "body_sample": repr(json.dumps(body).encode()) if body else 'b""',
             })
             steps = [str(step) for step in operation.get("steps", [])]
-            probe_path = PATH_FIELD.sub("never-issued", path)
+            integers = {str(t.field()) for t in request.targets() if str(t.type_text()) == "int"}
+            probe_path = "/".join(
+                segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
+                for segment in path.split("/")
+            )
             if body:
                 probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
                 answers.append("400")
@@ -2283,9 +2364,61 @@ class Model(ts.Entity):
         unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)
         if unserved:
             raise ValueError(f"{', '.join(unserved)} has a route, and no client operation serves it")
+        root_tests: list[dict[str, object]] = []
+        for story_id in sorted(routed_stories):
+            story = stories[story_id]
+            call = answered_by[str(story["route"])]
+            method, path = str(call["method"]), str(call["path"])
+            path_types = typing.cast(dict[str, str], call["path_types"])
+            words = "_".join([GERUNDS[method]] + [
+                "by_" + segment[1:-1] if PATH_FIELD.fullmatch(segment) else segment.replace("-", "_")
+                for segment in path.strip("/").split("/")
+            ])
+            given = repr(f"write the given of {story_id}: {story.get('given', '')}")
+            root_tests.append({
+                "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
+                "method": method, "path": path, "body": call["body"],
+                "status": str(story["status"]), "given": given,
+                "path_values": [{"name": name, "type": kind} for name, kind in path_types.items()],
+                "given_check": " and ".join(f"{name} is not None" for name in path_types) or "False",
+                "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
+            })
+        self._binding["root_tests"] = root_tests
+        self._binding["root_tier"] = [{}] if root_tests else []
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
         self._binding["route_probe_answers"] = ", ".join(answers)
+
+    def traced(self) -> None:
+        pending: list[dict[str, object]] = list(self._story.get("jtbds", []))
+        prose: list[str] = []
+        while pending:
+            node = pending.pop()
+            prose.extend(str(node[key]) for key in ("given", "when", "then") if key in node)
+            for child_key in ("jtbds", "stories"):
+                children = node.get(child_key, [])
+                if isinstance(children, list):
+                    pending.extend(child for child in children if isinstance(child, dict))
+        text = "\n".join(prose)
+        pieces: list[tuple[str, str]] = []
+        for enum, members in self._enums.items():
+            pieces.extend((f"enum {enum} value {member}", member) for member in members)
+        for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
+            for side in ("request", "response"):
+                pieces.extend((f"client operation {operation_name} {side} field {field}", str(field))
+                              for field in operation.get(side, []))
+        pieces.extend((f"aggregate read {field}", field) for field, _ in self._reads)
+        for signal_name, signal in self._composition.get("signals", {}).items():
+            pieces.extend((f"signal {signal_name} payload field {field}", str(field)) for field in signal.get("payload", []))
+        for command, table in self._commands.items():
+            pieces.extend((f"command {command} outcome {outcome}", str(outcome)) for outcome in list(table.get("outcomes", []))[1:])
+        untraced = [
+            f"{piece} is named by no story: write it in a story's given, when, or then, or remove it from the composition"
+            for piece, name in pieces
+            if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
+        ]
+        if untraced:
+            raise ValueError(*untraced)
 
     def scope(self) -> Scope:
         table: list[str] = []
@@ -2343,11 +2476,15 @@ class RenderedTreeSpec(ts.Spec):
         pieces: tuple[tuple[str, str], ...],
         target: str,
         existing: tuple[tuple[str, str], ...],
+        printed: tuple[str, ...],
+        composition: str,
     ) -> None:
         self.documents = documents
         self.pieces = pieces
         self.target = target
         self.existing = existing
+        self.printed = printed
+        self.composition = composition
 
 
 class RenderedTree(ts.AggregateRoot):
@@ -2359,17 +2496,18 @@ class RenderedTree(ts.AggregateRoot):
             if state == READ:
                 texts[name] = text
             else:
-                found.append(Text(f"the composition's {name}.toml is {state}"))
+                found.append(Text(f"the composition's {name}.toml is {state}"
+                                  + (f", and it says {HOLDS[name]}" if name in HOLDS else "")))
         for name in DOCUMENTS:
             if name not in texts and not any(document == name for document, _, _ in spec.documents):
-                found.append(Text(f"the composition has no {name}.toml"))
+                found.append(Text(f"the composition has no {name}.toml" + (f", which says {HOLDS[name]}" if name in HOLDS else "")))
         if spec.target == "not_directory":
             found.append(Text("the output directory is a file"))
         rendered: list[RenderedFile] = []
         if not found:
             try:
                 model = Model(ModelSpec(
-                    language=texts["language"], story=texts["story"], composition=texts["composition"],
+                    language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts["composition"],
                     implementations=texts["implementations"], generator=texts["generator"],
                 ))
                 model.messages()
@@ -2380,6 +2518,7 @@ class RenderedTree(ts.AggregateRoot):
                 model.stub()
                 model.engine()
                 model.routes()
+                model.traced()
                 scope = model.scope()
                 for path, text in spec.pieces:
                     template = Template(path.removesuffix(TEMPLATE_SUFFIX))
@@ -2388,10 +2527,11 @@ class RenderedTree(ts.AggregateRoot):
                             path=str(template.unguarded().render(placed)),
                             content=str(Template(text).render(placed)),
                         )))
+                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\n")))
             except KeyError as missing:
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:
-                found.append(Text(str(problem)))
+                found.extend(Text(str(reported)) for reported in problem.args)
         paths = [str(rendered_file.path()) for rendered_file in rendered]
         for path in sorted(set(paths)):
             if paths.count(path) > 1:
@@ -2421,6 +2561,11 @@ class RenderedTree(ts.AggregateRoot):
                 written.append(rendered_file)
             else:
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
+        on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
+        on_disk.update({str(path): RenderedFile(RenderedFileSpec(path=str(path), content=existing[str(path)])) for path in kept})
+        found.extend(Text(f"--print names {path}, which the composition does not render")
+                     for path in spec.printed if path not in on_disk and path not in paths)
+        self._printed = () if found else tuple(on_disk[path] for path in spec.printed)
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
@@ -2441,6 +2586,9 @@ class RenderedTree(ts.AggregateRoot):
 
     def kept(self) -> tuple[Text, ...]:
         return self._kept
+
+    def printed(self) -> tuple[RenderedFile, ...]:
+        return self._printed
 
     def drift(self) -> tuple[Text, ...]:
         return self._drift

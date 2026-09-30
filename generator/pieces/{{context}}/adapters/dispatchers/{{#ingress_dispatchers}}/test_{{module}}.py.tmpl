@@ -25,12 +25,14 @@ import {{context}}.application.relays as relays
 @ts.fake
 class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 
-    def __init__(self) -> None:
+    def __init__(self, released: asyncio.Event) -> None:
+        self.released = released
         self.received: list[{{received_type}}] = []
 {{#calls}}
 
     async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
         self.received.append({{operation}}_request)
+        await asyncio.wait_for(self.released.wait(), timeout=30.0)
         return relays.{{Operation}}Response({{echo}})
 {{/calls}}
 {{/application_clients}}
@@ -42,13 +44,14 @@ class Test{{Dispatcher}}:
     async def test_{{method}}_starts_the_workflow_the_engine_keys_by_the_{{identity}}_and_does_not_wait(self) -> None:
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
+        released = asyncio.Event()
 {{#containers}}
         {{container_attr}} = restate.{{container_kind}}(f"{{container}}{suffix}")
 {{/containers}}
         {{workflow_param}} = workflows.{{Workflow}}(
             {{workflow_container_attr}},
 {{#workflow_activities}}
-            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}()),
+            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
 {{/workflow_activities}}
         )
         with socket.socket() as probe:
@@ -68,20 +71,31 @@ class Test{{Dispatcher}}:
         registered = httpx.Response(503)
         started: list[dict[str, str]] = []
         try:
-            for _ in range(50):
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
                 registered = await admin.post(
                     "/deployments",
                     json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
                 )
-                if registered.is_success:
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            {{result}} = await dispatchers.{{Dispatcher}}(
-                os.environ["{{ingress_variable}}"], {{workflow_param}}
-            ).{{method}}(relays.{{Request}}({{keyed_request_sample}}))
-            for _ in range(100):
+            try:
+                {{result}} = await asyncio.wait_for(
+                    dispatchers.{{Dispatcher}}(os.environ["{{ingress_variable}}"], {{workflow_param}}).{{method}}(
+                        relays.{{Request}}({{keyed_request_sample}})
+                    ),
+                    timeout=15.0,
+                )
+            except TimeoutError as timed_out:
+                raise AssertionError(
+                    "{{method}} did not return within 15 s although the workflow is held at its first step: "
+                    "the relay waits for the workflow to finish"
+                ) from timed_out
+            polling_until = asyncio.get_running_loop().time() + 30.0
+            while asyncio.get_running_loop().time() < polling_until:
                 invoked = await admin.post(
                     "/query",
                     headers={"accept": "application/json"},
@@ -100,6 +114,7 @@ class Test{{Dispatcher}}:
                 (workflow_key, "ingress", True)
             ]
         finally:
+            released.set()
             for row in started:
                 await admin.patch(f"/invocations/{row['id']}/kill")
             if registered.is_success:
@@ -108,20 +123,22 @@ class Test{{Dispatcher}}:
             shutdown.set()
             await asyncio.wait([serving], timeout=1.0)
             serving.cancel()
-            await asyncio.gather(serving, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 {{/start_methods}}
 {{#run_methods}}
 
     async def test_{{method}}_runs_the_workflow_the_engine_keys_by_the_{{identity}}_and_answers_what_it_answered(self) -> None:
         workflow_key = "../admin?x=1#f-" + str(uuid.uuid4())
         suffix = uuid.uuid4().hex
+        released = asyncio.Event()
+        released.set()
 {{#containers}}
         {{container_attr}} = restate.{{container_kind}}(f"{{container}}{suffix}")
 {{/containers}}
         {{workflow_param}} = workflows.{{Workflow}}(
             {{workflow_container_attr}},
 {{#workflow_activities}}
-            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}()),
+            activities.{{Activity}}({{actions_container_attr}}, Fake{{ApplicationClient}}(released)),
 {{/workflow_activities}}
         )
         with socket.socket() as probe:
@@ -141,12 +158,13 @@ class Test{{Dispatcher}}:
         registered = httpx.Response(503)
         started: list[dict[str, str]] = []
         try:
-            for _ in range(50):
+            registering_until = asyncio.get_running_loop().time() + 30.0
+            while True:
                 registered = await admin.post(
                     "/deployments",
                     json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
                 )
-                if registered.is_success:
+                if registered.is_success or asyncio.get_running_loop().time() > registering_until:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
@@ -177,5 +195,5 @@ class Test{{Dispatcher}}:
             shutdown.set()
             await asyncio.wait([serving], timeout=1.0)
             serving.cancel()
-            await asyncio.gather(serving, return_exceptions=True)
+            await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 {{/run_methods}}

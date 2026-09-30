@@ -9,7 +9,7 @@ import rendering.application.ports as ports
 
 PIECE_SUFFIX: typing.Final[str] = ".tmpl"
 
-DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", "implementations", "generator")
+DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "infra", "composition", "implementations", "generator")
 
 
 class FilesystemCompositionReader(ts.Repository):
@@ -46,6 +46,9 @@ class FilesystemCompositionReader(ts.Repository):
                 for found_path in sorted(out_dir.rglob("*"))
                 if found_path.is_file() and "__pycache__" not in found_path.parts
             )
+        placed = out_dir.resolve()
+        repo = next((directory for directory in (placed, *placed.parents) if (directory / ".git").exists()), None)
+        composition = composition_dir.resolve()
         pieces_root = pathlib.Path(self._pieces_root)
         found = sorted(pieces_root.rglob(f"*{PIECE_SUFFIX}")) if pieces_root.is_dir() else []
         return ports.ReadCompositionResponse(
@@ -56,4 +59,8 @@ class FilesystemCompositionReader(ts.Repository):
                 if piece_path.is_file()
             ),
             target=ports.TargetRecord(state=state, files=existing),
+            composition=(
+                composition.relative_to(repo).as_posix()
+                if repo is not None and composition.is_relative_to(repo) else composition.as_posix()
+            ),
         )

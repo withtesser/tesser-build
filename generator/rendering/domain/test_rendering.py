@@ -40,6 +40,29 @@ status = 200
 """,
         ),
         (
+            "infra",
+            "read",
+            """
+app = "library"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+[engine.restate]
+body = "supported"
+engine_path = "/restate"
+ingress_variable = "RESTATE_INGRESS"
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
+
+[hosts.http]
+listen_port_variable = "LIBRARY_PORT"
+
+[storage.memory]
+""",
+        ),
+        (
             "composition",
             "read",
             """
@@ -98,28 +121,16 @@ operations.issue_loan_id = { request = [], response = ["loan_id"] }
             "implementations",
             "read",
             """
-app = "library"
-
 [implementations.LoanRepository.memory]
 body = "supported"
 
 [implementations.LoanIdentityRepository.uuid]
 body = "supported"
 
-[engine.restate]
-body = "supported"
-ingress_variable = "RESTATE_INGRESS"
-admin_variable = "RESTATE_ADMIN"
-callback_host_variable = "RESTATE_CALLBACK_HOST"
-
 [environments.gate]
 implementations = { LoanRepository = "memory", LoanIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
-
-[hosts.http]
-engine_path = "/restate"
-listen_port_variable = "LIBRARY_PORT"
 """,
         ),
         ("generator", "read", '[sample_values]\nloan_id = ["loan-1", "loan-2"]\nborrower = ["Ada", "Grace"]\n'),
@@ -131,11 +142,33 @@ listen_port_variable = "LIBRARY_PORT"
     ),
     target: str = "absent",
     existing: tuple[tuple[str, str], ...] = (),
+    printed: tuple[str, ...] = (),
+    composition: str = "compositions/lending",
 ) -> domain.RenderedTreeSpec:
-    return domain.RenderedTreeSpec(documents=documents, pieces=pieces, target=target, existing=existing)
+    return domain.RenderedTreeSpec(
+        documents=documents, pieces=pieces, target=target, existing=existing, printed=printed, composition=composition
+    )
 
 
 class TestRenderedTree:
+
+    def test_a_printed_path_answers_what_the_render_leaves_there(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(
+            existing=(("lending/domain/loan.txt", "an edited loan\n"),),
+            printed=("routes.txt", "lending/domain/loan.txt"),
+        ))
+
+        assert [(str(printed.path()), str(printed.content())) for printed in rendered_tree.printed()] == [
+            ("routes.txt", "POST /loans 201\nGET /loans/{loan_id} 200\n"),
+            ("lending/domain/loan.txt", "an edited loan\n"),
+        ]
+
+    def test_a_printed_path_the_composition_does_not_render_is_a_problem(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(printed=("tests/test_nope.py",)))
+
+        assert ([str(problem) for problem in rendered_tree.problems()], rendered_tree.printed()) == (
+            ["--print names tests/test_nope.py, which the composition does not render"], (),
+        )
 
     def test_a_piece_renders_once_for_each_item_its_path_enters(self) -> None:
         rendered_tree = domain.RenderedTree(rendered_tree_spec())
@@ -146,7 +179,14 @@ class TestRenderedTree:
             "lending/ports/loan_identity_repository.txt": "# pragma: tesser-generated; x\nLoanIdentityRepository\n",
             "lending/domain/loan.txt": "# pragma: tesser-agent-owned; x\nLoan by loan_id\n",
             "routes.txt": "POST /loans 201\nGET /loans/{loan_id} 200\n",
+            ".tesser-rendered": "compositions/lending\n",
         }
+
+    def test_a_render_names_its_composition_in_tesser_rendered_so_the_tree_is_checked_against_it(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(composition="generator/compositions/lending"))
+
+        assert [str(rendered_file.content()) for rendered_file in rendered_tree.files()
+                if str(rendered_file.path()) == ".tesser-rendered"] == ["generator/compositions/lending\n"]
 
     def test_an_agent_owned_file_already_in_the_output_is_kept_as_it_is(self) -> None:
         rendered_tree = domain.RenderedTree(
@@ -198,6 +238,7 @@ class TestRenderedTree:
                     ("lending/ports/loan_identity_repository.txt", "LoanIdentityRepository\n"),
                     ("lending/domain/loan.txt", "the agent's own loan\n"),
                     ("routes.txt", "POST /loans 201\nGET /loans/{loan_id} 200\n"),
+                    (".tesser-rendered", "compositions/lending\n"),
                 ),
             )
         )
@@ -230,6 +271,7 @@ class TestRenderedTree:
         assert [str(text) for text in rendered_tree.problems()] == [
             "the composition's language.toml is missing",
             "the composition has no story.toml",
+            "the composition has no infra.toml, which says what the app runs on and what an operator must provide",
             "the composition has no composition.toml",
             "the composition has no implementations.toml",
             "the composition has no generator.toml",

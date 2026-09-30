@@ -1,0 +1,26 @@
+# pragma: tesser-agent-owned; generated once as a skeleton, the agent owns it from here
+from __future__ import annotations
+
+import urllib.error as urllib_error
+import urllib.request as urllib_request
+
+
+class Test{{Words}}:
+
+    def test_{{story}}(self, host: str) -> None:
+{{#path_values}}
+        {{name}}: {{type}} | None = None
+{{/path_values}}
+        assert {{given_check}}, {{given}}
+        request = urllib_request.Request(
+            f"{host}{{path}}", data={{body}}, headers={"Content-Type": "application/json"}, method="{{method}}"
+        )
+
+        try:
+            with urllib_request.urlopen(request, timeout=30) as answer:
+                status, answered_body = answer.status, answer.read()
+        except urllib_error.HTTPError as error:
+            status, answered_body = error.code, error.read()
+
+        assert status == {{status}}
+        assert False, {{then}} + f" (answered {answered_body!r})"

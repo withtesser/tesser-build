@@ -12,16 +12,22 @@ import rendering.client as client
 @ts.fake
 class FakeRenderingClient(client.RenderingClient):
 
-    def __init__(self, problems: tuple[str, ...], written: tuple[str, ...], kept: tuple[str, ...]) -> None:
+    def __init__(
+        self, problems: tuple[str, ...], written: tuple[str, ...], kept: tuple[str, ...],
+        printed: tuple[client.PrintedFile, ...] = (),
+    ) -> None:
         self._problems = problems
         self._written = written
         self._kept = kept
+        self._printed = printed
         self.asked: list[client.RenderCompositionRequest] = []
         self.checked: list[client.CheckCompositionRequest] = []
 
     def render_composition(self, render_composition_request: client.RenderCompositionRequest) -> client.RenderCompositionResponse:
         self.asked.append(render_composition_request)
-        return client.RenderCompositionResponse(problems=self._problems, written=self._written, kept=self._kept)
+        return client.RenderCompositionResponse(
+            problems=self._problems, written=self._written, kept=self._kept, printed=self._printed
+        )
 
     def check_composition(self, check_composition_request: client.CheckCompositionRequest) -> client.CheckCompositionResponse:
         self.checked.append(check_composition_request)
@@ -29,6 +35,23 @@ class FakeRenderingClient(client.RenderingClient):
 
 
 class TestHandler:
+
+    def test_each_printed_path_follows_the_list_with_its_header_and_its_text(self) -> None:
+        fake_rendering_client = FakeRenderingClient(
+            problems=(), written=("tests/test_reading_loans.py",), kept=(),
+            printed=(client.PrintedFile(path="tests/test_reading_loans.py", text="import json\n"),),
+        )
+
+        cli_response = handlers.Handler(fake_rendering_client).render(
+            protocol.CliRequest(args=("compositions/lending", "/tmp/lending", "--print", "tests/test_reading_loans.py"))
+        )
+
+        assert (cli_response, fake_rendering_client.asked[0].printed) == (
+            protocol.CliResponse(
+                0, stdout="tests/test_reading_loans.py\n\n--- tests/test_reading_loans.py\nimport json", stderr=""
+            ),
+            ("tests/test_reading_loans.py",),
+        )
 
     def test_a_rendered_tree_exits_zero_and_lists_what_it_wrote_then_what_it_kept(self) -> None:
         fake_rendering_client = FakeRenderingClient(problems=(), written=(".tesser-root", "lending/client/client.py"), kept=("lending/domain/loan.py",))

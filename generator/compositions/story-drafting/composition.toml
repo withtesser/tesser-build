@@ -1,15 +1,16 @@
-# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
-# 5 generator. Each fact lives in the one spec whose question it answers; what a
-# convention derives (TB085 names, a class named for its aggregate) is in none.
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
 #
-# 3 COMPOSITION — Which pieces exist and how do they connect? The design
+# 4 COMPOSITION — Which pieces exist and how do they connect? The design
 # decisions no convention determines, made before any code. Written by the agent
 # in step 1 and reviewed; the generator reads it directly. Every name is a
 # language code name or convention word. Every piece names the stories it serves
-# (story ids, level 1 and 2); a piece that serves none is a finding. Which
-# implementation or host exists, and which is used where, is the implementations
-# spec's: this one declares contracts (the aggregate, the ports, the relays and
-# the signal), never what satisfies them.
+# (story ids, level 1 and 2); a piece that serves none is a finding. What the app
+# runs on is the infra spec's, and which implementation is used where is the
+# implementations spec's: this one declares contracts (the aggregate, the ports,
+# the relays and the signal), never what satisfies them.
 
 context = "drafting"
 
@@ -35,7 +36,7 @@ stories = "StorySpec[]"                # empty when submitted; the stories and t
 
 [aggregate.commands.record_stories]
 takes = { story_texts = "StoryText[]" }
-outcomes = ["recorded", "already_recorded", "none_given"]   # the invariant, as answers the caller matches
+outcomes = ["recorded"]   # the one answer for now; the first listed is the success outcome
 serves = ["s-2"]
 
 [aggregate.reads]                      # what the application reads to answer get_jtbd; types, not representation
@@ -59,8 +60,8 @@ then = "str"
 state = "StoryState"
 
 [enums]                                # values that cross the domain's edge
-JtbdStatus = ["drafting_stories", "awaiting_story_acceptance", "stories_decided"]
-StoryState = ["drafted", "accepted", "rejected"]
+JtbdStatus = ["drafting_stories", "awaiting_story_acceptance"]
+StoryState = ["drafted", "accepted"]
 
 # ---- messages ---------------------------------------------------------------
 
@@ -125,9 +126,9 @@ serves = ["s-2"]
 port = "JtbdRepository"
 [actions.jtbd.operations.record_stories]
 builds = "Jtbd"                        # from the request, as a JtbdSpec with no stories
-commands = ["record_stories"]          # then matches its outcome: recorded → save; already_recorded, none_given → answer so
+commands = ["record_stories"]          # then matches its outcome: recorded → save
 calls = "save_jtbd"                    # one port call
-calls_on = ["recorded"]                # the outcomes that make the call; the others answer without it
+calls_on = ["recorded"]                # the outcomes that make the call
 request = ["jtbd_id", "role", "i_want", "so_that", "story_texts"]
 response = ["jtbd_id"]
 serves = ["s-2"]
