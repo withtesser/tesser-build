@@ -33,6 +33,13 @@ git worktree add -q --detach "$tmp/tree" HEAD
   if git ls-files --error-unmatch generator/compositions/story-drafting >/dev/null 2>&1; then
     git rm -q -r generator/compositions/story-drafting
   fi
+  # Earlier trials' recorded decisions (results/<trial>/, LEARNINGS.md) are
+  # answers too: a scaffold never carries the baseline's own records.
+  for recorded in scripts/baseline/results scripts/baseline/LEARNINGS.md; do
+    if git ls-files --error-unmatch "$recorded" >/dev/null 2>&1; then
+      git rm -q -r "$recorded"
+    fi
+  done
   python3 - "$HERE/scaffold-arm.bash" <<'PY'
 import re, sys
 arm = open(sys.argv[1]).read()

@@ -203,6 +203,56 @@ def diff_metrics(worktree: pathlib.Path, base: str) -> dict:
     }
 
 
+AGENT_OWNED = "# pragma: tesser-agent-owned;"
+GREEN_PHASES = ("green-specs", "green-on-red")
+PROTECTED_PREFIXES = (f"{TREE}/specs/", "generator/compositions/", f"{TREE}/tests/")
+PROTECTED_FILES = ("scripts/verify", f"{TREE}/.tesser-rendered")
+
+
+def integrity_metrics(worktree: pathlib.Path, base: str, phase: str) -> dict:
+    """What a green trial changed against what it was allowed to change.
+
+    The render drift check only compares generated files with the specs, so
+    it cannot see a trial that edits the specs and re-renders, weakens an
+    acceptance test, or deletes a file it owns. This compares the trial's
+    commit and working tree with its base: the files it may change are the
+    ones marked agent-owned at the base, plus new domain modules; the specs,
+    acceptance tests, verify script, render marker, and any .tesser-root must
+    be byte-identical.
+    """
+    if phase not in GREEN_PHASES:
+        return {"checked": False}
+    at_base = git(worktree, "ls-tree", "-r", "--name-only", base).splitlines()
+    owned = {path for path in at_base if path.endswith(".py")
+             and AGENT_OWNED in git(worktree, "show", f"{base}:{path}")[:400]}
+    changes: dict[str, str] = {}
+    for line in git(worktree, "diff", "--name-status", "--no-renames", base).splitlines():
+        status, path = line.split("\t", 1)
+        changes[path] = status
+    for line in git(worktree, "ls-files", "--others", "--exclude-standard").splitlines():
+        changes.setdefault(line, "A")
+    changes = {path: status for path, status in changes.items() if "__pycache__" not in path and ".tesser/" not in path}
+
+    def new_domain_module(path: str, status: str) -> bool:
+        parts = pathlib.PurePosixPath(path).parts
+        return status == "A" and path.endswith(".py") and len(parts) >= 3 and parts[0] == TREE and parts[-2] == "domain"
+
+    protected = sorted(path for path in changes if path.startswith(PROTECTED_PREFIXES) or path in PROTECTED_FILES
+                       or pathlib.PurePosixPath(path).name == ".tesser-root")
+    outside = sorted(path for path, status in changes.items()
+                     if path not in owned and not new_domain_module(path, status) and path not in protected)
+    owned_deleted = sorted(path for path, status in changes.items() if path in owned and status == "D")
+    return {
+        "checked": True,
+        "owned_at_base": sorted(owned),
+        "changed": sorted(changes),
+        "protected_changed": protected,
+        "outside_owned": outside,
+        "owned_deleted": owned_deleted,
+        "ok": not (protected or outside or owned_deleted),
+    }
+
+
 def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
     env = dict(os.environ)
@@ -266,6 +316,7 @@ def main() -> None:
         "agent": transcript_metrics(transcript),
         "hook": hook_metrics(read_jsonl(args.out / "hook-changes.jsonl")),
         "diff": diff_metrics(args.worktree, args.base),
+        "integrity": integrity_metrics(args.worktree, args.base, args.phase),
         "gate": gate_metrics(args.worktree, args.out),
     }
     (args.out / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
@@ -281,6 +332,11 @@ def main() -> None:
     print(f"  diff: {diff['commits']} commits, {diff['files_changed']} files, impl {diff['py_impl_files']} files/"
           f"{diff['py_impl_lines']} lines, tests {diff['py_test_files']} files/{diff['py_test_lines']} lines, "
           f"uncommitted {len(diff['uncommitted'])}")
+    integrity = metrics["integrity"]
+    if integrity["checked"]:
+        print(f"  integrity: {'ok' if integrity['ok'] else 'VIOLATED'}; changed {len(integrity['changed'])} files, "
+              f"outside owned {integrity['outside_owned']}, protected changed {integrity['protected_changed']}, "
+              f"owned deleted {integrity['owned_deleted']}")
     print(f"  gate: verify exit {gate['verify_exit']}, final tessercheck findings {gate['tessercheck_findings']}, "
           f"tests {gate['test_outcomes']}, impl coverage {gate['impl_coverage_pct']}%")
     for test in gate["tests"]:
