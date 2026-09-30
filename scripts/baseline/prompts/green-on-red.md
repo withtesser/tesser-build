@@ -112,20 +112,19 @@ Every file in the tree that carries no generated mark, outside the acceptance te
 - Run the gate like this, keeping its whole output:
 
   ```sh
-  cd {worktree} && RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
-    scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 
-  It runs its steps in order and stops at the first that fails: tessercheck,
-  `mypy --strict`, the non-root tests, then it serves the host on port {port}
-  and runs the acceptance tests against it. Grep `{log}` rather than running
-  it again to see more.
-- For a quick check while you work, run just your own tests:
-  `cd {worktree}/story-drafting && PYTHONPATH=.:../tesser-py pytest -q drafting/domain drafting/adapters/gateways`.
-- Your Restate server's URL is {engine_url} and its admin API {admin}; serve hosts
-  only on ports {port}–{port_last}. Other agents work side by side: don't
-  touch processes you didn't start. Work only inside the worktree.
+  It runs its steps in order and stops at the first that fails: the render
+  check, tessercheck, `mypy --strict`, then one plain `pytest` over every
+  tier. The tests own their infrastructure: the rendered root `conftest.py`
+  starts private Restate engines and serves the host for the acceptance
+  tests. Grep `{log}` rather than running it again to see more.
+- For a quick check while you work, run just your own tests: `cd
+  {worktree}/story-drafting && pytest -q <your test files>`.
+- Other agents work side by side: don't touch processes you didn't start.
+  Work only inside the worktree.
 
 Done means `scripts/verify story-drafting` is green — tessercheck with zero
 findings, `mypy --strict`, and every test tier — with the acceptance tests

@@ -355,17 +355,14 @@ def audit_integrity(worktree: pathlib.Path, base: str) -> dict:
 def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
     env = dict(os.environ)
-    run = json.loads((out / "run.json").read_text())
-    if "engine_url" in run:
-        env["RESTATE_URL"] = run["engine_url"]
-        env["RESTATE_ADMIN"] = run["restate_admin"]
-        env["STORY_DRAFTING_PORT"] = str(run["host_port"])
+    # No engine or port is passed: the tree's tests start their own engines
+    # and serve their own host (the rendered root conftest).
     env["COVERAGE_FILE"] = str(out / ".coverage")
     env["PYTEST_ADDOPTS"] = f"--cov=. --cov-append --cov-report=json:{coverage} -rA -p no:cacheprovider"
     # The gate runs in its own process group with its output in a file, not a
-    # pipe: a served host that outlives the script (a gate that aborts before
-    # stopping it) would otherwise hold the pipe open and hang this run, and
-    # would stay running. Whatever the script leaves in its group is killed.
+    # pipe: a process that outlives the script would otherwise hold the pipe
+    # open and hang this run. Whatever the script leaves in its group is
+    # killed; the fixtures' watchdogs remove the containers they started.
     with (out / "verify.log").open("w") as log_file:
         proc = subprocess.Popen(["scripts/verify", TREE], cwd=worktree, env=env, stdout=log_file,
                                 stderr=subprocess.STDOUT, start_new_session=True)

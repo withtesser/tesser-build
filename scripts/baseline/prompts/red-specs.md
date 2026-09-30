@@ -42,16 +42,15 @@ The work is two decisions, and the rest is mechanical:
 
 Done means all of these hold:
 
-1. `scripts/verify story-drafting` gets past tessercheck with zero findings,
-   past `mypy --strict`, and past every test tier but the root. Its root tier
-   fails.
+1. `scripts/verify story-drafting` gets past tessercheck with zero findings
+   and past `mypy --strict`, and in its pytest every test passes except
+   acceptance tests in `tests/`.
 2. At least one acceptance test fails, and every one that fails fails at its
    story's **then**: the host answers, and what it answers is the generated
    stubs' placeholder behavior. A test whose *then* the stubs already satisfy
    passes; don't weaken or distort a test to make it fail. None fails before
    its *then*: not on an operation that isn't implemented, an import or
-   collection error, a missing module, or a host or Restate server that isn't
-   running.
+   collection error, a missing module, or a host that was not served.
 3. Every level-1 and level-2 story in `story.toml` is served by some piece in
    `composition.toml`, and every piece serves at least one story.
 
@@ -117,23 +116,21 @@ composition's names:
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh
-  cd {worktree} && RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
-    scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 
   It runs its steps in order and stops at the first that fails, printing a
-  `  →` line as each step starts: tessercheck, `mypy --strict`, the non-root
-  tests, then it serves `srv/http/main.py` on port {port}, registers its
-  Restate endpoint, and runs `tests/` with the host's address passed as
-  pytest's `--host` option (a `host` fixture in `tests/conftest.py`, generated).
-  Every step before the last `  →` line passed. The
-  full output stays in `{log}` to grep; don't run it again to see more. Do
-  not edit `scripts/verify`.
-- Your Restate server's URL is {engine_url} and its admin API {admin}; generated
-  tests that serve their own endpoints pick free ports themselves. Other
-  agents work side by side on other ports: don't touch processes you didn't
-  start. Work only inside the worktree. Do not add `skip` lines to any
+  `  →` line as each step starts: the render check, tessercheck,
+  `mypy --strict`, then one plain `pytest` over every tier. The tests own
+  their infrastructure: the rendered root `conftest.py` starts private Restate
+  engines, and its `host` fixture serves `srv/http/main.py` on a free port and
+  registers it, so an acceptance test asks for `host` and gets its address.
+  Every step before the last `  →` line passed. The full output stays in
+  `{log}` to grep; don't run it again to see more. Do not edit
+  `scripts/verify`.
+- Other agents work side by side: don't touch processes you didn't start.
+  Work only inside the worktree. Do not add `skip` lines to any
   `.tesser-root`.
 
 When done, commit your work on the current branch with

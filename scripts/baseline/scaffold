@@ -2,15 +2,16 @@
 #
 # Cut a red scaffold: an orphan root commit carrying HEAD's tree with the
 # story-drafting app reduced to the specs a trial starts from
-# (story-drafting/specs/language.toml, story.toml and infra.toml, when HEAD has them), and scripts/verify's
-# run_story_drafting arm replaced by scripts/baseline/scaffold-arm.bash, then
+# (story-drafting/specs/language.toml, story.toml and infra.toml, when HEAD has them), then
 # tag it.
 #
 #   scripts/baseline/scaffold story-drafting-scaffold-v4
 #
 # Orphan, so a trial's `git log` shows one commit and nothing of the history
-# that built the tools it is measured with. The arm serves srv/http/main.py
-# when the trial generates one, so a red trial writes no harness code.
+# that built the tools it is measured with. scripts/verify's story-drafting
+# arm is main's: the render check, tessercheck, mypy, and a plain pytest whose
+# rendered root conftest starts the engines and serves the host, so a red
+# trial writes no harness code.
 #
 set -euo pipefail
 
@@ -33,22 +34,14 @@ git worktree add -q --detach "$tmp/tree" HEAD
   if git ls-files --error-unmatch generator/compositions/story-drafting >/dev/null 2>&1; then
     git rm -q -r generator/compositions/story-drafting
   fi
-  # Earlier trials' recorded decisions (results/<trial>/, LEARNINGS.md) are
-  # answers too: a scaffold never carries the baseline's own records.
-  for recorded in scripts/baseline/results scripts/baseline/LEARNINGS.md; do
+  # Earlier trials' recorded decisions (results/<trial>/, LEARNINGS.md, the
+  # A/B records and reviews) are answers too: a scaffold never carries the
+  # baseline's own records.
+  for recorded in scripts/baseline/results scripts/baseline/LEARNINGS.md scripts/baseline/ab/results; do
     if git ls-files --error-unmatch "$recorded" >/dev/null 2>&1; then
       git rm -q -r "$recorded"
     fi
   done
-  python3 - "$HERE/scaffold-arm.bash" <<'PY'
-import re, sys
-arm = open(sys.argv[1]).read()
-text = open("scripts/verify").read()
-start = text.index("run_story_drafting() {\n")
-end = text.index("\n}\n", start) + 3
-open("scripts/verify", "w").write(text[:start] + arm + text[end:])
-PY
-  git add scripts/verify
   tree=$(git write-tree)
   commit=$(git commit-tree "$tree" -m "story-drafting red scaffold")
   git tag -a "$tag" "$commit" -m "Red scaffold: story-drafting holds only its two input specs"

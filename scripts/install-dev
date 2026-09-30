@@ -7,7 +7,7 @@
 #   scripts/install-dev
 #   scripts/verify
 #
-# It installs each tree's own requirements-dev.txt rather than a curated union,
+# It installs each app tree's own requirements-dev.txt rather than a curated union,
 # so this cannot drift when a tree adds a tool. The union today is mypy,
 # pytest, import-linter, and ruff floor-pinned, plus mutmut pinned exact
 # (==3.7.0 — the ecosystem test asserts that version's observed behavior).
@@ -23,13 +23,16 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
-# Read with a while loop, not mapfile: mapfile is a bash 4 builtin and macOS
-# ships bash 3.2. CI does not run this script at all, so nothing but a local
-# run would ever catch a bash-4-ism here.
+# Every app row of manifest.json, the list scripts/verify reads too, so a tree
+# added to the manifest is installed without editing this script. (A fixed
+# list here once missed generator/, specs-app/ and story-drafting/, whose
+# tests need restate_sdk[harness].) Read with a while loop, not mapfile:
+# mapfile is a bash 4 builtin and macOS ships bash 3.2. CI does not run this
+# script at all, so nothing but a local run would ever catch a bash-4-ism here.
 files=()
 while IFS= read -r f; do
   files+=("$f")
-done < <(find examples layout tessercheck-py tesser-py -name requirements-dev.txt | sort)
+done < <(python3 -c 'import json, os; [print(d + "/requirements-dev.txt") for d, kind in sorted(json.load(open("manifest.json")).items()) if kind == "app" and os.path.isfile(d + "/requirements-dev.txt")]')
 
 # Guard the empty case explicitly. Installing nothing and reporting success is
 # the same failure scripts/verify guards against when its tree list comes back
