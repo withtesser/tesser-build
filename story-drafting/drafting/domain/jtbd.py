@@ -100,6 +100,35 @@ class StoryView(ts.ValueObject):
         return self._state
 
 
+class StoryText(ts.ValueObject):
+
+    _given: Text
+    _when: Text
+    _then: Text
+
+    def __init__(self, spec: StoryTextSpec) -> None:
+        object.__setattr__(self, "_given", Text(spec.given))
+        object.__setattr__(self, "_when", Text(spec.when))
+        object.__setattr__(self, "_then", Text(spec.then))
+
+    def drafted(self) -> StoryView:
+        return StoryView(StorySpec(given=str(self._given), when=str(self._when), then=str(self._then), state=StoryState.DRAFTED))
+
+
+class StoryTexts(ts.ValueObject):
+
+    _texts: tuple[StoryText, ...]
+
+    def __init__(self, spec: RecordStoriesSpec) -> None:
+        object.__setattr__(self, "_texts", tuple(StoryText(text) for text in spec.story_texts))
+
+    def drafted(self) -> tuple[StoryView, ...]:
+        return tuple(text.drafted() for text in self._texts)
+
+    def __len__(self) -> int:
+        return len(self._texts)
+
+
 class Jtbd(ts.AggregateRoot):
 
     def __init__(self, spec: JtbdSpec) -> None:
@@ -114,7 +143,13 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def record_stories(self, record_stories_spec: RecordStoriesSpec) -> RecordStoriesOutcome:
-        return RecordStoriesOutcome.NONE_GIVEN
+        story_texts = StoryTexts(record_stories_spec)
+        if self._stories:
+            return RecordStoriesOutcome.ALREADY_RECORDED
+        if not story_texts:
+            return RecordStoriesOutcome.NONE_GIVEN
+        self._stories = story_texts.drafted()
+        return RecordStoriesOutcome.RECORDED
 
     @property
     def jtbd_id(self) -> str:
@@ -134,7 +169,11 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
-        return Text(JtbdStatus.DRAFTING_STORIES.value)
+        if not self._stories:
+            return Text(JtbdStatus.DRAFTING_STORIES.value)
+        if Text(StoryState.DRAFTED.value) in (story.state for story in self._stories):
+            return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
+        return Text(JtbdStatus.STORIES_DECIDED.value)
 
     @property
     def stories(self) -> tuple[StoryView, ...]:
