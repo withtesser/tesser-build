@@ -564,7 +564,8 @@ class TestRenderingCompositions:
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
         render_composition_request = client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "LOAN_FILE": str(tmp_path / "loans")}
 
         render_composition_response = rendering.client.render_composition(render_composition_request)
         tested = subprocess.run(
@@ -591,11 +592,55 @@ class TestRenderingCompositions:
         assert (tmp_path / "out" / "loans" / "adapters" / "repositories" / "test_file_loan_store.py").read_text().startswith(
             "# pragma: tesser-agent-owned;")
         assert not (tmp_path / "out" / "loans" / "adapters" / "repositories" / "memory_loan_repository.py").exists()
-        assert "repositories.FileLoanStore()" in (tmp_path / "out" / "loans" / "component" / "component.py").read_text()
+        assert "repositories.FileLoanStore(location=config.file_location)" in (tmp_path / "out" / "loans" / "component" / "component.py").read_text()
         assert store_path.read_text() == edited
         assert "loans/adapters/repositories/file_loan_store.py" in second_response.kept
         assert check_composition_response.problems == ()
         assert check_composition_response.drifted == ()
+
+    def test_a_store_on_a_located_storage_is_built_with_the_location_its_variable_names(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "implementations.toml": [(
+                "[implementations.LoanRepository.memory]\nbody = \"supported\"",
+                "[implementations.LoanRepository.sqlite]\nclass = \"SqliteLoanStore\"\nbody = \"agent\"",
+            ), ('LoanRepository = "memory"', 'LoanRepository = "sqlite"')],
+            "infra.toml": [("[storage.memory]", "[storage.sqlite]\nlocation_variable = \"LOAN_DB_PATH\"")],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "LOAN_DB_PATH": str(tmp_path / "loans.sqlite"), "RESTATE_INGRESS": "http://127.0.0.1:9"}
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "loans/adapters/repositories", "loans/component", "app"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "loans", "app"], cwd=tmp_path / "out", capture_output=True, text=True,
+            check=False, env=env,
+        )
+        store = (tmp_path / "out" / "loans" / "adapters" / "repositories" / "sqlite_loan_store.py").read_text()
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        assert "    def __init__(self, location: str) -> None:\n" in store
+        assert "repositories.SqliteLoanStore(location=str(tmp_path / " in (
+            tmp_path / "out" / "loans" / "adapters" / "repositories" / "test_sqlite_loan_store.py").read_text()
+        assert "repositories.SqliteLoanStore(location=config.sqlite_location)" in (
+            tmp_path / "out" / "loans" / "component" / "component.py").read_text()
+        assert 'os.environ.get("LOAN_DB_PATH")' in (tmp_path / "out" / "app" / "app.py").read_text()
 
     def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_given(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

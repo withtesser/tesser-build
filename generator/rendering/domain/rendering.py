@@ -2047,6 +2047,7 @@ class Model(ts.Entity):
         uuid_repositories: list[dict[str, object]] = []
         gateways: list[dict[str, object]] = []
         agent_stores: list[dict[str, object]] = []
+        locations: list[dict[str, object]] = []
         seeded = False
         for port_name, operations in self._port_ops.items():
             if port_name not in chosen:
@@ -2064,11 +2065,20 @@ class Model(ts.Entity):
                     raise ValueError(f"[implementations.{port_name}.{key}] is the agent's and names no class")
                 if port_name in self._stores:
                     Store = str(implementation["class"])
+                    location_variable = storages[key].get("location_variable")
+                    location_attr = f"{key}_location"
+                    if location_variable is not None and not any(entry["location_attr"] == location_attr for entry in locations):
+                        locations.append({"location_attr": location_attr, "location_variable": str(location_variable)})
                     agent_stores.append(dict(
                         self._frames[("store", port_name)], module=str(Word(Store).snake()), Repository=Store + "Transaction", Store=Store,
                         store=str(Word(Store).snake()), repository=str(Word(port_name).snake()),
+                        located=[{}] if location_variable is not None else [],
                     ))
-                    shared_stores.append({"store_attr": str(Word(Store).snake()), "store_expr": f"repositories.{Store}()"})
+                    shared_stores.append({
+                        "store_attr": str(Word(Store).snake()),
+                        "store_expr": f"repositories.{Store}(location=config.{location_attr})" if location_variable is not None
+                        else f"repositories.{Store}()",
+                    })
                     port_exprs[port_name] = f"self._{Word(Store).snake()}"
                     continue
                 Gateway = str(implementation["class"])
@@ -2116,6 +2126,8 @@ class Model(ts.Entity):
         self._binding["gateways"] = gateways
         self._binding["memory_repositories"] = memory_repositories
         self._binding["agent_stores"] = agent_stores
+        self._binding["locations"] = locations
+        self._binding["located"] = [{}] if locations else []
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
         self._binding["identity_seeded"] = [{}] if seeded else []

@@ -604,7 +604,8 @@ run_layout() {
 # root (a rendered tree has no root tier; its acceptance tests are written by
 # hand; each render is first checked against its composition with
 # srv.cli.render --check), against the same Restate server, reached through the variables its
-# infra.toml names for the engine.
+# infra.toml names for the engine, with every storage location variable its
+# infra.toml declares set to a fresh temporary path.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -635,6 +636,9 @@ run_rendered_tree() {
   local names ingress_env admin_env callback_env
   names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
   read -r ingress_env admin_env callback_env <<<"$names"
+  local location_names location_name locations
+  local location_env=()
+  location_names=$(python3 -c 'import sys, tomllib; print(" ".join(s["location_variable"] for s in tomllib.load(open(sys.argv[1], "rb")).get("storage", {}).values() if "location_variable" in s))' "$composition/infra.toml") || return 1
   step "render $composition into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
   step "$composition: the rendered tree matches its composition (srv.cli.render --check)"
@@ -650,8 +654,15 @@ run_rendered_tree() {
   step "$composition: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
   step "$composition: pytest every tier but the root, with no host served"
+  locations=$(mktemp -d) || return 1
+  for location_name in $location_names; do
+    location_env+=("$location_name=$locations/$location_name")
+  done
+  local tested=0
   (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
-    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .)
+    ${location_env[@]+"${location_env[@]}"} PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || tested=$?
+  rm -rf "$locations"
+  return "$tested"
 }
 
 run_generated_tree() {

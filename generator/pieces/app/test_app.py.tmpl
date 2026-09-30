@@ -15,7 +15,9 @@ class FakeConfigRepository(app.AppConfigRepository):
     def get(self) -> app.AppConfig:
         ingress = os.environ["{{ingress_variable}}"]
         return app.AppConfig(
-            app.Spec({{context}}_component.Config({{context}}_component.Spec(ingress{{#identity_seeded}}, 7{{/identity_seeded}})))
+            app.Spec({{context}}_component.Config({{context}}_component.Spec(
+                ingress{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
+            )))
         )
 
 
@@ -24,7 +26,9 @@ class TestAppConfig:
     def test_a_config_carries_the_{{context}}_config(self) -> None:
         spec = app.Spec(
             {{context}}_component.Config(
-                {{context}}_component.Spec("http://localhost:8080"{{#identity_seeded}}, 7{{/identity_seeded}})
+                {{context}}_component.Spec(
+                    "http://localhost:8080"{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
+                )
             )
         )
 
@@ -39,6 +43,9 @@ class TestEnvConfigRepository:
         app_config = app.EnvConfigRepository().get()
 
         assert app_config.{{context}}.ingress == os.environ["{{ingress_variable}}"]
+{{#locations}}
+        assert app_config.{{context}}.{{location_attr}} == os.environ["{{location_variable}}"]
+{{/locations}}
 {{#identity_seeded}}
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:

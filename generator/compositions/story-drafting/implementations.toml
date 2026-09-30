@@ -20,8 +20,9 @@
 class = "TemplateStoryDrafter"         # deterministic: fills fixed templates with the job to be done's parts
 body = "agent"
 
-[implementations.JtbdRepository.memory]
-body = "supported"
+[implementations.JtbdRepository.sqlite]  # the storage infra.toml declares
+class = "SqliteJtbdRepository"         # agent-owned: rendered once as a working in-memory stub
+body = "agent"
 
 [implementations.JtbdIdentityRepository.uuid]
 body = "supported"
@@ -31,11 +32,11 @@ body = "supported"
 # A contract with one implementation in every environment needs no selector variable.
 
 [environments.gate]
-implementations = { StoryDrafter = "template", JtbdRepository = "memory", JtbdIdentityRepository = "uuid" }
+implementations = { StoryDrafter = "template", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]
 
 [environments.local]
-implementations = { StoryDrafter = "template", JtbdRepository = "memory", JtbdIdentityRepository = "uuid" }
+implementations = { StoryDrafter = "template", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
 engine = "restate"
 hosts = ["http"]

@@ -36,7 +36,8 @@ listen_port_variable = "STORY_DRAFTING_PORT"
 # Where stored things live. A store port in implementations.toml is implemented
 # by a key that names one of these.
 
-[storage.memory]
+[storage.sqlite]
+location_variable = "JTBD_DB_PATH"     # the variable that names its location (a SQLite file path)
 
 # ---- environment variables --------------------------------------------------
 
@@ -46,3 +47,4 @@ RESTATE_ADMIN = "the Restate admin URL the host registers its endpoint with"
 RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
 STORY_DRAFTING_PORT = "the port the HTTP host listens on"
 STORY_DRAFTING_HOST = "the served host's URL, read by the acceptance tests"
+JTBD_DB_PATH = "the path of the SQLite database file"

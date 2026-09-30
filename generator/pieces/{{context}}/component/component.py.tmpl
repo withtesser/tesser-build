@@ -19,11 +19,16 @@ _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationR
 
 class Spec(ts.Spec):
 
-    def __init__(self, ingress: str{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}) -> None:
+    def __init__(
+        self, ingress: str{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}{{#locations}}, {{location_attr}}: str{{/locations}}
+    ) -> None:
         self.ingress = ingress
 {{#identity_seeded}}
         self.identity_seed = identity_seed
 {{/identity_seeded}}
+{{#locations}}
+        self.{{location_attr}} = {{location_attr}}
+{{/locations}}
 
 
 class Config(ts.Config):
@@ -33,6 +38,9 @@ class Config(ts.Config):
 {{#identity_seeded}}
         self.identity_seed = spec.identity_seed
 {{/identity_seeded}}
+{{#locations}}
+        self.{{location_attr}} = spec.{{location_attr}}
+{{/locations}}
 
 
 class {{Context}}(ts.Component):

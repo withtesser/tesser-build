@@ -24,7 +24,7 @@ class {{Repository}}(ts.Repository):
 
 class {{Store}}(ts.Repository):
 
-    def __init__(self) -> None:
+    def __init__(self{{#located}}, location: str{{/located}}) -> None:
         self._{{aggregates}}: dict[str, ports.{{Record}}] = {}
 
     @contextlib.asynccontextmanager

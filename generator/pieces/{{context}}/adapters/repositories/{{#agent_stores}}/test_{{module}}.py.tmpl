@@ -1,5 +1,9 @@
 # pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here
 from __future__ import annotations
+{{#located}}
+
+import pathlib
+{{/located}}
 
 import pytest
 
@@ -9,8 +13,8 @@ import {{context}}.application.ports as ports
 
 class Test{{Store}}:
 
-    async def test_a_saved_{{aggregate}}_is_loaded_in_a_later_transaction(self) -> None:
-        {{store}} = repositories.{{Store}}()
+    async def test_a_saved_{{aggregate}}_is_loaded_in_a_later_transaction(self{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
+        {{store}} = repositories.{{Store}}({{#located}}location=str(tmp_path / "{{store}}"){{/located}})
         {{aggregate}} = ports.{{Record}}({{record_sample}})
 
         async with {{store}}.transaction() as {{repository}}:
@@ -20,16 +24,16 @@ class Test{{Store}}:
 
         assert {{load}}_response.{{aggregate}} == {{aggregate}}
 
-    async def test_a_{{aggregate}}_never_saved_is_not_loaded(self) -> None:
-        {{store}} = repositories.{{Store}}()
+    async def test_a_{{aggregate}}_never_saved_is_not_loaded(self{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
+        {{store}} = repositories.{{Store}}({{#located}}location=str(tmp_path / "{{store}}"){{/located}})
 
         async with {{store}}.transaction() as {{repository}}:
             with pytest.raises(KeyError):
                 await {{repository}}.{{load}}(ports.{{Load}}Request({{identity}}={{identity_sample}}))
 
-    async def test_two_stores_hold_two_separate_sets_of_{{aggregates}}(self) -> None:
-        {{store}} = repositories.{{Store}}()
-        other_store = repositories.{{Store}}()
+    async def test_two_stores_hold_two_separate_sets_of_{{aggregates}}(self{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
+        {{store}} = repositories.{{Store}}({{#located}}location=str(tmp_path / "{{store}}"){{/located}})
+        other_store = repositories.{{Store}}({{#located}}location=str(tmp_path / "other"){{/located}})
 
         async with {{store}}.transaction() as {{repository}}:
             await {{repository}}.{{save}}(ports.{{Save}}Request({{aggregate}}=ports.{{Record}}({{record_sample}})))

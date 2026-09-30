@@ -52,6 +52,11 @@ class EnvConfigRepository(AppConfigRepository):
         ingress = os.environ.get("{{ingress_variable}}")
         if ingress is None:
             raise errors.invalid("missing_env", "{{ingress_variable}} is required")
+{{#locations}}
+        {{location_attr}} = os.environ.get("{{location_variable}}")
+        if {{location_attr}} is None:
+            raise errors.invalid("missing_env", "{{location_variable}} is required")
+{{/locations}}
         return AppConfig(
             Spec(
                 {{context}}={{context}}_component.Config(
@@ -60,6 +65,9 @@ class EnvConfigRepository(AppConfigRepository):
 {{#identity_seeded}}
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
 {{/identity_seeded}}
+{{#locations}}
+                        {{location_attr}}={{location_attr}},
+{{/locations}}
                     )
                 )
             )
