@@ -45,7 +45,8 @@ class TestGeneratingTrees:
             tmp_path / "srv" / "http" / "main.py"
         ).read_text()
         assert 'f"{host}/loans"' in (tmp_path / "tests" / "test_acceptance.py").read_text()
-        assert 'parser.addoption("--host"' in (tmp_path / "tests" / "conftest.py").read_text()
+        assert 'parser.addoption("--host"' in (tmp_path / "conftest.py").read_text()
+        assert not (tmp_path / "tests" / "conftest.py").exists()
         assert sorted(path.name for path in tmp_path.iterdir()) == [
             ".tesser-root",
             "app",

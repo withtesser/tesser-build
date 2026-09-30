@@ -551,13 +551,12 @@ run_layout() {
 # says `host = "http"`. Its own gates run first. Then every spec in
 # generator/specs/ is generated into a scratch directory and the generated tree
 # is gated at the bar of an example: tessercheck zero findings, mypy --strict,
-# and pytest against Postgres (a postgres tree only) and Restate in the runner's
-# order: every tier but the root with no host served, then the generated
-# endpoint served here and registered (forcing) with the Restate admin API, then
-# the root tier against it — an HTTP tree's root tier reaching the served host
-# at the address the arm passes as pytest's --host option. The local defaults are a `generator`
-# database and a Restate server of its own on 48080/49070, so a local run never
-# re-registers another tree's services. Then every composition in
+# and a plain pytest from the tree's root. The generated root conftest.py owns
+# the infrastructure (docs/design-test-tiers.md, "The tests own their
+# infrastructure"): private Restate engines and, for a postgres tree, a private
+# Postgres, each a container started on first use, and the generated host
+# served and registered on an engine of its own — so the arm starts nothing,
+# serves nothing, and sets no variable for the tree; it needs Docker. Then every composition in
 # generator/compositions/ is rendered by the composition-driven renderer
 # (srv.cli.render) into a scratch directory and the rendered tree is gated:
 # tessercheck zero findings, mypy --strict, and pytest over every tier but the
@@ -630,63 +629,19 @@ run_rendered_tree() {
 run_generated_tree() {
   local spec=$1
   local out=$2
-  local storage="${GENERATED_STORAGE:-postgres://tesser@localhost:5434/generator}"
-  local engine_url="${RESTATE_URL:-http://localhost:48080}"
-  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
-  local port="${GENERATED_DEPLOYMENT_PORT:-9081}"
-  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
-  local names context storage_kind host_kind storage_env engine_url_env
-  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["engine_url"])' "$spec") || return 1
-  read -r context storage_kind host_kind storage_env engine_url_env <<<"$names"
-  local packages=("app" "$context" "protocol" "srv" "tests" "conftest.py")
-  local env_vars=("$engine_url_env=$engine_url")
-  if [ "$storage_kind" = postgres ]; then
-    packages+=("pgdatabase")
-    env_vars+=("$storage_env=$storage")
-  fi
-  local module=srv.restate.main
-  local deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port}"
-  local root_args=()
-  if [ "$host_kind" = http ]; then
-    module=srv.http.main
-    deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port/restate}"
-    root_args=(--host "http://localhost:$port")
-  fi
   step "generate $spec into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate "$spec" "$out" >/dev/null || return 1
   step "$spec: tessercheck (zero findings over the generated tree)"
   tessercheck_tree "$out" || return 1
+  local packages=("tests" "conftest.py")
+  local d
+  for d in "$out"/*/; do
+    if [ -f "$d/__init__.py" ] && [ "$(basename "$d")" != tests ]; then packages+=("$(basename "$d")"); fi
+  done
   step "$spec: mypy --strict"
   (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
-  step "$spec: pytest every tier but the root, with no host served"
-  (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || return 1
-  step "$spec: serve the generated $host_kind host's Restate endpoint on :$port and register it at $admin"
-  (cd "$out" && exec env "${env_vars[@]}" PYTHONPATH=".:$ROOT/tesser-py" \
-    python3 -m "$module" "0.0.0.0:$port") &
-  local host=$!
-  local host_started
-  host_started=$(host_identity "$host")
-  local registered=1
-  for _ in $(seq 1 50); do
-    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
-      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
-      registered=0
-      break
-    fi
-    sleep 0.2
-  done
-  if [ "$registered" -ne 0 ]; then
-    echo "generator: could not register $deployment with $admin" >&2
-    stop_host "$host" TERM "$host_started"
-    return 1
-  fi
-  step "$spec: pytest the root tier against the served host"
-  (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests ${root_args[@]+"${root_args[@]}"})
-  local status=$?
-  stop_host "$host" INT "$host_started"
-  return "$status"
+  step "$spec: pytest (every tier; the tree's conftest.py starts its engines, storage, and host)"
+  (cd "$out" && PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider)
 }
 
 run_tessercheck_py() {

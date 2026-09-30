@@ -11,8 +11,13 @@ import time
 
 class {{test_class}}:
 
-    def {{test_method}}(self) -> None:
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    def {{test_method}}(self, host_engine_url: str, storage_url: str) -> None:
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "{{engine_url_env}}": host_engine_url,
+            "{{storage_env}}": storage_url,
+        }
         {{asserts}} = random.choice({{random_choices}})
 
         {{write}} = subprocess.run(
