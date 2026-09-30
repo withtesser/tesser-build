@@ -1,13 +1,13 @@
 # A/B: the tesser pipeline against a bare agent (story-drafting)
 
-Same product, two ways. **Arm A** is red then green from the two specs
-(`story-drafting/specs/language.toml`, `story.toml`) on scaffold
-`story-drafting-scaffold-s5`. **Arm B** is one bare agent in an empty
+Same product, two ways. **Arm A** is red then green from three specs
+(`story-drafting/specs/language.toml`, `story.toml`, `infra.toml`: what the
+product means, what a user must be able to do, and what it runs on) on the
+current story-drafting scaffold. **Arm B** is one bare agent in an empty
 repository outside this tree, given `prompts/bare.md`: the same facts as the
-two specs in prose (fidelity-reviewed against them), and nothing else — plus
-one disclosed deviation: it is told a Restate server is running and to build
-its workflow on it, because the generator picks that engine silently and no
-spec asks the user (see the memory "engine-choice-is-a-user-decision").
+three specs in prose (fidelity-reviewed against them, twice), and nothing else
+except the disclosed harness facts (the port it must listen on, `.venv`, the
+checker, and what a restart means).
 
 Every agent in both arms is the same definition (`~/.claude/agents/tesser-red-trial-medium.md`:
 effort medium, one generic body; the model is passed per call), spawned unnamed

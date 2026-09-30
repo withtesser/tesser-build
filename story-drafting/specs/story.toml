@@ -1,6 +1,7 @@
-# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
-# 5 generator. Each fact lives in the one spec whose question it answers; what a
-# convention derives (TB085 names, a class named for its aggregate) is in none.
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
 #
 # 2 STORY — What must a user be able to observe? Written by the product owner;
 # red writes one acceptance test per level-2 story, by hand. Names no component.
