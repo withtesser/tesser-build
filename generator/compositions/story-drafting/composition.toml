@@ -70,12 +70,15 @@ when = "str"
 then = "str"
 
 # ---- public interface -------------------------------------------------------
-# The routes are the level-2 stories' (s-1-a-1, s-2-a-1); they are not repeated here.
+# Each operation names its route and status; the renderer checks them against the
+# level-2 story it serves (s-1-a-1, s-2-a-1).
 
 [interfaces.http]
 serves = ["s-1-a-1", "s-2-a-1"]
 
 [client.operations.submit_jtbd]
+route = "POST /jtbds"                    # the level-2 story's method and path
+status = 201                          # what it answers with
 kind = "write"
 request = ["role", "i_want", "so_that"]
 response = ["jtbd_id", "status"]
@@ -87,6 +90,8 @@ steps = [
 serves = ["s-1", "s-1-a-1"]
 
 [client.operations.get_jtbd]
+route = "GET /jtbds/{jtbd_id}"           # the level-2 story's method and path
+status = 200                          # what it answers with
 kind = "read"
 request = ["jtbd_id"]
 response = ["jtbd_id", "role", "i_want", "so_that", "status", "stories"]

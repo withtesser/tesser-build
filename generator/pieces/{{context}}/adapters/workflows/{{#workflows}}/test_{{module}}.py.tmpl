@@ -21,19 +21,21 @@ import {{context}}.adapters.activities as activities
 import {{context}}.adapters.workflows as workflows
 import {{context}}.application.client as client
 import {{context}}.application.relays as relays
-{{#workflow_activities}}
+{{#application_clients}}
 
 
 @ts.fake
 class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 
     def __init__(self) -> None:
-        self.received: list[relays.{{Operation}}Request] = []
+        self.received: list[{{received_type}}] = []
+{{#calls}}
 
     async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
         self.received.append({{operation}}_request)
         return relays.{{Operation}}Response({{echo}})
-{{/workflow_activities}}
+{{/calls}}
+{{/application_clients}}
 
 
 class Test{{Workflow}}:
@@ -45,9 +47,9 @@ class Test{{Workflow}}:
         {{container_attr}} = restate.{{container_kind}}(f"{{container}}{suffix}")
 {{/containers}}
         parent_target = f"{{workflow_container}}{suffix}/" + workflow_key + "/{{operation}}"
-{{#workflow_activities}}
+{{#application_clients}}
         fake_{{application_client}} = Fake{{ApplicationClient}}()
-{{/workflow_activities}}
+{{/application_clients}}
         {{workflow_param}} = workflows.{{Workflow}}(
             {{workflow_container_attr}},
 {{#workflow_activities}}
@@ -128,11 +130,11 @@ class Test{{Workflow}}:
                 (row["status"] in ("running", "suspended"), json.loads(row["entry_lite_json"])["Command"]["GetPromise"]["key"])
                 for row in waiting
             ] == [{{#awaited_promises}}(True, relays.{{PROMISE}}), {{/awaited_promises}}]
-{{#workflow_activities}}
+{{#application_clients}}
 {{#keyed}}
-            assert [received.{{identity}} for received in fake_{{application_client}}.received] == [workflow_key]
+            assert [received.{{identity}} for received in fake_{{application_client}}.received] == [{{#calls}}workflow_key, {{/calls}}]
 {{/keyed}}
-{{/workflow_activities}}
+{{/application_clients}}
             assert [(row["target"], row["completion_result"]) for row in invoked.json()["rows"]] == [
 {{#workflow_activities}}
                 (f"{{actions_container}}{suffix}/{{operation}}", "success"),

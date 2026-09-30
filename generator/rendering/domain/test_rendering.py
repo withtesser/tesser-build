@@ -57,12 +57,16 @@ borrower = "str"
 serves = ["s-1-a-1", "s-1-a-2"]
 
 [client.operations.lend_book]
+route = "POST /loans"
+status = 201
 request = ["borrower"]
 response = ["loan_id"]
 steps = ["identity.issue_loan_id", "orchestrator.run_arrange_loan"]
 serves = ["s-1-a-1"]
 
 [client.operations.get_loan]
+route = "GET /loans/{loan_id}"
+status = 200
 request = ["loan_id"]
 response = ["loan_id", "borrower"]
 steps = ["repository.load_loan"]

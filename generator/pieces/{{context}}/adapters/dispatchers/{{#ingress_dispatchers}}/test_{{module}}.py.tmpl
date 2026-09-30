@@ -19,19 +19,21 @@ import {{context}}.adapters.dispatchers as dispatchers
 import {{context}}.adapters.workflows as workflows
 import {{context}}.application.client as client
 import {{context}}.application.relays as relays
-{{#workflow_activities}}
+{{#application_clients}}
 
 
 @ts.fake
 class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 
     def __init__(self) -> None:
-        self.received: list[relays.{{Operation}}Request] = []
+        self.received: list[{{received_type}}] = []
+{{#calls}}
 
     async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
         self.received.append({{operation}}_request)
         return relays.{{Operation}}Response({{echo}})
-{{/workflow_activities}}
+{{/calls}}
+{{/application_clients}}
 
 
 class Test{{Dispatcher}}:

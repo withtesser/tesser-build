@@ -21,6 +21,8 @@ title = "str"
 serves = ["s-1-a-1", "s-1-b-1"]
 
 [client.operations.lend_book]
+route = "POST /loans"                    # the level-2 story's method and path
+status = 201                          # what it answers with
 kind = "write"
 request = ["borrower", "title"]
 response = ["loan_id"]
@@ -28,6 +30,8 @@ steps = ["identity.issue_loan_id", "repository.save_loan", "orchestrator.start_a
 serves = ["s-1", "s-1-a-1"]
 
 [client.operations.get_loan]
+route = "GET /loans/{loan_id}"           # the level-2 story's method and path
+status = 200                          # what it answers with
 kind = "read"
 request = ["loan_id"]
 response = ["loan_id", "borrower", "title"]

@@ -20,18 +20,22 @@ import restate.client as restate_client
 import {{context}}.adapters.activities as activities
 import {{context}}.application.client as client
 import {{context}}.application.relays as relays
-{{#activities}}
+{{#application_clients}}
 
 
 @ts.fake
 class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
 
     def __init__(self) -> None:
-        self.received: list[relays.{{Operation}}Request] = []
+        self.received: list[{{received_type}}] = []
+{{#calls}}
 
     async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
         self.received.append({{operation}}_request)
         return relays.{{Operation}}Response({{echo}})
+{{/calls}}
+{{/application_clients}}
+{{#activities}}
 
 
 class Test{{Activity}}:

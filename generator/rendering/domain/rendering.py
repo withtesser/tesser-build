@@ -62,9 +62,7 @@ DOCUMENTS: typing.Final[tuple[str, ...]] = ("language", "story", "composition", 
 
 READ: typing.Final[str] = "read"
 
-HTTP_WHEN: typing.Final[re.Pattern[str]] = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE)\s+(?:.*?\s)?(/\S+)")
-
-HTTP_STATUS: typing.Final[re.Pattern[str]] = re.compile(r"get back (\d{3})")
+ROUTE: typing.Final[re.Pattern[str]] = re.compile(r"(GET|POST|PUT|PATCH|DELETE) (/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\})(?:/(?:[a-z0-9_-]+|\{[a-z][a-z0-9_]*\}))*)")
 
 PATH_FIELD: typing.Final[re.Pattern[str]] = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
 
@@ -451,16 +449,18 @@ class Sources(ts.Entity):
 
 class AskSpec(ts.Spec):
 
-    def __init__(self, name: str, target_ref: str, allow_empty: bool) -> None:
+    def __init__(self, name: str, target_ref: str, allow_empty: bool, occasion: str = "") -> None:
         self.name = name
         self.target_ref = target_ref
         self.allow_empty = allow_empty
+        self.occasion = occasion
 
 
 class Ask(ts.Entity):
 
     def __init__(self, spec: AskSpec) -> None:
         self._name = spec.name
+        self._occasion = spec.occasion
         self._target_ref = spec.target_ref
         self._allow_empty = spec.allow_empty
         self._targets: list[Target] = []
@@ -478,6 +478,9 @@ class Ask(ts.Entity):
 
     def name(self) -> Word:
         return Word(self._name)
+
+    def occasion(self) -> Word:
+        return Word(self._occasion)
 
     def target_ref(self) -> Word:
         return Word(self._target_ref)
@@ -594,7 +597,8 @@ class Mappers(ts.Entity):
             if kind == "aggregate":
                 if not reads_aggregate:
                     raise ValueError(f"{name} fills {field}, the aggregate itself, from something that is not the aggregate")
-                nested = Ask(AskSpec(name=f"MapTo{target.record()}", target_ref=f"ports.{target.record()}", allow_empty=False))
+                nested = Ask(AskSpec(name=f"MapTo{target.record()}", target_ref=f"ports.{target.record()}", allow_empty=False,
+                                     occasion=str(ask.occasion())))
                 for member in target.members():
                     nested.target(member)
                 nested.source(found)
@@ -606,7 +610,8 @@ class Mappers(ts.Entity):
                 parts = []
                 for element_field, element_type in target.element():
                     if reads_aggregate:
-                        parts.append(f"{element_field}=str({var}.{element_field})")
+                        cast = "int" if element_type == "int" else "str"
+                        parts.append(f"{element_field}={cast}({var}.{element_field})")
                     elif package == "domain" and element_type not in PRIMITIVE_TYPES:
                         parts.append(f"{element_field}=domain.{element_type}({var}.{element_field})")
                     else:
@@ -632,6 +637,9 @@ class Mappers(ts.Entity):
             if source in used and param not in params:
                 params.append(param)
         mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
+        if any(existing.name() == mapper_def.name() and existing != mapper_def for existing in self._defs) and str(ask.occasion()):
+            name = f"{name}For{ask.occasion()}"
+            mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
         for existing in self._defs:
             if existing.name() == mapper_def.name() and existing != mapper_def:
                 raise ValueError(f"two mappers in {self._module} would be named {name}")
@@ -996,14 +1004,15 @@ class Model(ts.Entity):
         for command in self._commands.values():
             for field, type_text in command.get("takes", {}).items():
                 self._registry.setdefault(str(field), str(type_text))
-        self._inline: dict[str, str] = {}
-        for port in composition.get("ports", {}).values():
-            for operation in port.get("operations", {}).values():
-                for listed in list(operation.get("request", [])) + list(operation.get("response", [])):
-                    if ":" in listed:
-                        field, type_text = (part.strip() for part in str(listed).split(":", 1))
-                        self._inline[field] = type_text
-                        self._registry.setdefault(field, type_text)
+        self._inline: dict[tuple[str, str, str], str] = {}
+        for port_name, port in composition.get("ports", {}).items():
+            for operation_name, operation in port.get("operations", {}).items():
+                for side in ("request", "response"):
+                    for listed in operation.get(side, []):
+                        if ":" in listed:
+                            field, type_text = (part.strip() for part in str(listed).split(":", 1))
+                            record_name = str(Word(str(operation_name)).pascal()) + side.capitalize()
+                            self._inline[(str(Word(str(port_name)).snake()), record_name, field)] = type_text
         self._registry[self._aggregate] = self._Aggregate
         self._packages = {
             package: Records(RecordsSpec(package=package, types=TypesSpec(*self._types_args)))
@@ -1183,8 +1192,8 @@ class Model(ts.Entity):
             for field in fields:
                 if reading and field in self._read_types:
                     type_text = self._read_types[field]
-                elif package == "ports" and field in self._inline:
-                    type_text = self._inline[field]
+                elif package == "ports" and (module, name, field) in self._inline:
+                    type_text = self._inline[(module, name, field)]
                 elif field in self._registry:
                     type_text = self._registry[field]
                 elif field in self._read_types:
@@ -1231,11 +1240,12 @@ class Model(ts.Entity):
                         values = {str(target.field()): json.loads(str(self._samples.value(target))) for target in record.targets()}
                         frame["sample"] = ", ".join(f"{target.field()}={self._samples.value(target).literal(target)}" for target in record.targets())
                         frame["sample_bytes"] = repr(json.dumps(values).encode())
-                        wrong = ['b"{}"', 'b"[]"']
+                        wrong = ['b"[]"']
                         if names:
+                            first = record.targets()[0]
                             broken = dict(values)
-                            broken[names[0]] = 1
-                            wrong.append(repr(json.dumps(broken).encode()))
+                            broken[names[0]] = "one" if str(first.type_text()) == "int" else 1
+                            wrong = ['b"{}"'] + wrong + [repr(json.dumps(broken).encode())]
                         frame["wrong_shapes"] = ", ".join(wrong)
                     self._frames[(package, str(record.name()))] = frame
         for port_name, store in self._stores.items():
@@ -1294,6 +1304,7 @@ class Model(ts.Entity):
         service_tests: list[dict[str, object]] = []
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
+            occasion = Operation
             request_record = self._messages[("client", Operation + "Request")]
             response_record = self._messages[("client", Operation + "Response")]
             sources = Sources(SourcesSpec(name=operation_name))
@@ -1318,7 +1329,7 @@ class Model(ts.Entity):
                     port_response = self._messages[("ports", Step + "Response")]
                     carries = any(str(t.kind()) == "aggregate" for t in port_request.targets())
                     if carries and not built:
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True))
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion))
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
                         for held in sources.held():
@@ -1329,7 +1340,7 @@ class Model(ts.Entity):
                                                        prefix=aggregate + ".", holds=tuple(self._readout.of(mapped.values())))))
                         built = True
                     if port_request.targets():
-                        ask = Ask(AskSpec(name=f"MapTo{Step}Request", target_ref=f"ports.{Step}Request", allow_empty=False))
+                        ask = Ask(AskSpec(name=f"MapTo{Step}Request", target_ref=f"ports.{Step}Request", allow_empty=False, occasion=occasion))
                         for target in port_request.targets():
                             ask.target(target)
                         for held in sources.held():
@@ -1355,13 +1366,15 @@ class Model(ts.Entity):
                     if loaded:
                         members = loaded[0].members()
                         member_values = tuple((str(m.field()), str(self._samples.value(m))) for m in members)
-                        sources = Sources(SourcesSpec(name=local))
                         source = Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                           prefix=f"{local}.{loaded[0].field()}.", holds=member_values))
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False))
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False, occasion=occasion))
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
                         ask.source(source)
+                        for held in sources.held():
+                            if str(held.kind()) != "aggregate":
+                                ask.source(held)
                         mapped = mappers.map(ask)
                         statements.append(dict(blank, build=[{}], argument=str(mapped.call())))
                         sources.hold(source)
@@ -1380,7 +1393,7 @@ class Model(ts.Entity):
                     mode, orchestrator_operation = rest.split("_", 1)
                     Step = str(Word(orchestrator_operation).pascal())
                     relay_request = self._messages[("relays", Step + "Request")]
-                    ask = Ask(AskSpec(name=f"MapTo{Step}Request", target_ref=f"relays.{Step}Request", allow_empty=False))
+                    ask = Ask(AskSpec(name=f"MapTo{Step}Request", target_ref=f"relays.{Step}Request", allow_empty=False, occasion=occasion))
                     for target in relay_request.targets():
                         ask.target(target)
                     for held in sources.held():
@@ -1402,7 +1415,7 @@ class Model(ts.Entity):
                     if saved:
                         checks.append({"check": f"fake_{holder}.saved_when_received == [True]"})
                     returned = self._messages[("relays", returned_name)]
-                    echoed = Ask(AskSpec(name=returned_name, target_ref=returned_name, allow_empty=False))
+                    echoed = Ask(AskSpec(name=returned_name, target_ref=returned_name, allow_empty=False, occasion=occasion))
                     for target in returned.targets():
                         echoed.target(target)
                     echoed.source(Source(SourceSpec(expr="sent", type_ref="sent", kind="plain", prefix="sent.", holds=tuple(pairs))))
@@ -1412,7 +1425,7 @@ class Model(ts.Entity):
                     test_name = f"{operation_name}_{rest}_with_the_{aggregate}_it_built"
                 else:
                     raise ValueError(f"client step {step} is of a kind this renderer does not know: {kind}")
-            ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"client.{Operation}Response", allow_empty=False))
+            ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"client.{Operation}Response", allow_empty=False, occasion=occasion))
             for target in response_record.targets():
                 ask.target(target)
             for held in sources.held():
@@ -1473,8 +1486,13 @@ class Model(ts.Entity):
             tests: list[dict[str, object]] = []
             commanded = False
             builds = False
+            steps = [str(step) for orchestrated in self._composition.get("orchestrator", {}).get("operations", {}).values()
+                     for step in orchestrated.get("steps", [])]
             for operation_name, operation in table.get("operations", {}).items():
                 Operation = str(Word(operation_name).pascal())
+                occasion = Operation
+                if f"actions.{key}.{operation_name}" not in steps:
+                    raise ValueError(f"actions.{key}.operations.{operation_name} is never run by the orchestrator, so nothing reaches it")
                 request_record = self._messages[("relays", Operation + "Request")]
                 response_record = self._messages[("relays", Operation + "Response")]
                 calls = str(operation.get("calls", ""))
@@ -1492,7 +1510,7 @@ class Model(ts.Entity):
                 checks: list[dict[str, object]] = []
                 if "builds" in operation:
                     builds = True
-                    ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True))
+                    ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion))
                     for target in self._domain_targets[Aggregate + "Spec"]:
                         ask.target(target)
                     for held in sources.held():
@@ -1502,7 +1520,7 @@ class Model(ts.Entity):
                     sources.hold(Source(SourceSpec(expr=aggregate, type_ref=f"domain.{Aggregate}", kind="aggregate",
                                                    prefix=aggregate + ".", holds=tuple(self._readout.of(mapped.values())))))
                 if port_request.targets():
-                    ask = Ask(AskSpec(name=f"MapTo{Call}Request", target_ref=f"ports.{Call}Request", allow_empty=False))
+                    ask = Ask(AskSpec(name=f"MapTo{Call}Request", target_ref=f"ports.{Call}Request", allow_empty=False, occasion=occasion))
                     for target in port_request.targets():
                         ask.target(target)
                     for held in sources.held():
@@ -1531,14 +1549,17 @@ class Model(ts.Entity):
                         raise ValueError(f"{operation_name} gives {command}, which the aggregate does not declare")
                     if "calls_on" not in operation:
                         raise ValueError(f"actions.{key}.operations.{operation_name} matches the outcomes of {command} and does not say which of them calls {calls} (calls_on)")
+                    for outcome in operation["calls_on"]:
+                        if outcome not in self._commands[command].get("outcomes", []):
+                            raise ValueError(f"actions.{key}.operations.{operation_name} calls_on names {str(outcome)!r}, which is not an outcome of {command}")
                     Command = str(Word(command).pascal())
-                    ask = Ask(AskSpec(name=f"MapTo{Command}Spec", target_ref=f"domain.{Command}Spec", allow_empty=False))
+                    ask = Ask(AskSpec(name=f"MapTo{Command}Spec", target_ref=f"domain.{Command}Spec", allow_empty=False, occasion=occasion))
                     for target in self._domain_targets[Command + "Spec"]:
                         ask.target(target)
                     for held in sources.held():
                         ask.source(held)
                     command_argument = str(mappers.map(ask).call())
-                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
+                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False, occasion=occasion))
                     for target in response_record.targets():
                         ask.target(target)
                     for held in sources.held():
@@ -1556,7 +1577,7 @@ class Model(ts.Entity):
                     if port_response.targets():
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Call}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(self._fakes[("ports", Call + "Response1")].values()))))
-                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False))
+                    ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"relays.{Operation}Response", allow_empty=False, occasion=occasion))
                     for target in response_record.targets():
                         ask.target(target)
                     for held in sources.held():
@@ -1672,7 +1693,8 @@ class Model(ts.Entity):
                 if target_record.targets() and all(str(value) != UNKNOWN for _, value in pairs):
                     reads = ", ".join(f"received.{t.field()}" for t in target_record.targets())
                     expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in target_record.targets())
-                    checks.append({"check": f"[({reads},) for received in fake_{holder}.received] == [({expected},)]"})
+                    checks.append({"check": f"[({reads},) for received in fake_{holder}.received "
+                                            f"if isinstance(received, relays.{target_name})] == [({expected},)]"})
                 returned = self._messages[("relays", returned_name)]
                 echoed = Ask(AskSpec(name=returned_name, target_ref=returned_name, allow_empty=False))
                 for target in returned.targets():
@@ -1870,6 +1892,7 @@ class Model(ts.Entity):
         self._binding["commands"] = commands
         spec_types = dict(self._spec_fields)
         views: list[dict[str, object]] = []
+        leaves: set[str] = set()
         stored: list[dict[str, object]] = []
         read_checks: list[dict[str, object]] = []
         stored_names: set[str] = set()
@@ -1879,7 +1902,7 @@ class Model(ts.Entity):
             if kind == "scalar" and read_type == type_text:
                 stored.append({"field": field, "stored_expr": f"spec.{field}"})
                 stored_names.add(field)
-                read_checks.append({"actual": f"str({aggregate}.{field})",
+                read_checks.append({"actual": f"{'int' if type_text == 'int' else 'str'}({aggregate}.{field})",
                                     "expected": str(self._samples.value(Target(TargetSpec(
                                         field=field, type_text=type_text, kind=kind, package="domain", record="",
                                         element=(), members=()))))})
@@ -1892,7 +1915,8 @@ class Model(ts.Entity):
                     if view_field not in element_types:
                         raise ValueError(f"{view}.{view_field} is read, and {element} does not hold it")
                     held = element_types[view_field]
-                    view_fields.append({"field": view_field,
+                    leaves.add("Number" if held == "int" else "Text")
+                    view_fields.append({"field": view_field, "leaf": "Number" if held == "int" else "Text", "cast": "int" if held == "int" else "str",
                                         "text_expr": f"spec.{view_field}.value" if str(types.kind(held)) == "enum" else f"spec.{view_field}"})
                 element_spec = element if element.endswith("Spec") else element + "Spec"
                 views.append({"View": view, "Spec": element_spec, "fields": view_fields})
@@ -1902,7 +1926,7 @@ class Model(ts.Entity):
                 sample = json.loads(str(self._samples.value(Target(TargetSpec(
                     field=field, type_text=type_text, kind=kind, package="domain", record=element_spec,
                     element=tuple(types.fields(element)), members=())))))
-                view_reads = ", ".join(f"str({var}.{entry['field']})" for entry in view_fields)
+                view_reads = ", ".join(f"{entry['cast']}({var}.{entry['field']})" for entry in view_fields)
                 expected = ", ".join("(" + ", ".join(json.dumps(item[str(entry["field"])]) for entry in view_fields) + ",)" for item in sample)
                 read_checks.append({"actual": f"[({view_reads},) for {var} in {aggregate}.{field}]", "expected": f"[{expected}]"})
         if self._identity not in stored_names or spec_types.get(self._identity) != "str":
@@ -1918,13 +1942,17 @@ class Model(ts.Entity):
                 reads.append({"read": read, "read_type": "Text", "read_expr": f"Text({read_type}.{first}.value)"})
             elif kind == "array":
                 reads.append({"read": read, "read_type": f"tuple[{types.element(read_type)}, ...]", "read_expr": "()"})
+            elif read_type == "int":
+                reads.append({"read": read, "read_type": "int", "read_expr": "0"})
             else:
                 reads.append({"read": read, "read_type": "Text", "read_expr": 'Text("")'})
         self._binding["views"] = views
         self._binding["stored"] = stored
         self._binding["reads"] = reads
         self._binding["identity_type"] = "str"
-        self._binding["stub_text"] = [{}] if views or any(r["read_type"] == "Text" for r in reads) else []
+        self._binding["stub_text"] = [{}] if "Text" in leaves or any(r["read_type"] == "Text" for r in reads) else []
+        self._binding["stub_number"] = [{}] if "Number" in leaves else []
+        self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] else []
         exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._enums) | {str(c["Outcome"]) for c in commands}
         self._binding["domain_exports"] = [{"name": name} for name in sorted(exports)]
         spec_parts = []
@@ -1953,7 +1981,12 @@ class Model(ts.Entity):
                 raise ValueError(f"[engine.restate] does not say which variable is the {key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
         chosen: dict[str, str] = {}
+        if not implementations.get("environments"):
+            raise ValueError("implementations.toml declares no [environments]")
         for environment_name, environment in implementations.get("environments", {}).items():
+            for port_name in self._port_ops:
+                if port_name not in environment.get("implementations", {}):
+                    raise ValueError(f"environment {environment_name} names no implementation for {port_name}")
             for port_name, implementation in environment.get("implementations", {}).items():
                 if chosen.setdefault(str(port_name), str(implementation)) != str(implementation):
                     raise ValueError(f"{port_name} is {chosen[str(port_name)]} in one environment and {implementation} in "
@@ -2060,6 +2093,23 @@ class Model(ts.Entity):
             if key not in used:
                 used.append(key)
         self._binding["activities"] = activities
+        application_clients: list[dict[str, object]] = []
+        for activity in activities:
+            grouped = next((entry for entry in application_clients if entry["ApplicationClient"] == activity["ApplicationClient"]), None)
+            if grouped is None:
+                grouped = {"ApplicationClient": activity["ApplicationClient"], "application_client": activity["application_client"],
+                           "calls": [], "keyed": [{}]}
+                application_clients.append(grouped)
+            calls = grouped["calls"]
+            if isinstance(calls, list):
+                calls.append({"operation": activity["operation"], "Operation": activity["Operation"], "echo": activity["echo"]})
+            if not activity["keyed"]:
+                grouped["keyed"] = []
+        for grouped in application_clients:
+            calls = grouped["calls"]
+            grouped["received_type"] = " | ".join(
+                f"relays.{call['Operation']}Request" for call in (calls if isinstance(calls, list) else []) if isinstance(call, dict))
+        self._binding["application_clients"] = application_clients
         self._binding["first_activity"] = activities[:1]
         containers: list[dict[str, object]] = []
         for key in used:
@@ -2166,11 +2216,18 @@ class Model(ts.Entity):
             story = stories.get(story_ids[0])
             if story is None:
                 raise ValueError(f"{story_ids[0]} is served, and story.toml holds no story of that id")
-            when = HTTP_WHEN.search(str(story.get("when", "")))
-            status = HTTP_STATUS.search(str(story.get("then", "")))
-            if when is None or status is None:
-                raise ValueError(f"{story_ids[0]} does not say its method and path in its when and its status in its then")
-            method, path = when.group(1), when.group(2)
+            route = ROUTE.fullmatch(str(operation.get("route", "")))
+            if route is None:
+                raise ValueError(f"client operation {operation_name} has no route like \"POST /loans\" (a method, a space, and a path whose parameters are written {{field}})")
+            status_code = operation.get("status")
+            if not isinstance(status_code, int) or isinstance(status_code, bool) or not 200 <= status_code < 300:
+                raise ValueError(f"client operation {operation_name} has no status, the 2xx it answers with, like 201")
+            method, path = route.group(1), route.group(2)
+            when = str(story.get("when", ""))
+            then = str(story.get("then", ""))
+            if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
+                raise ValueError(f"client operation {operation_name} is {method} {path} answering {status_code}, and {story_ids[0]}, "
+                                 f"the story it serves, does not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
             request = self._messages[("client", Operation + "Request")]
             response = self._messages[("client", Operation + "Response")]
@@ -2193,7 +2250,7 @@ class Model(ts.Entity):
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
-                "status": status.group(1), "inputs": inputs, "has_inputs": [{}] if inputs else [],
+                "status": str(status_code), "inputs": inputs, "has_inputs": [{}] if inputs else [],
                 "outputs": self._frames[("client", Operation + "Response")]["fields"],
                 "response_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in response.targets()),
                 "response_json": json.dumps(response_values),
@@ -2207,7 +2264,9 @@ class Model(ts.Entity):
                 probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
                 answers.append("400")
                 probes.append({"method": method, "path": probe_path, "body": repr(json.dumps(body).encode())})
-                answers.append("500" if any(step.startswith("orchestrator.") for step in steps) else status.group(1))
+                reaches = any(step.startswith("orchestrator.") for step in steps)
+                loads = bool(path_fields) and any(step.startswith("repository.") for step in steps)
+                answers.append("500" if reaches or loads else str(status_code))
             elif path_fields and any(step.startswith("repository.") for step in steps):
                 probes.append({"method": method, "path": probe_path, "body": "None"})
                 answers.append("500")

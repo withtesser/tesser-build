@@ -27,7 +27,7 @@ class Test{{Record}}Snapshot:
         assert returned == {{record}}
 
     def test_a_{{record}}_of_the_wrong_shape_is_refused_before_the_constructor(self) -> None:
-        for raw in ({{wrong_shapes}}):
+        for raw in ({{wrong_shapes}},):
             with pytest.raises(errors.DomainError):
                 relays.{{Record}}Snapshot().deserialize(raw)
 {{/snapshot}}
