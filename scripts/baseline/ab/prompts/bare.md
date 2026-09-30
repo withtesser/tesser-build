@@ -32,9 +32,9 @@ Each "Over HTTP" line names routes, JSON fields, and values exactly, in backtick
 1. **Given** a job to be done, **when** I submit it to the story-drafting skill, **then** I can come back to it, and I can see it is drafting its stories.
    - Over HTTP: **given** a job to be done's `role`, `i_want`, and `so_that`, **when** I POST them as JSON to `/jtbds`, **then** I get back 201 with its `jtbd_id` and `status` `"drafting_stories"`.
 2. **Given** a job to be done whose stories have been drafted, **when** I read the job to be done, **then** its stories are given to me, each one drafted and none accepted, and it is awaiting my acceptance of its stories.
-   - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, and its stories have been drafted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and at least one story, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
+   - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, and its stories have been drafted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and a `stories` list holding at least one story, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
 3. **Given** a job to be done I submitted, whose stories have been drafted, and the service has since been restarted, **when** I read the job to be done, **then** it is still there, with the same stories, each still drafted, and it is still awaiting my acceptance.
-   - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, its stories have been drafted, and the service has been restarted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and the same stories, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
+   - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, its stories have been drafted, and the service has been restarted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and a `stories` list holding the same stories, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
 
 ## Out of scope
 
