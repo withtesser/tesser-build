@@ -104,6 +104,30 @@ right after it can answer 500 until the action has saved the aggregate.
   and the root acceptance test retries its read until it answers (30 seconds,
   0.2 seconds apart).
 
+## Testing a generated tree
+
+A plain `pytest` from the generated tree's root runs every tier, the root
+acceptance test included, with nothing served beforehand and nothing read
+from the environment (`docs/design-test-tiers.md`, "The tests own their
+infrastructure"). It needs Docker. The generated root `conftest.py` owns the
+infrastructure as session fixtures a test asks for by name; there is no
+`tests/conftest.py`, and `tests` is in `testpaths`:
+
+| Fixture | What it is |
+|---|---|
+| `engine_url`, `engine_admin_url`, `engine_callback_host` | a private Restate engine (`restate.harness`), started on first use, for the adapter tests |
+| `free_port` | a port the OS just handed out, for a test that serves an endpoint |
+| `storage_url` | postgres only: a private Postgres 16 in a container, started on first use; a plain `postgres://` DSN to a database named for the context |
+| `host` | `host = "http"`: a second private engine and `srv.http.main` served on a free port and registered with it; the host's base URL. `pytest --host <url>` points the root tier at a host already running, and then nothing is served |
+| `host_engine_url` | `host = "cli"`: a second private engine with `srv.restate.main` served on a free port and registered with it; the engine's URL. The root test runs `srv.cli.main` per command with the spec's `engine_url` variable set to it and its `storage_url` variable set to `storage_url` |
+
+Every container and served process has a watchdog child that removes it if
+pytest dies without cleaning up. Each fixture is synchronous and yields a
+plain string, so no session resource belongs to one test's event loop. A test
+that starts a host as a subprocess builds its environment explicitly from
+fixtures. `app.EnvConfigRepository` takes the environment it reads (`load()`
+passes `os.environ`), so its test hands it a dict.
+
 ## Example: HTTP over memory
 
 `specs/library.toml`:
@@ -173,7 +197,9 @@ the renderer derives, what it renders, and which rendered files are the
 agent's.
 
 `infra.toml` holds what the app runs on and what an operator must provide: the
-app, the runtime, the engine (with `engine_path` and its variables), the host,
+app, the runtime, the engine (with `engine_path` and `engine_url_variable`; an
+`admin_variable` or `callback_host_variable` is a problem, since the tests take
+the engine's admin URL and callback host as fixtures), the host,
 each storage (`[storage.<name>]`, with the `location_variable` that locates it,
 for every storage but `memory`), and the variables. `implementations.toml`
 holds only the port-level mapping (`[implementations]` and `[environments]`);
@@ -205,15 +231,29 @@ skeleton is named for its method and every path segment, a parameter as
 `test_reading_loans_by_loan_id.py`), and holds two placeholders the agent
 writes: the story's given (how the host reaches it, and any path value the
 route needs) and its then. It takes the served host's address as the `host`
-fixture, which the generated `tests/conftest.py` answers from pytest's
-`--host` option (`pytest tests --host <url>`); a run without it fails loudly. A story file with `reached_by` is a problem: the
+fixture, which the rendered root `conftest.py` answers: it serves
+`srv.http.main` on a private engine of its own, or answers pytest's `--host`
+option (`pytest tests --host <url>`) when a runner already serves one. A story file with `reached_by` is a problem: the
 key is no longer part of the format. A path parameter for an `int` field answers
 400 unless it is an integer (an optional `-` and at most 18 ASCII digits). A
 command with `takes = {}` renders a `<Command>Spec` whose constructor is `pass`.
 `scripts/verify` stops a served host only while it is the process it started
 (same start time), never signalling one that has already exited.
 
+A rendered tree owns its test infrastructure (`docs/design-test-tiers.md`,
+"The tests own their infrastructure"): a plain `pytest` from its root runs
+every tier with nothing served beforehand and nothing read from the
+environment. The rendered root `conftest.py` holds session fixtures a test asks
+for by name: `engine_url`, `engine_admin_url` and `engine_callback_host` (a
+private Restate engine, started through `restate.harness` on first use),
+`free_port`, and, in a tree with root tests, `host` (a second private engine
+and `srv.http.main` registered with it, run with the engine URL, every storage
+`location_variable` (a fresh temporary path) and the `listen_port_variable`
+that `infra.toml` names). A watchdog child per engine and host cleans up if
+pytest is killed. The app's `EnvConfigRepository` takes the environment it
+reads (`load()` passes `os.environ`), so its test hands it a dict.
+
 Every composition in `compositions/` is gated: `scripts/verify
 generator` renders each one and runs the rendered tree's tessercheck,
-`mypy --strict`, and every test tier but the root, with every storage
-`location_variable` its `infra.toml` declares set to a fresh temporary path.
+`mypy --strict`, and a plain `pytest` (Docker required), passing when every
+failure is a root-test skeleton red at its placeholder.

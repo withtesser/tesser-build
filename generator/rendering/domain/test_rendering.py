@@ -53,8 +53,6 @@ version = "3.12"
 body = "supported"
 engine_path = "/restate"
 engine_url_variable = "RESTATE_URL"
-admin_variable = "RESTATE_ADMIN"
-callback_host_variable = "RESTATE_CALLBACK_HOST"
 
 [hosts.http]
 listen_port_variable = "LIBRARY_PORT"

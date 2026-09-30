@@ -1,7 +1,9 @@
 # pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
+{{#located}}
 
-import os
+import pathlib
+{{/located}}
 
 import tesser.testing as ts
 
@@ -11,12 +13,16 @@ import {{context}}.component as {{context}}_component
 
 @ts.fake
 class FakeConfigRepository(app.AppConfigRepository):
+{{#located}}
+
+    def __init__(self, locations: pathlib.Path) -> None:
+        self._locations = locations
+{{/located}}
 
     def get(self) -> app.AppConfig:
-        engine_url = os.environ["{{engine_url_variable}}"]
         return app.AppConfig(
             app.Spec({{context}}_component.Config({{context}}_component.Spec(
-                engine_url{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
+                "http://localhost:8080"{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=str(self._locations / "{{location_attr}}"){{/locations}}
             )))
         )
 
@@ -40,16 +46,20 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
+        app_config = app.EnvConfigRepository(
+            {"{{engine_url_variable}}": "http://engine.invalid:8080"{{#locations}}, "{{location_variable}}": "{{location_attr}}.invalid"{{/locations}}}
+        ).get()
 
-        assert app_config.{{context}}.engine_url == os.environ["{{engine_url_variable}}"]
+        assert app_config.{{context}}.engine_url == "http://engine.invalid:8080"
 {{#locations}}
-        assert app_config.{{context}}.{{location_attr}} == os.environ["{{location_variable}}"]
+        assert app_config.{{context}}.{{location_attr}} == "{{location_attr}}.invalid"
 {{/locations}}
 {{#identity_seeded}}
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:
-        env_config_repository = app.EnvConfigRepository()
+        env_config_repository = app.EnvConfigRepository(
+            {"{{engine_url_variable}}": "http://engine.invalid:8080"{{#locations}}, "{{location_variable}}": "{{location_attr}}.invalid"{{/locations}}}
+        )
 
         first = env_config_repository.get()
         second = env_config_repository.get()
@@ -60,7 +70,7 @@ class TestEnvConfigRepository:
 
 class TestAppLoader:
 
-    def test_the_loader_builds_an_app_that_publishes_the_{{context}}_client(self) -> None:
-        {{app}}_app = app.AppLoader(FakeConfigRepository()).load()
+    def test_the_loader_builds_an_app_that_publishes_the_{{context}}_client(self{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
+        {{app}}_app = app.AppLoader(FakeConfigRepository({{#located}}tmp_path{{/located}})).load()
 
         assert {{app}}_app.{{context}}.client is not None

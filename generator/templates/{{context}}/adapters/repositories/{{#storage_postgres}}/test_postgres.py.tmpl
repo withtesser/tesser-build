@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import asyncpg
 
 import {{context}}.adapters.repositories as repositories
@@ -11,8 +9,8 @@ import pgdatabase.database as pgdatabase_database
 
 class TestPostgres{{Aggregate}}Store:
 
-    async def test_a_saved_{{aggregate}}_is_loaded_in_a_later_transaction(self) -> None:
-        dsn = os.environ["{{storage_env}}"]
+    async def test_a_saved_{{aggregate}}_is_loaded_in_a_later_transaction(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS {{context}}")
         await connection.close()

@@ -69,8 +69,7 @@ class TestRenderingCompositions:
         tested = subprocess.run(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "loans/application", "srv/http/test_main.py", "-k", "not discovers"],
             cwd=tmp_path / "out", capture_output=True, text=True, check=False,
-            env={**os.environ, "RESTATE_URL": "http://127.0.0.1:9",
-                 "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
         )
 
         assert render_composition_response.problems == ()
@@ -544,6 +543,27 @@ class TestRenderingCompositions:
             "[storage.sqlite] names no location_variable: every storage but memory says which variable locates it",
         )
 
+    def test_an_engine_admin_variable_is_a_problem_because_the_tests_take_the_admin_url_as_a_fixture(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"infra.toml": [('engine_url_variable = "RESTATE_URL"\n', 'engine_url_variable = "RESTATE_URL"\nadmin_variable = "RESTATE_ADMIN"\n')]}
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "[engine.restate] names admin_variable, which nothing reads: the tests take the engine's admin URL and callback "
+            "host from the root conftest's fixtures, so infra.toml names no variable for them",
+        )
+
     def test_a_declared_storage_no_port_uses_renders(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {"infra.toml": [("[storage.memory]", "[storage.memory]\n\n[storage.sqlite]\nlocation_variable = \"LOAN_DB_PATH\"")]}
@@ -582,8 +602,7 @@ class TestRenderingCompositions:
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
         render_composition_request = client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "LOAN_FILE": str(tmp_path / "loans")}
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
 
         render_composition_response = rendering.client.render_composition(render_composition_request)
         tested = subprocess.run(
@@ -634,8 +653,7 @@ class TestRenderingCompositions:
             (tmp_path / "composition" / f"{name}.toml").write_text(text)
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "LOAN_DB_PATH": str(tmp_path / "loans.sqlite"), "RESTATE_URL": "http://127.0.0.1:9"}
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
 
         render_composition_response = rendering.client.render_composition(
             client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
@@ -658,7 +676,8 @@ class TestRenderingCompositions:
             tmp_path / "out" / "loans" / "adapters" / "repositories" / "test_sqlite_loan_store.py").read_text()
         assert "repositories.SqliteLoanStore(location=config.sqlite_location)" in (
             tmp_path / "out" / "loans" / "component" / "component.py").read_text()
-        assert 'os.environ.get("LOAN_DB_PATH")' in (tmp_path / "out" / "app" / "app.py").read_text()
+        assert 'self._environ.get("LOAN_DB_PATH")' in (tmp_path / "out" / "app" / "app.py").read_text()
+        assert '"LOAN_DB_PATH": str(locations / "sqlite_location"),' in (tmp_path / "out" / "conftest.py").read_text()
 
     def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_given(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -670,7 +689,7 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ()
         assert sorted(path for path in render_composition_response.written if path.startswith("tests/")) == [
-            "tests/__init__.py", "tests/conftest.py", "tests/test_reading_jtbds_by_jtbd_id.py", "tests/test_submitting_jtbds.py",
+            "tests/__init__.py", "tests/test_reading_jtbds_by_jtbd_id.py", "tests/test_submitting_jtbds.py",
         ]
         reading = (tmp_path / "out" / "tests" / "test_reading_jtbds_by_jtbd_id.py").read_text()
         assert reading.startswith("# pragma: tesser-agent-owned;")
@@ -692,7 +711,7 @@ class TestRenderingCompositions:
         )
         ast.parse(reading)
 
-    def test_a_tree_with_root_tests_renders_a_generated_conftest_that_takes_the_host_as_pytest_s_host_option(
+    def test_a_tree_with_root_tests_renders_a_root_conftest_whose_host_fixture_answers_pytest_s_host_option(
         self, tmp_path: pathlib.Path
     ) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -702,24 +721,25 @@ class TestRenderingCompositions:
         render_composition_response = rendering.client.render_composition(
             client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
         )
-        unhosted = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
-            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
-        )
         hosted = subprocess.run(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests", "--host", "http://127.0.0.1:9"],
             cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
         )
-        conftest = (tmp_path / "out" / "tests" / "conftest.py").read_text()
+        conftest = (tmp_path / "out" / "conftest.py").read_text()
 
         assert render_composition_response.problems == ()
+        assert not (tmp_path / "out" / "tests" / "conftest.py").exists()
         assert conftest.startswith("# pragma: tesser-generated;")
-        assert '    parser.addoption("--host", help="the base URL of the served host, named by the runner")\n' in conftest
-        assert '@pytest.fixture(scope="session")\ndef host(request: pytest.FixtureRequest) -> str:\n' in conftest
+        assert '    parser.addoption("--host", help="the base URL of a host already served; without it the run serves its own")\n' in conftest
+        assert "def host(request: pytest.FixtureRequest) -> typing.Iterator[str]:\n" in conftest
+        assert '"RESTATE_URL": f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(8080)}",' in conftest
+        assert '"LIBRARY_PORT": str(port),' in conftest
+        assert 'f"http://host.docker.internal:{port}/restate",' in conftest
+        for fixture in ("engine_url", "engine_admin_url", "engine_callback_host", "free_port"):
+            assert f"\ndef {fixture}(" in conftest
         assert (tmp_path / "out" / "tests" / "__init__.py").read_text().startswith("# pragma: tesser-generated;")
-        assert "pass --host <url>: the runner serves the host and names its address" in unhosted.stdout
         assert "write the given of" in hosted.stdout
-        assert "pass --host" not in hosted.stdout
+        assert "could not register" not in hosted.stdout
 
     def test_a_route_with_no_path_value_fails_at_its_given_with_nothing_to_bind(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

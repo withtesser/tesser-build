@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import secrets
 import typing
@@ -60,13 +61,16 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
 {{#storage_postgres}}
-        {{context}}_storage = os.environ.get("{{storage_env}}")
+        {{context}}_storage = self._environ.get("{{storage_env}}")
         if {{context}}_storage is None:
             raise errors.invalid("missing_env", "{{storage_env}} is required")
 {{/storage_postgres}}
-        engine_url = os.environ.get("{{engine_url_env}}")
+        engine_url = self._environ.get("{{engine_url_env}}")
         if engine_url is None:
             raise errors.invalid("missing_env", "{{engine_url_env}} is required")
         return AppConfig(
@@ -95,4 +99,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> {{App}}App:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()

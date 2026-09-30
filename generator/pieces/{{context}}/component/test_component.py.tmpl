@@ -2,7 +2,7 @@
 from __future__ import annotations
 {{#located}}
 
-import os
+import pathlib
 {{/located}}
 
 import {{context}}.component as component
@@ -44,11 +44,11 @@ class TestConfig:
 
 class Test{{Context}}:
 
-    async def test_the_component_publishes_the_engine_containers_it_registered_into(self) -> None:
+    async def test_the_component_publishes_the_engine_containers_it_registered_into(self{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
         config = component.Config(
             component.Spec(
                 engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
-                {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
+                {{location_attr}}=str(tmp_path / "{{location_attr}}"){{/locations}}
             )
         )
 
@@ -66,11 +66,13 @@ class Test{{Context}}:
 {{/containers}}
         }
 
-    async def test_every_container_bounds_its_retries_and_only_the_workflow_is_reachable_at_the_engine_url(self) -> None:
+    async def test_every_container_bounds_its_retries_and_only_the_workflow_is_reachable_at_the_engine_url(
+        self{{#located}}, tmp_path: pathlib.Path{{/located}}
+    ) -> None:
         config = component.Config(
             component.Spec(
                 engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
-                {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
+                {{location_attr}}=str(tmp_path / "{{location_attr}}"){{/locations}}
             )
         )
 
