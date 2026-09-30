@@ -562,8 +562,6 @@ TESSER_STDLIB: typing.Final[frozenset[str]] = frozenset(
     }
 )
 
-TESSER_TESTING_STDLIB: typing.Final[frozenset[str]] = frozenset({"os"})
-
 STUB_SUFFIX: typing.Final[str] = ".pyi"
 
 IMPORTLIB: typing.Final[str] = "importlib"
@@ -9721,8 +9719,6 @@ class Module(ts.Entity):
             lineno = int(edge._lineno)
             head = target.split(".")[0]
             if head == TESSER or head in TESSER_STDLIB:
-                continue
-            if parts[1] == "testing" and head in TESSER_TESTING_STDLIB:
                 continue
             found.append(
                 Violation(ViolationSpec(

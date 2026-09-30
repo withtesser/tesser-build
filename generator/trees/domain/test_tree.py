@@ -44,7 +44,6 @@ def tree_spec(
     random_values: tuple[tuple[str, str], ...] = (("str", "Ada"),),
     storage_url_variable: str = "CALLS_STORAGE",
     restate_ingress_url_variable: str = "RESTATE_INGRESS",
-    host_url_variable: str = "",
     templates: tuple[tuple[str, str], ...] = (("{{context}}/domain/{{aggregate}}.py.tmpl", "class {{Aggregate}}:\n"),),
 ) -> domain.TreeSpec:
     return domain.TreeSpec(
@@ -79,7 +78,6 @@ def tree_spec(
         random_values=random_values,
         storage_url_variable=storage_url_variable,
         restate_ingress_url_variable=restate_ingress_url_variable,
-        host_url_variable=host_url_variable,
         templates=templates,
     )
 
@@ -319,24 +317,23 @@ class TestTreeRendering:
 
         assert str(tree.files()[0].content()) == "postgres postgres cli"
 
-    def test_a_memory_store_behind_an_http_host_names_the_host_variable_and_no_storage_variable(self) -> None:
+    def test_a_memory_store_behind_an_http_host_names_no_storage_variable(self) -> None:
         tree = domain.Tree(
             tree_spec(
                 storage="memory",
                 host="http",
                 storage_url_variable="",
-                host_url_variable="VOICE_HOST",
                 templates=(
                     (
                         "{{context}}/domain/{{aggregate}}.py.tmpl",
-                        "{{storage}} {{host_env}}{{#storage_memory}} memory{{/storage_memory}}{{#host_http}} http{{/host_http}}",
+                        "{{storage}}{{#storage_memory}} memory{{/storage_memory}}{{#host_http}} http{{/host_http}}",
                     ),
                 ),
             )
         )
 
         assert tree.health() is domain.Health.CLEAN
-        assert str(tree.files()[0].content()) == "memory VOICE_HOST memory http"
+        assert str(tree.files()[0].content()) == "memory memory http"
 
     def test_an_absent_calling_mode_is_run(self) -> None:
         tree = domain.Tree(
@@ -416,32 +413,11 @@ class TestTreeProblems:
 
     def test_a_memory_store_with_a_storage_variable_is_a_problem(self) -> None:
         tree = domain.Tree(
-            tree_spec(storage="memory", host="http", storage_url_variable="CALLS_STORAGE", host_url_variable="VOICE_HOST")
+            tree_spec(storage="memory", host="http", storage_url_variable="CALLS_STORAGE")
         )
 
         assert [str(text) for text in tree.problems()] == [
             "the spec names environment_variables.storage_url, which only a postgres store reads"
-        ]
-
-    def test_an_http_host_without_its_host_variable_is_a_problem(self) -> None:
-        tree = domain.Tree(tree_spec(host="http", host_url_variable=""))
-
-        assert [str(text) for text in tree.problems()] == [
-            "the spec names no environment_variables.host_url, which an http host reads"
-        ]
-
-    def test_a_cli_host_with_a_host_variable_is_a_problem(self) -> None:
-        tree = domain.Tree(tree_spec(host="cli", host_url_variable="VOICE_HOST"))
-
-        assert [str(text) for text in tree.problems()] == [
-            "the spec names environment_variables.host_url, which only an http host reads"
-        ]
-
-    def test_a_host_variable_that_is_not_upper_case_is_a_problem(self) -> None:
-        tree = domain.Tree(tree_spec(host="http", host_url_variable="voice_host"))
-
-        assert [str(text) for text in tree.problems()] == [
-            "environment_variables.host_url 'voice_host' is not an upper-case environment variable name"
         ]
 
     def test_a_key_the_spec_does_not_take_is_a_problem(self) -> None:

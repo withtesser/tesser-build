@@ -119,12 +119,12 @@ PYTHONPATH=. lint-imports
 MYPYPATH=.:../../tesser-py mypy --strict errors.py lifecycle.py serialization.py protocol campaign linkpolicy reports bootstrap srv tests conftest.py
 pytest -q --ignore=tests
 # serve the HTTP host, then:
-PYTHON_APP_ADDRESS=127.0.0.1:9240 pytest -q tests
+pytest -q tests --host http://127.0.0.1:9240
 ```
 
 The root `tests/` package plays the user: its acceptance test
 (`tests/test_reports.py`) reaches the app only through a running HTTP host,
-whose address it reads with `ts.served("PYTHON_APP_ADDRESS")`. The runner's
+whose address is the `host` fixture, answered from pytest's `--host` option. The runner's
 order is the one `docs/design-test-tiers.md` sets: `scripts/verify python-app`
 runs every other step and every tier but the root with no host served, then
 serves the HTTP host (on `127.0.0.1:9240` unless `PYTHON_APP_PORT` says

@@ -61,9 +61,8 @@ The `library` spec above generates this handler behind its routes,
 
 ## The harness
 
-- The spec's `[environment_variables]` are `restate_ingress_url =
-  "RESTATE_INGRESS"` and `host_url = "STORY_DRAFTING_HOST"`; use
-  `host = "http"` and `storage = "memory"`.
+- The spec's `[environment_variables]` is `restate_ingress_url =
+  "RESTATE_INGRESS"`; use `host = "http"` and `storage = "memory"`.
 - Generate with
   `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting --print tests/test_acceptance.py`.
   It prints the path of every file it wrote, then the generated root test
@@ -81,8 +80,8 @@ The `library` spec above generates this handler behind its routes,
   It runs its steps in order and stops at the first that fails, printing a
   `  →` line as each step starts: tessercheck, `mypy --strict`, the non-root
   tests, then it serves `srv/http/main.py` on port {port}, registers its
-  Restate endpoint, and runs `tests/` with the host's address in
-  `STORY_DRAFTING_HOST`. Every step before the last `  →` line passed. The
+  Restate endpoint, and runs `tests/` with the host's address passed as
+  pytest's `--host` option (the root tests take it as the `host` fixture). Every step before the last `  →` line passed. The
   full output stays in `{log}` to grep; don't run it again to see more. Do
   not edit `scripts/verify`.
 - Your Restate server is at ingress {ingress} and admin {admin}; generated

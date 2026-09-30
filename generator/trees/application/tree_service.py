@@ -72,7 +72,6 @@ class MapToTreeSpec(ts.Mapper, domain.TreeSpec):
             ),
             storage_url_variable=read_generation_response.spec.storage_url_variable,
             restate_ingress_url_variable=read_generation_response.spec.restate_ingress_url_variable,
-            host_url_variable=read_generation_response.spec.host_url_variable,
             templates=tuple(
                 (template_record.path, template_record.text)
                 for template_record in read_generation_response.templates

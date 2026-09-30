@@ -306,7 +306,6 @@ class TreeSpec(ts.Spec):
         random_values: tuple[tuple[str, str], ...],
         storage_url_variable: str,
         restate_ingress_url_variable: str,
-        host_url_variable: str,
         templates: tuple[tuple[str, str], ...],
     ) -> None:
         self.state = state
@@ -340,7 +339,6 @@ class TreeSpec(ts.Spec):
         self.random_values = random_values
         self.storage_url_variable = storage_url_variable
         self.restate_ingress_url_variable = restate_ingress_url_variable
-        self.host_url_variable = host_url_variable
         self.templates = templates
 
 
@@ -416,7 +414,6 @@ class Tree(ts.AggregateRoot):
             )
             stated_variables = (
                 ("environment_variables.storage_url", spec.storage_url_variable, storage == "postgres", "a postgres store"),
-                ("environment_variables.host_url", spec.host_url_variable, host == "http", "an http host"),
             )
             for key, value, shape, described in shaped:
                 if not value:
@@ -659,7 +656,6 @@ class Tree(ts.AggregateRoot):
             ("collection", spec.load_response_collection_name),
             ("storage_env", spec.storage_url_variable),
             ("ingress_env", spec.restate_ingress_url_variable),
-            ("host_env", spec.host_url_variable),
             ("storage", storage),
             ("storage_postgres", "true" if storage == "postgres" else ""),
             ("storage_memory", "true" if storage == "memory" else ""),

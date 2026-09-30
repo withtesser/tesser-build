@@ -903,8 +903,9 @@ protocols; nothing stands in for Restate.
 
 The root `tests/` package plays the user (`docs/design-test-tiers.md`): it
 imports nothing of the app and reaches it only through the host the arm
-serves, at the address it reads with `ts.served("DURABLE_EXECUTION_HOST")`,
-which refuses loudly when the runner did not set it. It posts an
+serves, at the address the arm passes as pytest's `--host` option (the
+`host` fixture in `tests/conftest.py`, which fails loudly when none was
+passed). It posts an
 order to `POST /orders` and a purchase to `POST /purchases` and reads the
 totals and the payment reference off the answers, so the served host's own
 wiring — its client, the Restate endpoint it mounts, the catalog and the

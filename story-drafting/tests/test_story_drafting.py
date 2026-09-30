@@ -6,19 +6,17 @@ import urllib.error as urllib_error
 import urllib.request as urllib_request
 import uuid
 
-import tesser.testing as ts
-
 
 class TestStartingTheStoryDraftingSkill:
 
-    def test_a_started_run_waits_for_the_developers_pick_with_drafted_stories_and_none_accepted(self) -> None:
+    def test_a_started_run_waits_for_the_developers_pick_with_drafted_stories_and_none_accepted(self, host: str) -> None:
         run_id = str(uuid.uuid4())
         job = (
             "When I work through a multi-step piece of work with an agent, I want the checkpoints fixed in "
             "advance, so I can step away and pick up where we were " + uuid.uuid4().hex
         )
         start = urllib_request.Request(
-            f"{ts.served('STORY_DRAFTING_HOST')}/runs",
+            f"{host}/runs",
             data=json.dumps({"run_id": run_id, "job": job}).encode(),
             headers={"Content-Type": "application/json"},
         )
@@ -31,7 +29,7 @@ class TestStartingTheStoryDraftingSkill:
         run: dict[str, object] = {}
         for _ in range(100):
             try:
-                with urllib_request.urlopen(f"{ts.served('STORY_DRAFTING_HOST')}/runs/{run_id}", timeout=30) as answer:
+                with urllib_request.urlopen(f"{host}/runs/{run_id}", timeout=30) as answer:
                     run = json.loads(answer.read())
             except urllib_error.HTTPError as not_yet:
                 if not_yet.code != 404:

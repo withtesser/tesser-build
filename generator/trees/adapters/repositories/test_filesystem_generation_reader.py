@@ -81,12 +81,11 @@ class TestFilesystemGenerationReader:
             random_values=(ports.ValueRecord(kind="str", text="Ada"), ports.ValueRecord(kind="str", text="Grace")),
             storage_url_variable="CALLS_STORAGE",
             restate_ingress_url_variable="RESTATE_INGRESS",
-            host_url_variable="",
         )
 
-    def test_the_host_the_storage_and_the_host_variable_are_read_as_given(self, tmp_path: pathlib.Path) -> None:
+    def test_the_host_and_the_storage_are_read_as_given(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "spec.toml").write_text(
-            'storage = "memory"\nhost = "http"\n[environment_variables]\nhost_url = "VOICE_HOST"\n'
+            'storage = "memory"\nhost = "http"\n'
         )
         filesystem_generation_reader = repositories.FilesystemGenerationReader(str(tmp_path / "templates"))
 
@@ -97,9 +96,8 @@ class TestFilesystemGenerationReader:
         assert (
             read_generation_response.spec.storage,
             read_generation_response.spec.host,
-            read_generation_response.spec.host_url_variable,
             read_generation_response.spec.unknown_keys,
-        ) == ("memory", "http", "VOICE_HOST", ())
+        ) == ("memory", "http", ())
 
     def test_the_calling_mode_is_read_from_the_orchestrator_table(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / "spec.toml").write_text('[orchestrator]\noperation_name = "conduct_call"\ncalling_mode = "start"\n')

@@ -4,15 +4,13 @@ import http.client as http_client
 import json
 import urllib.parse as urllib_parse
 
-import tesser.testing as ts
-
 import protocol as protocol
 
 
 class TestAddStoryEndToEnd:
 
-    def test_a_post_to_a_jtbds_stories_answers_the_storys_id_level_and_position(self) -> None:
-        address = urllib_parse.urlsplit(ts.served("SPECS_APP_URL"))
+    def test_a_post_to_a_jtbds_stories_answers_the_storys_id_level_and_position(self, host: str) -> None:
+        address = urllib_parse.urlsplit(host)
         conn = http_client.HTTPConnection(address.hostname or "", address.port, timeout=5)
         conn.request(
             "POST",
