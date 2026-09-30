@@ -15,10 +15,8 @@ import app as app
 
 class TestHttpHost:
 
-    def test_the_mounted_restate_endpoint_discovers_what_the_context_declared(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_mounted_restate_endpoint_discovers_what_the_context_declared(self, free_port: int) -> None:
+        port = free_port
         env = dict(os.environ, RESTATE_URL="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         try:
@@ -41,7 +39,7 @@ class TestHttpHost:
             except subprocess.TimeoutExpired:
                 host.kill()
                 host.wait()
-        durable_execution_app = app.load()
+        durable_execution_app = app.AppLoader(app.EnvConfigRepository({"RESTATE_URL": "http://localhost:8080"})).load()
         try:
             declared = {
                 durable_execution_app.ordering.order_actions_service.name: sorted(
@@ -64,10 +62,8 @@ class TestHttpHost:
         assert {s["name"] for s in services} == set(declared)
         assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == declared
 
-    def test_the_submissions_route_answers_by_the_failure_it_meets(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_submissions_route_answers_by_the_failure_it_meets(self, free_port: int) -> None:
+        port = free_port
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
@@ -108,10 +104,8 @@ class TestHttpHost:
                 host.wait()
         assert answers == [400, 422, 500]
 
-    def test_the_orders_route_answers_by_the_failure_it_meets(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_orders_route_answers_by_the_failure_it_meets(self, free_port: int) -> None:
+        port = free_port
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
@@ -152,10 +146,8 @@ class TestHttpHost:
                 host.wait()
         assert answers == [400, 422, 500]
 
-    def test_the_purchases_route_answers_by_the_failure_it_meets(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_purchases_route_answers_by_the_failure_it_meets(self, free_port: int) -> None:
+        port = free_port
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]

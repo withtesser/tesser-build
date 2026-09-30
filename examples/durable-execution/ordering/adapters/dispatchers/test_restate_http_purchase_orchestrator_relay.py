@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import socket
 import typing
 import uuid
@@ -65,7 +64,7 @@ def order_spec(order_id: str = "o1", sku: str = "widget", quantity: int = 2) -> 
 
 class TestRestateHttpPurchaseOrchestratorRelay:
 
-    async def test_running_calls_the_workflow_and_answers_with_its_result(self) -> None:
+    async def test_running_calls_the_workflow_and_answers_with_its_result(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         suffix = uuid.uuid4().hex
         order_actions_service = restate.Service(f"OrderActions{suffix}")
         purchase_actions_service = restate.Service(f"PurchaseActions{suffix}")
@@ -83,9 +82,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
         restate_pay_for_order = workflows.RestatePayForOrder(
             purchase_orchestrator_workflow, restate_take_payment, restate_confirm_order
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -106,13 +103,13 @@ class TestRestateHttpPurchaseOrchestratorRelay:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -121,7 +118,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             pay_for_order_response = await dispatchers.RestateHttpPurchaseOrchestratorRelay(
-                os.environ["RESTATE_URL"], restate_pay_for_order
+                engine_url, restate_pay_for_order
             ).run_pay_for_order(
                 relays.PayForOrderRequest(
                     order=domain.Order(order_spec(order_id=order_id, quantity=2)),
@@ -157,7 +154,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_the_already_invoked_conflict_is_the_outcome_the_engine_crossing_adds(self) -> None:
+    async def test_the_already_invoked_conflict_is_the_outcome_the_engine_crossing_adds(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         suffix = uuid.uuid4().hex
         order_actions_service = restate.Service(f"OrderActions{suffix}")
         purchase_actions_service = restate.Service(f"PurchaseActions{suffix}")
@@ -175,9 +172,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
         restate_pay_for_order = workflows.RestatePayForOrder(
             purchase_orchestrator_workflow, restate_take_payment, restate_confirm_order
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -198,13 +193,13 @@ class TestRestateHttpPurchaseOrchestratorRelay:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['DURABLE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -213,7 +208,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             restate_http_purchase_orchestrator_relay = dispatchers.RestateHttpPurchaseOrchestratorRelay(
-                os.environ["RESTATE_URL"], restate_pay_for_order
+                engine_url, restate_pay_for_order
             )
             first = await restate_http_purchase_orchestrator_relay.run_pay_for_order(
                 relays.PayForOrderRequest(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections.abc as collections_abc
 import os
 import typing
 
@@ -37,8 +38,11 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 
 class EnvConfigRepository(AppConfigRepository):
 
+    def __init__(self, environ: collections_abc.Mapping[str, str]) -> None:
+        self._environ = environ
+
     def get(self) -> AppConfig:
-        engine_url = os.environ.get("RESTATE_URL")
+        engine_url = self._environ.get("RESTATE_URL")
         if engine_url is None:
             raise errors.invalid("missing_env", "RESTATE_URL is required")
         return AppConfig(Spec(ordering=ordering_component.Config(ordering_component.Spec(engine_url=engine_url))))
@@ -55,4 +59,4 @@ class AppLoader(ts.Loader):
 
 @ts.load
 def load() -> DurableExecutionApp:
-    return AppLoader(EnvConfigRepository()).load()
+    return AppLoader(EnvConfigRepository(os.environ)).load()
