@@ -38,6 +38,17 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 prompt="$HERE/prompts/$phase.md"
 [ -f "$prompt" ] || { echo "baseline: no prompt for phase '$phase'" >&2; exit 2; }
 
+# A {name} the prompt uses that is not a run value stops the prepare here,
+# before it starts a container or cuts a worktree it would leave behind.
+python3 - "$prompt" <<'PY'
+import re, sys
+known = {"worktree", "venv", "ingress", "admin", "port_last", "port", "spec", "log"}
+text = re.sub(r"\{\{(?:FILE|SECTION|EXAMPLE):[^}]+\}\}", "", open(sys.argv[1]).read())
+unknown = sorted({m for m in re.findall(r"(?<!\{)\{([a-z_]+)\}(?!\})", text) if m not in known})
+if unknown:
+    sys.exit(f"baseline: the prompt names {', '.join('{' + n + '}' for n in unknown)}, which is not a run value")
+PY
+
 MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 wt="$MAIN/.claude/worktrees/run-$name"
 branch="baseline/runs/$name"

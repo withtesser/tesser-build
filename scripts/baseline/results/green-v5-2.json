@@ -473,5 +473,26 @@
     },
     "impl_coverage_pct": 89.6,
     "impl_statements": 898
-  }
+  },
+  "integrity": {
+    "checked": true,
+    "owned_at_base": [
+      "story-drafting/drafting/adapters/gateways/template_story_drafter.py",
+      "story-drafting/drafting/adapters/gateways/test_template_story_drafter.py",
+      "story-drafting/drafting/domain/__init__.py",
+      "story-drafting/drafting/domain/jtbd.py",
+      "story-drafting/drafting/domain/test_jtbd.py"
+    ],
+    "changed": [
+      "story-drafting/drafting/adapters/gateways/template_story_drafter.py",
+      "story-drafting/drafting/adapters/gateways/test_template_story_drafter.py",
+      "story-drafting/drafting/domain/jtbd.py",
+      "story-drafting/drafting/domain/test_jtbd.py"
+    ],
+    "protected_changed": [],
+    "outside_owned": [],
+    "owned_deleted": [],
+    "ok": true
+  },
+  "decisions_uncommitted": []
 }

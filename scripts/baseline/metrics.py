@@ -176,6 +176,18 @@ def git(worktree: pathlib.Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True).stdout
 
 
+class GitFailed(Exception):
+    pass
+
+
+def git_strict(worktree: pathlib.Path, *args: str) -> str:
+    """Like git(), but a failed command raises instead of reading as empty output."""
+    proc = subprocess.run(["git", *args], cwd=worktree, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise GitFailed(f"git {' '.join(args)}: {proc.stderr.strip() or proc.returncode}")
+    return proc.stdout
+
+
 def is_test(path: str) -> bool:
     name = pathlib.PurePosixPath(path).name
     return name.startswith("test_") or name == "conftest.py" or "/tests/" in f"/{path}"
@@ -207,6 +219,10 @@ AGENT_OWNED = "# pragma: tesser-agent-owned;"
 GREEN_PHASES = ("green-specs", "green-on-red")
 PROTECTED_PREFIXES = (f"{TREE}/specs/", "generator/compositions/", f"{TREE}/tests/")
 PROTECTED_FILES = ("scripts/verify", f"{TREE}/.tesser-rendered")
+# Ignored files are counted, because pytest collects a gitignored conftest.py
+# as readily as a tracked one. Only what the tools themselves write is exempt.
+TOOL_DIRS = ("__pycache__", ".tesser", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis")
+TOOL_FILES = (".coverage", "coverage.json")
 
 
 def integrity_metrics(worktree: pathlib.Path, base: str, phase: str) -> dict:
@@ -222,16 +238,31 @@ def integrity_metrics(worktree: pathlib.Path, base: str, phase: str) -> dict:
     """
     if phase not in GREEN_PHASES:
         return {"checked": False}
-    at_base = git(worktree, "ls-tree", "-r", "--name-only", base).splitlines()
+    try:
+        return audit_integrity(worktree, base)
+    except GitFailed as failure:
+        return {"checked": True, "ok": False, "error": str(failure)}
+
+
+def is_tool_output(path: str) -> bool:
+    parts = pathlib.PurePosixPath(path).parts
+    return any(part in TOOL_DIRS for part in parts) or parts[-1] in TOOL_FILES or path.endswith(".pyc")
+
+
+def audit_integrity(worktree: pathlib.Path, base: str) -> dict:
+    git_strict(worktree, "rev-parse", "--verify", f"{base}^{{commit}}")
+    at_base = git_strict(worktree, "ls-tree", "-r", "--name-only", base).splitlines()
     owned = {path for path in at_base if path.endswith(".py")
-             and AGENT_OWNED in git(worktree, "show", f"{base}:{path}")[:400]}
+             and AGENT_OWNED in git_strict(worktree, "show", f"{base}:{path}")[:400]}
     changes: dict[str, str] = {}
-    for line in git(worktree, "diff", "--name-status", "--no-renames", base).splitlines():
+    for line in git_strict(worktree, "diff", "--name-status", "--no-renames", base).splitlines():
         status, path = line.split("\t", 1)
         changes[path] = status
-    for line in git(worktree, "ls-files", "--others", "--exclude-standard").splitlines():
+    untracked = git_strict(worktree, "ls-files", "--others", "--exclude-standard").splitlines()
+    ignored = git_strict(worktree, "ls-files", "--others", "--ignored", "--exclude-standard").splitlines()
+    for line in untracked + ignored:
         changes.setdefault(line, "A")
-    changes = {path: status for path, status in changes.items() if "__pycache__" not in path and ".tesser/" not in path}
+    changes = {path: status for path, status in changes.items() if not is_tool_output(path)}
 
     def new_domain_module(path: str, status: str) -> bool:
         parts = pathlib.PurePosixPath(path).parts
@@ -304,7 +335,16 @@ def main() -> None:
     parser.add_argument("--worktree", required=True, type=pathlib.Path)
     parser.add_argument("--base", required=True)
     parser.add_argument("--out", required=True, type=pathlib.Path)
+    parser.add_argument("--integrity-only", action="store_true",
+                        help="re-audit an already measured run and replace only its integrity block")
     args = parser.parse_args()
+
+    if args.integrity_only:
+        measured = json.loads((args.out / "metrics.json").read_text())
+        measured["integrity"] = integrity_metrics(args.worktree, args.base, args.phase)
+        (args.out / "metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
+        print(f"integrity: {'ok' if measured['integrity'].get('ok') else 'VIOLATED'}: {json.dumps(measured['integrity'])[:300]}")
+        return
 
     run = json.loads((args.out / "run.json").read_text())
     transcript = read_jsonl(args.out / "transcript.jsonl")
@@ -333,7 +373,9 @@ def main() -> None:
           f"{diff['py_impl_lines']} lines, tests {diff['py_test_files']} files/{diff['py_test_lines']} lines, "
           f"uncommitted {len(diff['uncommitted'])}")
     integrity = metrics["integrity"]
-    if integrity["checked"]:
+    if integrity.get("error"):
+        print(f"  integrity: VIOLATED; the audit could not run: {integrity['error']}")
+    elif integrity["checked"]:
         print(f"  integrity: {'ok' if integrity['ok'] else 'VIOLATED'}; changed {len(integrity['changed'])} files, "
               f"outside owned {integrity['outside_owned']}, protected changed {integrity['protected_changed']}, "
               f"owned deleted {integrity['owned_deleted']}")

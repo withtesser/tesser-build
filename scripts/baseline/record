@@ -4,13 +4,15 @@ beside it scripts/baseline/results/<run>/ holding what the trial decided —
 its generator spec (spec.toml), or the composition, implementations, and
 generator specs it wrote into story-drafting/specs/, and its root tests
 (tests/test_*.py) —
-so a later grader can rescore it from the repo alone.
+so a later grader can rescore it from the repo alone. The specs and tests are
+copied from the trial's working tree, which is what was measured, and any
+that differ from its commit are listed in the record as
+decisions_uncommitted.
 
 The full metrics.json stays in .baseline-runs/ (gitignored). The recorded copy
 drops the machine-local parts — absolute paths become <repo>, and the
 worktree path is removed — so the numbers can be committed and compared
-across branches. The spec comes from .baseline-runs/<run>/spec.toml; the root
-tests come from the trial's commit (metrics' diff.head).
+across branches. The spec comes from .baseline-runs/<run>/spec.toml.
 
     scripts/baseline/record <run-name>
 """
@@ -35,6 +37,7 @@ def main() -> None:
     for local in (str(main_checkout / ".claude" / "worktrees" / f"run-{name}"), str(main_checkout), str(pathlib.Path.home())):
         text = text.replace(local, "<repo>" if local != str(pathlib.Path.home()) else "~")
     metrics = json.loads(text)
+    worktree = pathlib.Path(json.loads(source.read_text())["run"]["worktree"])
     metrics["run"].pop("worktree", None)
     target = pathlib.Path(__file__).resolve().parent / "results" / f"{name}.json"
     target.parent.mkdir(exist_ok=True)
@@ -45,23 +48,24 @@ def main() -> None:
     spec_path = main_checkout / ".baseline-runs" / name / "spec.toml"
     decisions = {"spec.toml": spec_path.read_text()} if spec_path.is_file() else {}
     head = metrics["diff"]["head"]
+    measured = {}
     for filename in ("composition.toml", "implementations.toml", "generator.toml"):
-        shown = subprocess.run(
-            ["git", "show", f"{head}:story-drafting/specs/{filename}"],
-            capture_output=True, text=True, cwd=main_checkout,
-        )
-        if shown.returncode == 0:
-            decisions[filename] = shown.stdout
-    listed = subprocess.run(
-        ["git", "ls-tree", "--name-only", f"{head}:story-drafting/tests"],
-        capture_output=True, text=True, cwd=main_checkout,
-    )
-    for filename in listed.stdout.split() if listed.returncode == 0 else []:
-        if filename.startswith("test_") and filename.endswith(".py"):
-            decisions[filename] = subprocess.run(
-                ["git", "show", f"{head}:story-drafting/tests/{filename}"],
-                capture_output=True, text=True, check=True, cwd=main_checkout,
-            ).stdout
+        path = worktree / "story-drafting" / "specs" / filename
+        if path.is_file():
+            measured[filename] = (path, f"story-drafting/specs/{filename}")
+    tests = worktree / "story-drafting" / "tests"
+    for path in sorted(tests.glob("test_*.py")) if tests.is_dir() else []:
+        measured[path.name] = (path, f"story-drafting/tests/{path.name}")
+    uncommitted = []
+    for filename, (path, relative) in measured.items():
+        decisions[filename] = path.read_text()
+        committed = subprocess.run(["git", "show", f"{head}:{relative}"], capture_output=True, text=True, cwd=main_checkout)
+        if committed.returncode != 0 or committed.stdout != decisions[filename]:
+            uncommitted.append(filename)
+    if uncommitted:
+        print(f"record: {name}: measured decisions differ from the commit: {uncommitted}", file=sys.stderr)
+    metrics["decisions_uncommitted"] = uncommitted
+    target.write_text(json.dumps(metrics, indent=2) + "\n")
     for filename, text in decisions.items():
         decided.mkdir(exist_ok=True)
         (decided / filename).write_text(text)
