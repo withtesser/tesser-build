@@ -687,7 +687,7 @@ class TestRenderingCompositions:
         assert "reached_by" not in reading
         assert "time.sleep" not in reading
         assert reading.rstrip().endswith(
-            "assert False, 'write the then of s-2-a-1: I get back 200 with status \"awaiting_story_acceptance\" and at least one story, "
+            "assert False, 'write the then of s-2-a-1: I get back 200 with status \"awaiting_story_acceptance\" and a stories list holding at least one story, "
             "each with a given, a when, and a then, and in state \"drafted\"' + f\" (answered {answered_body!r})\""
         )
         ast.parse(reading)

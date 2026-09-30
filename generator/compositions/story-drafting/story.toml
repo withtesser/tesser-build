@@ -12,8 +12,8 @@
 # level; a story is "given / when / then", one of each, and fulfils the JTBD it
 # sits under. A story's children are the next level's JTBDs, each fulfilling it.
 # Level 1 is in the developer's words; level 2 is the interface the developer
-# (or an agent) actually uses and names routes, fields, and values exactly, in
-# the language's code names. A level-2 story fulfils its level-2 JTBD, which
+# (or an agent) actually uses and names routes, fields, and values exactly, as
+# the interface carries them. A level-2 story fulfils its level-2 JTBD, which
 # exists only to fulfil the level-1 story above it; so a level-2 story asserts
 # only what that level-1 story observes. Shapes, edge cases, and failures belong
 # lower down (generated contract tests, level 3, domain tests).
@@ -67,7 +67,7 @@ so_that = "s-2 is fulfilled"
 id = "s-2-a-1"
 given = "I have created a job to be done with POST /jtbds, and its stories have been drafted"
 when = "I GET /jtbds/{jtbd_id}"
-then = "I get back 200 with status \"awaiting_story_acceptance\" and at least one story, each with a given, a when, and a then, and in state \"drafted\""
+then = "I get back 200 with status \"awaiting_story_acceptance\" and a stories list holding at least one story, each with a given, a when, and a then, and in state \"drafted\""
 route = "GET /jtbds/{jtbd_id}"
 status = 200
 
@@ -90,7 +90,7 @@ so_that = "s-3 is fulfilled"
 id = "s-3-a-1"
 given = "I have created a job to be done with POST /jtbds, its stories have been drafted, and the service has been restarted"
 when = "I GET /jtbds/{jtbd_id}"
-then = "I get back 200 with status \"awaiting_story_acceptance\" and the same stories, each with a given, a when, and a then, and in state \"drafted\""
+then = "I get back 200 with status \"awaiting_story_acceptance\" and a stories list holding the same stories, each with a given, a when, and a then, and in state \"drafted\""
 
 [scope]
 out = [
