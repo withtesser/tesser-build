@@ -251,7 +251,7 @@ jobs:
   specs-app:
     # Gates the specs app at the same bar: tessercheck zero findings + mypy
     # --strict + pytest. Its root tests include a Playwright test that drives
-    # the product specification page against the HTTP host the verify arm
+    # the product specification page against the HTTP host the root conftest
     # serves as a process, so the job installs Chromium before it runs.
     name: specs-app (tessercheck + mypy --strict + pytest + playwright)
     runs-on: ubuntu-latest

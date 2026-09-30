@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 
 import pytest
 
@@ -49,16 +48,14 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="8080")
-        app_config = app.EnvConfigRepository().get()
+        app_config = app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "8080"}).get()
         assert app_config.specification.storage == "memory"
         assert app_config.http.host == "127.0.0.1"
         assert app_config.http.port == 8080
 
     def test_a_port_that_is_not_a_number_is_refused(self) -> None:
-        os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="eighty")
         with pytest.raises(errors.DomainError) as caught:
-            app.EnvConfigRepository().get()
+            app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "eighty"}).get()
         assert caught.value.code == "bad_http_port"
 
 

@@ -117,18 +117,17 @@ pip install -r requirements-dev.txt
 ruff check .
 PYTHONPATH=. lint-imports
 MYPYPATH=.:../../tesser-py mypy --strict errors.py lifecycle.py serialization.py protocol campaign linkpolicy reports bootstrap srv tests conftest.py
-pytest -q --ignore=tests
-# serve the HTTP host, then:
-pytest -q tests --host http://127.0.0.1:9240
+pytest -q
 ```
 
 The root `tests/` package plays the user: its acceptance test
 (`tests/test_reports.py`) reaches the app only through a running HTTP host,
-whose address is the `host` fixture, answered from pytest's `--host` option. The runner's
-order is the one `docs/design-test-tiers.md` sets: `scripts/verify python-app`
-runs every other step and every tier but the root with no host served, then
-serves the HTTP host (on `127.0.0.1:9240` unless `PYTHON_APP_PORT` says
-otherwise), then runs the root tier. The rest of the root tier reads the
+whose address is the `host` fixture. The root `conftest.py` serves that host
+itself, as a process on a port the OS picks, and hands the config repository
+an explicit environment rather than relying on the process's
+(`docs/design-test-tiers.md`); `pytest --host <url>` points the tier at a host
+that is already running instead. So a plain `pytest` runs every tier, in any
+order, and the environment is still read only in `app/app.py`. The rest of the root tier reads the
 tree's source and imports nothing of the app. That the app builds each component once is `app/test_app.py`'s
 claim, not the root tier's.
 

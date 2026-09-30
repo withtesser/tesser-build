@@ -144,7 +144,7 @@ def test_the_edge_refuses_to_start_on_an_empty_storage_coordinate() -> None:
 
 
 def test_the_server_answers_a_routed_request() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -170,7 +170,7 @@ def test_the_server_answers_a_routed_request() -> None:
 
 
 def test_the_server_answers_an_unknown_route_with_a_problem_document() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -190,7 +190,7 @@ def test_the_server_answers_an_unknown_route_with_a_problem_document() -> None:
 
 
 def test_the_server_answers_a_routed_get_with_the_campaign_it_created() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -219,7 +219,7 @@ def test_the_server_answers_a_routed_get_with_the_campaign_it_created() -> None:
 
 
 def test_the_server_refuses_a_streaming_body_it_cannot_buffer() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -241,7 +241,7 @@ def test_the_server_refuses_a_streaming_body_it_cannot_buffer() -> None:
 
 
 def test_the_server_refuses_a_declared_length_that_is_not_ascii_digits() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -261,7 +261,7 @@ def test_the_server_refuses_a_declared_length_that_is_not_ascii_digits() -> None
 
 
 def test_the_server_refuses_two_disagreeing_declarations_rather_than_framing_one() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -281,7 +281,7 @@ def test_the_server_refuses_two_disagreeing_declarations_rather_than_framing_one
 
 
 def test_the_server_refuses_a_body_over_the_buffer_limit() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), python_app)
     thread = threading.Thread(target=http_host.run, args=([],))
     thread.start()
@@ -301,7 +301,7 @@ def test_the_server_refuses_a_body_over_the_buffer_limit() -> None:
 
 
 def test_the_host_runs_until_its_stop_is_called() -> None:
-    python_app = app.load()
+    python_app = app.AppLoader(app.EnvConfigRepository({"CAMPAIGN_STORAGE": "memory", "LINKPOLICY_STORAGE": "memory", "HTTP_HOST": "", "HTTP_PORT": "8080"})).load()
     try:
         http_host = http.HttpHost(("127.0.0.1", 0), python_app)
         thread = threading.Thread(target=http_host.run, args=([],))

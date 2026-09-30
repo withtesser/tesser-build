@@ -65,8 +65,7 @@ def test_the_edge_refuses_to_start_when_a_variable_is_absent() -> None:
 
 
 def test_the_server_serves_the_product_specification_page_at_the_root() -> None:
-    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
-    specs_app = app.load()
+    specs_app = app.AppLoader(app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "0"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
     stop = threading.Event()
     thread = threading.Thread(target=http_host.run, args=(stop,))
@@ -87,8 +86,7 @@ def test_the_server_serves_the_product_specification_page_at_the_root() -> None:
 
 
 def test_the_server_answers_a_routed_add_story() -> None:
-    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
-    specs_app = app.load()
+    specs_app = app.AppLoader(app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "0"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
     stop = threading.Event()
     thread = threading.Thread(target=http_host.run, args=(stop,))
@@ -113,8 +111,7 @@ def test_the_server_answers_a_routed_add_story() -> None:
 
 
 def test_the_server_answers_an_add_story_missing_a_line_as_a_malformed_request() -> None:
-    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
-    specs_app = app.load()
+    specs_app = app.AppLoader(app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "0"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
     stop = threading.Event()
     thread = threading.Thread(target=http_host.run, args=(stop,))
@@ -136,8 +133,7 @@ def test_the_server_answers_an_add_story_missing_a_line_as_a_malformed_request()
 
 
 def test_the_server_answers_an_unknown_route_with_a_problem_document() -> None:
-    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
-    specs_app = app.load()
+    specs_app = app.AppLoader(app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "0"})).load()
     http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
     stop = threading.Event()
     thread = threading.Thread(target=http_host.run, args=(stop,))
@@ -157,8 +153,7 @@ def test_the_server_answers_an_unknown_route_with_a_problem_document() -> None:
 
 
 def test_the_host_runs_until_its_stop_is_set() -> None:
-    os.environ.update(SPECIFICATION_STORAGE="memory", HTTP_HOST="127.0.0.1", HTTP_PORT="0")
-    specs_app = app.load()
+    specs_app = app.AppLoader(app.EnvConfigRepository({"SPECIFICATION_STORAGE": "memory", "HTTP_HOST": "127.0.0.1", "HTTP_PORT": "0"})).load()
     try:
         http_host = http.HttpHost(("127.0.0.1", 0), specs_app)
         stop = threading.Event()
