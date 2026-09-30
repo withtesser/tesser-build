@@ -5,6 +5,7 @@ import enum
 
 import tesser.domain as ts
 
+import tesser.errors as errors
 import tesser.serialization as serialization
 
 
@@ -59,10 +60,55 @@ class Text(ts.ValueObject):
     _value: str
 
     def __init__(self, value: str) -> None:
+        if not value.strip():
+            raise errors.invalid("invalid_text", "text must not be blank")
         object.__setattr__(self, "_value", value)
 
     def __str__(self) -> str:
         return serialization.canonical_str(self._value)
+
+
+class StoryText(ts.ValueObject):
+
+    _given: Text
+    _when: Text
+    _then: Text
+
+    def __init__(self, spec: StoryTextSpec) -> None:
+        object.__setattr__(self, "_given", Text(spec.given))
+        object.__setattr__(self, "_when", Text(spec.when))
+        object.__setattr__(self, "_then", Text(spec.then))
+
+    @property
+    def given(self) -> Text:
+        return self._given
+
+    @property
+    def when(self) -> Text:
+        return self._when
+
+    @property
+    def then(self) -> Text:
+        return self._then
+
+
+class StoryTexts(ts.ValueObject):
+
+    _values: tuple[StoryText, ...]
+
+    def __init__(self, spec: RecordStoriesSpec) -> None:
+        if not spec.story_texts:
+            raise errors.invalid("invalid_story_texts", "a story drafting yields at least one story")
+        object.__setattr__(self, "_values", tuple(StoryText(story_text) for story_text in spec.story_texts))
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def drafted(self) -> tuple[Story, ...]:
+        return tuple(
+            Story(StorySpec(given=str(text.given), when=str(text.when), then=str(text.then), state=StoryState.DRAFTED))
+            for text in self._values
+        )
 
 
 class Story(ts.ValueObject):
@@ -109,6 +155,7 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def record_stories(self, record_stories_spec: RecordStoriesSpec) -> RecordStoriesOutcome:
+        self._stories = StoryTexts(record_stories_spec).drafted()
         return RecordStoriesOutcome.RECORDED
 
     @property
@@ -129,6 +176,8 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
+        if any(str(story.state) == StoryState.DRAFTED.value for story in self._stories):
+            return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
         return Text(JtbdStatus.DRAFTING_STORIES.value)
 
     @property
