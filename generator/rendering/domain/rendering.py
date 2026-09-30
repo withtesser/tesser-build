@@ -2342,6 +2342,37 @@ class Model(ts.Entity):
         self._binding["route_probes"] = probes
         self._binding["route_probe_answers"] = ", ".join(answers)
 
+    def traced(self) -> None:
+        pending: list[dict[str, object]] = list(self._story.get("jtbds", []))
+        prose: list[str] = []
+        while pending:
+            node = pending.pop()
+            prose.extend(str(node[key]) for key in ("given", "when", "then") if key in node)
+            for child_key in ("jtbds", "stories"):
+                children = node.get(child_key, [])
+                if isinstance(children, list):
+                    pending.extend(child for child in children if isinstance(child, dict))
+        text = "\n".join(prose)
+        pieces: list[tuple[str, str]] = []
+        for enum, members in self._enums.items():
+            pieces.extend((f"enum {enum} value {member}", member) for member in members)
+        for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
+            for side in ("request", "response"):
+                pieces.extend((f"client operation {operation_name} {side} field {field}", str(field))
+                              for field in operation.get(side, []))
+        pieces.extend((f"aggregate read {field}", field) for field, _ in self._reads)
+        for signal_name, signal in self._composition.get("signals", {}).items():
+            pieces.extend((f"signal {signal_name} payload field {field}", str(field)) for field in signal.get("payload", []))
+        for command, table in self._commands.items():
+            pieces.extend((f"command {command} outcome {outcome}", str(outcome)) for outcome in list(table.get("outcomes", []))[1:])
+        untraced = [
+            f"{piece} is named by no story: write it in a story's given, when, or then, or remove it from the composition"
+            for piece, name in pieces
+            if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
+        ]
+        if untraced:
+            raise ValueError(*untraced)
+
     def scope(self) -> Scope:
         table: list[str] = []
         indexes: dict[int, int] = {}
@@ -2439,6 +2470,7 @@ class RenderedTree(ts.AggregateRoot):
                 model.stub()
                 model.engine()
                 model.routes()
+                model.traced()
                 scope = model.scope()
                 for path, text in spec.pieces:
                     template = Template(path.removesuffix(TEMPLATE_SUFFIX))
@@ -2451,7 +2483,7 @@ class RenderedTree(ts.AggregateRoot):
             except KeyError as missing:
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:
-                found.append(Text(str(problem)))
+                found.extend(Text(str(reported)) for reported in problem.args)
         paths = [str(rendered_file.path()) for rendered_file in rendered]
         for path in sorted(set(paths)):
             if paths.count(path) > 1:

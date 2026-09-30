@@ -170,6 +170,13 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
 the renderer derives, what it renders, and which rendered files are the
 agent's.
 
+The composition holds only what current stories require: every enum value,
+client operation request and response field, aggregate read, signal payload
+field, and non-success command outcome (the success outcome is the first one
+listed) must be named, as a whole word, in a story's given, when, or then. A
+piece no story names is a problem that says which piece, and the fix is to write
+it in a story or remove it from the composition (`compositions/README.md`).
+
 A render answers these as problems (exit 1, nothing written) rather than
 crashing or rendering something broken: a path naming one `{field}` twice, and a
 sample list in `generator.toml` with no values (`borrower = []`). A root test

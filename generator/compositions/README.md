@@ -206,7 +206,7 @@ borrower = "str"
 
 [aggregate.commands.record_stories]   # optional, any number
 takes = { story_texts = "StoryText[]" }                   # the command's input fields
-outcomes = ["recorded", "already_recorded", "none_given"] # required, at least one
+outcomes = ["recorded"]                                    # required, at least one; the first is the success outcome
 ```
 
 Only this contract is rendered in the domain: `<Name>Spec` with the spec's
@@ -234,11 +234,42 @@ state = "StoryState"
 given = "str"
 
 [enums]
-StoryState = ["drafted", "accepted", "rejected"]
+StoryState = ["drafted", "accepted"]
 ```
 
 A shape named `...Spec` is the domain spec of that name; any other shape's
 domain spec is `<Name>Spec`.
+
+### Every listed piece is named by a story
+
+The composition holds only what the current stories require. A piece a story
+reader can see has to have a story behind it, or it is scope creep, so the
+renderer checks the pieces below against `story.toml` and refuses (writes
+nothing) when one is untraced:
+
+- every value of every enum in `[enums]`;
+- every field in each `[client.operations.*]` `request` and `response`;
+- every field in `[aggregate.reads]`;
+- every field in each `[signals.*]` `payload`;
+- every outcome of each `[aggregate.commands.*]` `outcomes` except the
+  success outcome, which is the first one listed (the renderer has no other
+  notion of a normal-case outcome: `calls_on` may name several). A command
+  may list a single outcome; its action then matches one case.
+
+A piece is named when its name appears as a whole token in the `given`,
+`when`, or `then` of at least one story at any level (a JTBD's `as`, `i_want`,
+and `so_that`, the story's `route`, and `[scope] out` do not count; that list
+is prose about non-goals). Case does not matter, and the name's underscores
+may be written as spaces (`awaiting_story_acceptance` is named by "awaiting
+story acceptance"); `loan` is not named by `loan_id`. Ports, port, action,
+and relay fields, `[shapes]`, `[messages]`, and `[aggregate.spec]` fields are
+not checked. Every untraced piece is one problem, all reported together:
+
+```
+render: enum JtbdStatus value stories_decided is named by no story: write it in a story's given, when, or then, or remove it from the composition
+```
+
+The fix is to write the piece in a story, or to remove it from the composition.
 
 ### `[interfaces.http]` (required)
 
@@ -480,7 +511,9 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 
 1. `language.toml`: the terms and their code names, including the PascalCase
    name of every term a class of actions acts on.
-2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
+2. `story.toml`: level-1 and level-2 stories, which between them name every
+   enum value, client field, read, signal payload field, and non-success
+   command outcome the composition lists; each level-2 story an HTTP
    route serves carries its `route` and `status`, and its `when` and `then`
    say them word for word; a story whose given needs calls first says in its
    `given`, in words, how it is reached.

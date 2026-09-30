@@ -48,15 +48,15 @@ not = ["drafted story", "draft"]
 [[terms]]
 term = "recording stories"
 status = "proposed"
-means = "Keeping a story drafting's story texts as the job to be done's stories, each drafted. Done once; a story drafting that yields none is not recorded."
-code_names = ["record_stories", "recorded", "already_recorded", "none_given"]
+means = "Keeping a story drafting's story texts as the job to be done's stories, each drafted."
+code_names = ["record_stories", "recorded"]
 not = ["saving stories", "storing stories"]
 
 [[terms]]
 term = "story state"
 status = "proposed"
 means = "Where a story stands: drafted (written, not yet decided), accepted (the developer keeps it), rejected (the developer does not)."
-code_names = ["StoryState", "state", "drafted", "accepted", "rejected"]
+code_names = ["StoryState", "state", "drafted", "accepted"]
 not = ["picked", "approved", "declined", "pending"]
 
 [[terms]]
@@ -69,9 +69,9 @@ not = ["drafting", "composing", "writing", "generating"]   # drafting alone does
 [[terms]]
 term = "status"
 status = "proposed"
-means = "Where a job to be done stands, following from its stories' states: drafting stories (none yet), awaiting story acceptance (any story drafted), stories decided (stories, none drafted)."
-code_names = ["status", "JtbdStatus", "drafting_stories", "awaiting_story_acceptance", "stories_decided"]
-note = "stories_decided is reached only by accepting, which is out of scope; it is here so the rule covers every job to be done."
+means = "Where a job to be done stands, following from its stories' states: drafting stories (none yet), awaiting story acceptance (any story drafted)."
+code_names = ["status", "JtbdStatus", "drafting_stories", "awaiting_story_acceptance"]
+note = "stories_decided arrives with the accept story."
 
 [[terms]]
 term = "checkpoint"
@@ -89,10 +89,11 @@ not = ["pick", "approve", "choose", "select"]
 
 [[terms]]
 term = "reject"
-status = "proposed"
+status = "open"
 means = "The other half of the same decision: a drafted story the developer does not name when accepting."
 code_names = []                              # no act of its own; the state is story state's
 not = ["decline", "discard", "drop"]
+note = "out of scope until the accept story"
 
 [[terms]]
 term = "submit"
