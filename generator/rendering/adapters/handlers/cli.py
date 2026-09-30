@@ -8,7 +8,7 @@ import protocol
 import rendering.client as client
 
 _RENDER_USAGE: typing.Final[str] = (
-    "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path>]..."
+    "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]..."
 )
 
 

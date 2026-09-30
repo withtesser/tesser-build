@@ -5,7 +5,7 @@ and writes a complete tesser app tree:
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path>]...
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...
 ```
 
 It prints the path of every file it wrote, one per line (then `kept <path>` for
@@ -14,7 +14,10 @@ on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
 (repeatable) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
 as the render leaves it (so a kept agent-owned file prints as it stands). A
-`--print` path the composition does not render is a problem.
+`--print` path the composition does not render is a problem. A `--print` with
+a `*` is a pattern (`*` matches within one path segment): it prints every
+rendered path it matches, in path order, so `--print 'tests/test_*.py'`
+prints every root test skeleton; a pattern that matches nothing is a problem.
 
 **The output directory** may already hold files, and rendering again is how a
 tree follows its composition:
@@ -601,7 +604,7 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    say them word for word; a story whose given needs calls first says in its
    `given`, in words, how it is reached.
 3. `infra.toml`: `app`; `[runtime]`; `[engine.restate]` with its
-   `engine_path` and three variables; `[hosts.http]` with its listen port
+   `engine_path` and `engine_url_variable`; `[hosts.http]` with its listen port
    variable; a `[storage.<name>]` for each storage (every one but `memory`
    with its `location_variable`); `[variables]`.
 4. `composition.toml`: `context`; the aggregate's spec and reads (identity in
@@ -612,6 +615,7 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 5. `implementations.toml`: an implementation for every port, a store's named
    for a storage `infra.toml` declares; an environment.
 6. `generator.toml`: two sample values for every field.
-7. Render into a fresh directory and run the gate on it, with every storage
-   `location_variable` set; then write each root test's then where its
-   skeleton's placeholder stands.
+7. Render into a fresh directory and run the gate on it (the tests start
+   their own engines and host, and give every storage a fresh location); then
+   write each root test's given and then where its skeleton's placeholders
+   stand.

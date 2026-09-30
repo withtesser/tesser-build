@@ -240,24 +240,23 @@ run_specs_app() {
   pytest -q || return 1
 }
 
-# The story-drafting app: a two-step agent skill backed by a durable
-# workflow — the agent drafts user stories from a job, and the run waits on
-# Restate until the developer picks. It is also the repo's baseline for
-# measuring how agents build a tesser app from one user story (red acceptance
-# test, then green; runs start from the story-drafting-scaffold-v2 tag, and
-# this tree is the chosen green run). A tree the composition
-# renderer wrote carries .tesser-rendered, whose first line is its composition
-# directory (relative to the repo root); the arm then first checks the tree
-# against it (srv.cli.render --check), so a hand edit to a generated file fails
-# the gate. It needs Docker: the tests start their own private Restate engines
-# and serve the host themselves (docs/design-test-tiers.md).
-run_story_drafting() {
-  cd "$ROOT/story-drafting" || return 1
+# A rendered app: a tree srv.cli.render writes from the specs in its specs/
+# directory, then red and green agents complete (scripts/app/README.md). The
+# story-drafting app is one, and the repo's baseline for measuring how agents
+# build a tesser app from its stories (scripts/baseline/). A rendered tree
+# carries .tesser-rendered, whose first line is its composition directory
+# (relative to the repo root); the arm then first checks the tree against it
+# (srv.cli.render --check), so a hand edit to a generated file fails the gate.
+# It needs Docker: the tests start their own private Restate engines and serve
+# the host themselves (docs/design-test-tiers.md).
+run_rendered_app() {
+  local app=$1
+  cd "$ROOT/$app" || return 1
   if [ -f .tesser-rendered ]; then
     local composition
     composition=$(head -n 1 .tesser-rendered)
     step "the tree matches $composition (srv.cli.render --check)"
-    (cd "$ROOT/generator" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$ROOT/$composition" "$ROOT/story-drafting") || return 1
+    (cd "$ROOT/generator" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$ROOT/$composition" "$ROOT/$app") || return 1
   fi
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
@@ -453,7 +452,7 @@ run_tree() {
     errorspy)       run_errorspy ;;
     tesser-py)      run_tesser_py ;;
     specs-app)      run_specs_app ;;
-    story-drafting) run_story_drafting ;;
+    story-drafting) run_rendered_app story-drafting ;;
     voice)          run_voice ;;
     layout)         run_layout ;;
     generator)      run_generator ;;

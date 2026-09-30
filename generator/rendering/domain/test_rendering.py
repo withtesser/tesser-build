@@ -168,6 +168,20 @@ class TestRenderedTree:
             ["--print names tests/test_nope.py, which the composition does not render"], (),
         )
 
+    def test_a_printed_pattern_answers_every_rendered_path_it_matches_in_order(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(printed=("lending/*/*.txt",)))
+
+        assert [str(printed.path()) for printed in rendered_tree.printed()] == [
+            "lending/domain/loan.txt", "lending/ports/loan_identity_repository.txt", "lending/ports/loan_repository.txt",
+        ]
+
+    def test_a_printed_pattern_that_matches_nothing_is_a_problem(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(printed=("tests/test_*.py",)))
+
+        assert ([str(problem) for problem in rendered_tree.problems()], rendered_tree.printed()) == (
+            ["--print names tests/test_*.py, which matches nothing the composition renders"], (),
+        )
+
     def test_a_piece_renders_once_for_each_item_its_path_enters(self) -> None:
         rendered_tree = domain.RenderedTree(rendered_tree_spec())
 

@@ -37,7 +37,7 @@ class TestRenderHost:
         )
 
         assert completed.returncode == 2
-        assert completed.stderr == "missing argument <out-dir>\nusage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path>]...\n"
+        assert completed.stderr == "missing argument <out-dir>\nusage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...\n"
 
     def test_a_printed_path_follows_the_list_with_its_header_and_the_file_as_written(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Add a new rendered app directory to the repo, with everything the layout
+check asks of an app row, so `scripts/verify <app>` runs from the start.
+
+    scripts/app/new-app <app>
+
+It writes, and refuses if any already exists:
+
+- <app>/specs/          where language.toml, story.toml and infra.toml go
+- <app>/.tesser-root    "app" (the render writes the same file)
+- manifest.json         an "app" row
+- scripts/verify        a case arm: <app>) run_rendered_app <app> ;;
+- .github/workflows/test.yml  a job that installs the app's requirements and runs scripts/verify <app>
+
+Until red renders the tree, the app's gate fails at pytest (there is nothing
+to test yet); the layout check passes from the first run.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True).stdout.strip())
+NAME = re.compile(r"^[a-z][a-z0-9-]*$")
+
+JOB = """
+  {app}:
+    # A rendered app (scripts/app/README.md): tessercheck zero findings +
+    # mypy --strict + pytest. The tests start their own engines and serve the
+    # host themselves, so the job runs no service containers.
+    name: {app} app (tessercheck + mypy --strict + pytest, engines owned by the tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r {app}/requirements-dev.txt
+      - name: {app} — tessercheck + mypy --strict + pytest
+        run: scripts/verify {app}
+"""
+
+
+def main() -> None:
+    if len(sys.argv) != 2 or not NAME.match(sys.argv[1]):
+        sys.exit("usage: scripts/app/new-app <app>  (lowercase letters, digits and dashes)")
+    app = sys.argv[1]
+    directory = ROOT / app
+    manifest_path = ROOT / "manifest.json"
+    verify_path = ROOT / "scripts" / "verify"
+    workflow_path = ROOT / ".github" / "workflows" / "test.yml"
+    manifest = json.loads(manifest_path.read_text())
+    verify = verify_path.read_text()
+    workflow = workflow_path.read_text()
+    arm = f"    {app}) run_rendered_app {app} ;;\n"
+    problems = [
+        f"{app}/ exists" if directory.exists() else "",
+        f"manifest.json has a {app} row" if app in manifest else "",
+        f"scripts/verify has a {app} arm" if re.search(rf"^\s*{re.escape(app)}\)", verify, re.M) else "",
+        f"test.yml has a {app} job" if re.search(rf"^  {re.escape(app)}:\s*$", workflow, re.M) else "",
+    ]
+    if any(problems):
+        sys.exit("new-app: " + "; ".join(p for p in problems if p))
+    fallback = "    *) echo \"unknown tree:"
+    if fallback not in verify:
+        sys.exit("new-app: scripts/verify has no fallback arm to add the new arm before")
+    marker = "\n  packaging:\n"
+    if marker not in workflow:
+        sys.exit("new-app: test.yml has no packaging job to add the new job before")
+
+    (directory / "specs").mkdir(parents=True)
+    (directory / ".tesser-root").write_text("app\n")
+    manifest[app] = "app"
+    manifest_path.write_text(json.dumps(dict(sorted(manifest.items())), indent=2) + "\n")
+    verify_path.write_text(verify.replace(fallback, arm + fallback, 1))
+    workflow_path.write_text(workflow.replace(marker, JOB.format(app=app) + marker, 1))
+    print(f"{app}/specs/  {app}/.tesser-root  manifest.json  scripts/verify  .github/workflows/test.yml")
+
+
+if __name__ == "__main__":
+    main()
