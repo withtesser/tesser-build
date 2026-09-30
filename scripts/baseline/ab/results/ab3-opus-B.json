@@ -56,12 +56,18 @@
     "files": 12,
     "python_files": 8,
     "python_lines": 407,
-    "commits": 1
+    "commits": 1,
+    "tests": {
+      "written": true,
+      "exit": 0,
+      "passed": 5,
+      "failed": 0
+    }
   },
   "check": {
     "cmd": ".venv/bin/python main.py",
     "cwd": "<ab-runs>/ab3-opus-B/work",
-    "seconds_to_listen": 0.27,
+    "seconds_to_listen": 0.25,
     "served": true,
     "restate_registration": {
       "ok": true,
@@ -71,20 +77,20 @@
     "story_1": {
       "passed": true,
       "problems": [],
-      "answered": "{\"jtbd_id\":\"67c79ece-9b16-4a4c-bc86-9636903f5d3f\",\"status\":\"drafting_stories\"}"
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"status\":\"drafting_stories\"}"
     },
     "story_2": {
       "passed": true,
       "problems": [],
-      "seconds_until_drafted": 0.26,
-      "answered": "{\"jtbd_id\":\"67c79ece-9b16-4a4c-bc86-9636903f5d3f\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
+      "seconds_until_drafted": 0.25,
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
     },
     "probes": {
       "get_unknown_id_status": 404,
       "post_missing_fields_status": 422
     },
     "exited_early": false,
-    "seconds_to_listen_after_restart": 0.26,
+    "seconds_to_listen_after_restart": 0.25,
     "restart_registration": {
       "ok": true,
       "status": 200,
@@ -93,7 +99,7 @@
     "story_3": {
       "passed": true,
       "problems": [],
-      "answered": "{\"jtbd_id\":\"67c79ece-9b16-4a4c-bc86-9636903f5d3f\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
     },
     "passed": true
   }

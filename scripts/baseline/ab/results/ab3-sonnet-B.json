@@ -55,7 +55,12 @@
     "files": 3,
     "python_files": 1,
     "python_lines": 152,
-    "commits": 1
+    "commits": 1,
+    "tests": {
+      "written": false,
+      "passed": 0,
+      "failed": 0
+    }
   },
   "check": {
     "cmd": ".venv/bin/python main.py",
@@ -70,13 +75,13 @@
     "story_1": {
       "passed": true,
       "problems": [],
-      "answered": "{\"jtbd_id\":\"e2ba0e52-a365-4bdb-abe8-65d466866da2\",\"status\":\"drafting_stories\"}"
+      "answered": "{\"jtbd_id\":\"1a21bf5e-99ec-40f7-b4d6-f95b6706061e\",\"status\":\"drafting_stories\"}"
     },
     "story_2": {
       "passed": true,
       "problems": [],
       "seconds_until_drafted": 0.26,
-      "answered": "{\"jtbd_id\":\"e2ba0e52-a365-4bdb-abe8-65d466866da2\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"a a developer who needs: my work to survive across sessions\",\"when\":\"the a developer gets it done in the usual way\",\"then\":\"the a developer has what they wanted, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"a a developer who has already got it done once\",\"when\":\"the a developer comes back later\",\"then\":\"the a developer finds it still done, so that I can pi"
+      "answered": "{\"jtbd_id\":\"1a21bf5e-99ec-40f7-b4d6-f95b6706061e\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"a a developer who needs: my work to survive across sessions\",\"when\":\"the a developer gets it done in the usual way\",\"then\":\"the a developer has what they wanted, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"a a developer who has already got it done once\",\"when\":\"the a developer comes back later\",\"then\":\"the a developer finds it still done, so that I can pi"
     },
     "probes": {
       "get_unknown_id_status": 404,
@@ -92,7 +97,7 @@
     "story_3": {
       "passed": true,
       "problems": [],
-      "answered": "{\"jtbd_id\":\"e2ba0e52-a365-4bdb-abe8-65d466866da2\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"a a developer who needs: my work to survive across sessions\",\"when\":\"the a developer gets it done in the usual way\",\"then\":\"the a developer has what they wanted, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"a a developer who has already got it done once\",\"when\":\"the a developer comes back later\",\"then\":\"the a developer finds it still done, so that I can pi"
+      "answered": "{\"jtbd_id\":\"1a21bf5e-99ec-40f7-b4d6-f95b6706061e\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"a a developer who needs: my work to survive across sessions\",\"when\":\"the a developer gets it done in the usual way\",\"then\":\"the a developer has what they wanted, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"a a developer who has already got it done once\",\"when\":\"the a developer comes back later\",\"then\":\"the a developer finds it still done, so that I can pi"
     },
     "passed": true
   }

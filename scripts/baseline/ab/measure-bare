@@ -12,7 +12,9 @@ shared check (check-tree B). Writes .baseline-runs/<run-name>/ab-metrics.json.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +22,25 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 import metrics  # noqa: E402
+
+
+def own_tests(work: pathlib.Path, run: dict, py: list[str]) -> dict:
+    """The agent's own pytest suite, if it wrote one, run with its own
+    virtualenv against the run's Restate server; its coverage is not measured."""
+    if not any(pathlib.PurePosixPath(f).name.startswith("test_") or f.endswith("_test.py") for f in py):
+        return {"written": False, "passed": 0, "failed": 0}
+    env = dict(os.environ, PORT=str(run["host_port"] + 5), RESTATE_INGRESS=run["restate_ingress"],
+               RESTATE_ADMIN=run["restate_admin"], JTBD_DB_PATH=str(work / ".measure-tests.db"))
+    try:
+        proc = subprocess.run([str(work / ".venv" / "bin" / "python"), "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                              cwd=work, env=env, capture_output=True, text=True, timeout=300)
+    except (subprocess.TimeoutExpired, FileNotFoundError) as failure:
+        return {"written": True, "passed": 0, "failed": 0, "error": type(failure).__name__}
+    finally:
+        (work / ".measure-tests.db").unlink(missing_ok=True)
+    counts = {kind: int(n) for n, kind in re.findall(r"(\d+) (passed|failed|error|errors)", proc.stdout.splitlines()[-1] if proc.stdout else "")}
+    return {"written": True, "exit": proc.returncode, "passed": counts.get("passed", 0),
+            "failed": counts.get("failed", 0) + counts.get("error", 0) + counts.get("errors", 0)}
 
 
 def main() -> None:
@@ -43,6 +64,7 @@ def main() -> None:
     py = [f for f in files if f.endswith(".py")]
     lines = sum(len((work / f).read_text(errors="replace").splitlines()) for f in py)
     commits = len(subprocess.run(["git", "rev-list", "--all"], cwd=work, capture_output=True, text=True).stdout.split())
+    tests = own_tests(work, run, py)
     result = subprocess.run([str(HERE / "check-tree"), "B", name], capture_output=True, text=True)
     try:
         check = json.loads(result.stdout)
@@ -53,7 +75,7 @@ def main() -> None:
         "run": run,
         "conditions": metrics.run_conditions(rows, meta),
         "agent": metrics.transcript_metrics(rows),
-        "output": {"files": len(files), "python_files": len(py), "python_lines": lines, "commits": commits},
+        "output": {"files": len(files), "python_files": len(py), "python_lines": lines, "commits": commits, "tests": tests},
         "check": check,
     }
     (out / "ab-metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
@@ -61,7 +83,7 @@ def main() -> None:
     print(f"bare: {agent['duration_s']}s, {agent['api_requests']} API requests, {agent['tool_calls_total']} tool calls, "
           f"tokens {agent['tokens']}, models {agent['models']}, conditions {measured['conditions']['effort']}")
     print(f"  time: {agent['time']}")
-    print(f"  output: {len(files)} files, {lines} Python lines, {commits} commits")
+    print(f"  output: {len(files)} files, {lines} Python lines, {commits} commits, own tests {tests}")
     print(f"  check: passed={check.get('passed')} story_1={check.get('story_1', {}).get('passed')} "
           f"story_2={check.get('story_2', {}).get('passed')} registration={check.get('restate_registration', {}).get('ok')} "
           f"drafted in {check.get('story_2', {}).get('seconds_until_drafted')}s")

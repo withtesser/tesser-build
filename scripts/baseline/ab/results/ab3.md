@@ -88,3 +88,5 @@ agents ran together).
 - **The domain favours arm A.** Story-drafting is the case the generator was shaped
   around.
 - **No cold codex reviews yet** for this run's four trees.
+
+The generated table for this round is `ab3-table.md`, and the per-sample metrics are `ab3-metrics.json`. Both come from `round report ab3`, over a round state backfilled from these runs, which were run by hand before `round` existed.

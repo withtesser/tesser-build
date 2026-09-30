@@ -1,0 +1,447 @@
+{
+  "round": "ab3",
+  "scaffold": "story-drafting-scaffold-s8",
+  "scaffold_sha": "44ac1129f59350dec2ac812650df52505ae10855",
+  "main_sha": "backfilled",
+  "agent_type": "tesser-red-trial-medium",
+  "n_planned": 1,
+  "pip_warmed": null,
+  "cells": {
+    "opus-A": {
+      "n": 1,
+      "check_passed": "1/1",
+      "agent_s": {
+        "median": 359.7,
+        "min": 359.7,
+        "max": 359.7
+      },
+      "model_s": {
+        "median": 254.4,
+        "min": 254.4,
+        "max": 254.4
+      },
+      "checking_s": {
+        "median": 62.6,
+        "min": 62.6,
+        "max": 62.6
+      },
+      "setup_s": {
+        "median": 6.2,
+        "min": 6.2,
+        "max": 6.2
+      },
+      "probing_s": {
+        "median": 11.3,
+        "min": 11.3,
+        "max": 11.3
+      },
+      "other_s": {
+        "median": 25.3,
+        "min": 25.3,
+        "max": 25.3
+      },
+      "tool_calls": {
+        "median": 26,
+        "min": 26,
+        "max": 26
+      },
+      "api_requests": {
+        "median": 26,
+        "min": 26,
+        "max": 26
+      },
+      "cache_read_tokens": {
+        "median": 2230297,
+        "min": 2230297,
+        "max": 2230297
+      },
+      "cache_write_tokens": {
+        "median": 180592,
+        "min": 180592,
+        "max": 180592
+      },
+      "tests_passed": {
+        "median": 67,
+        "min": 67,
+        "max": 67
+      },
+      "tests_failed": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "impl_coverage_pct": {
+        "median": 88.2,
+        "min": 88.2,
+        "max": 88.2
+      },
+      "tessercheck_findings": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "ran_alongside_max": 0
+    },
+    "opus-B": {
+      "n": 1,
+      "check_passed": "1/1",
+      "agent_s": {
+        "median": 245.5,
+        "min": 245.5,
+        "max": 245.5
+      },
+      "model_s": {
+        "median": 163.1,
+        "min": 163.1,
+        "max": 163.1
+      },
+      "checking_s": {
+        "median": 10.3,
+        "min": 10.3,
+        "max": 10.3
+      },
+      "setup_s": {
+        "median": 17.6,
+        "min": 17.6,
+        "max": 17.6
+      },
+      "probing_s": {
+        "median": 11.3,
+        "min": 11.3,
+        "max": 11.3
+      },
+      "other_s": {
+        "median": 43.3,
+        "min": 43.3,
+        "max": 43.3
+      },
+      "tool_calls": {
+        "median": 29,
+        "min": 29,
+        "max": 29
+      },
+      "api_requests": {
+        "median": 25,
+        "min": 25,
+        "max": 25
+      },
+      "cache_read_tokens": {
+        "median": 1732329,
+        "min": 1732329,
+        "max": 1732329
+      },
+      "cache_write_tokens": {
+        "median": 86639,
+        "min": 86639,
+        "max": 86639
+      },
+      "tests_passed": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      },
+      "tests_failed": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "ran_alongside_max": 0
+    },
+    "sonnet-A": {
+      "n": 1,
+      "check_passed": "1/1",
+      "agent_s": {
+        "median": 196.4,
+        "min": 196.4,
+        "max": 196.4
+      },
+      "model_s": {
+        "median": 113.0,
+        "min": 113.0,
+        "max": 113.0
+      },
+      "checking_s": {
+        "median": 55.7,
+        "min": 55.7,
+        "max": 55.7
+      },
+      "setup_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "probing_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "other_s": {
+        "median": 27.6,
+        "min": 27.6,
+        "max": 27.6
+      },
+      "tool_calls": {
+        "median": 15,
+        "min": 15,
+        "max": 15
+      },
+      "api_requests": {
+        "median": 15,
+        "min": 15,
+        "max": 15
+      },
+      "cache_read_tokens": {
+        "median": 1052346,
+        "min": 1052346,
+        "max": 1052346
+      },
+      "cache_write_tokens": {
+        "median": 168749,
+        "min": 168749,
+        "max": 168749
+      },
+      "tests_passed": {
+        "median": 70,
+        "min": 70,
+        "max": 70
+      },
+      "tests_failed": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "impl_coverage_pct": {
+        "median": 89.6,
+        "min": 89.6,
+        "max": 89.6
+      },
+      "tessercheck_findings": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "ran_alongside_max": 0
+    },
+    "sonnet-B": {
+      "n": 1,
+      "check_passed": "1/1",
+      "agent_s": {
+        "median": 41.0,
+        "min": 41.0,
+        "max": 41.0
+      },
+      "model_s": {
+        "median": 22.6,
+        "min": 22.6,
+        "max": 22.6
+      },
+      "checking_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "setup_s": {
+        "median": 17.0,
+        "min": 17.0,
+        "max": 17.0
+      },
+      "probing_s": {
+        "median": 1.4,
+        "min": 1.4,
+        "max": 1.4
+      },
+      "other_s": {
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tool_calls": {
+        "median": 5,
+        "min": 5,
+        "max": 5
+      },
+      "api_requests": {
+        "median": 4,
+        "min": 4,
+        "max": 4
+      },
+      "cache_read_tokens": {
+        "median": 177439,
+        "min": 177439,
+        "max": 177439
+      },
+      "cache_write_tokens": {
+        "median": 42151,
+        "min": 42151,
+        "max": 42151
+      },
+      "tests_passed": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "tests_failed": {
+        "median": 0,
+        "min": 0,
+        "max": 0
+      },
+      "ran_alongside_max": 0
+    }
+  },
+  "samples": [
+    {
+      "cell": "opus-A",
+      "sample": 1,
+      "runs": [
+        "ab3-opus-A-red",
+        "ab3-opus-A-green"
+      ],
+      "agent_s": 359.7,
+      "checking_s": 62.6,
+      "setup_s": 6.2,
+      "probing_s": 11.3,
+      "other_s": 25.3,
+      "model_s": 254.4,
+      "tool_calls": 26,
+      "api_requests": 26,
+      "cache_read_tokens": 2230297,
+      "cache_write_tokens": 180592,
+      "effort": [
+        "medium"
+      ],
+      "check_passed": true,
+      "story_1": true,
+      "story_2": true,
+      "story_3": true,
+      "probes": {
+        "get_unknown_id_status": 500,
+        "post_missing_fields_status": 400
+      },
+      "tests_passed": 67,
+      "tests_failed": 0,
+      "impl_coverage_pct": 88.2,
+      "tessercheck_findings": 0,
+      "red_verify_exit": 1,
+      "green_verify_exit": 0,
+      "integrity_ok": true,
+      "red_files": 69,
+      "green_files": 4,
+      "green_impl_lines": 47,
+      "green_test_lines": 54,
+      "tessercheck_runs_by_agents": 5,
+      "ran_alongside_max": 0
+    },
+    {
+      "cell": "opus-B",
+      "sample": 1,
+      "runs": [
+        "ab3-opus-B"
+      ],
+      "agent_s": 245.5,
+      "checking_s": 10.3,
+      "setup_s": 17.6,
+      "probing_s": 11.3,
+      "other_s": 43.3,
+      "model_s": 163.1,
+      "tool_calls": 29,
+      "api_requests": 25,
+      "cache_read_tokens": 1732329,
+      "cache_write_tokens": 86639,
+      "effort": [
+        "medium"
+      ],
+      "check_passed": true,
+      "story_1": true,
+      "story_2": true,
+      "story_3": true,
+      "probes": {
+        "get_unknown_id_status": 404,
+        "post_missing_fields_status": 422
+      },
+      "tests_passed": 5,
+      "tests_failed": 0,
+      "impl_coverage_pct": null,
+      "tessercheck_findings": null,
+      "files": 12,
+      "python_lines": 407,
+      "ran_alongside_max": 0
+    },
+    {
+      "cell": "sonnet-A",
+      "sample": 1,
+      "runs": [
+        "ab3-sonnet-A-red",
+        "ab3-sonnet-A-green"
+      ],
+      "agent_s": 196.4,
+      "checking_s": 55.7,
+      "setup_s": 0.0,
+      "probing_s": 0.0,
+      "other_s": 27.6,
+      "model_s": 113.0,
+      "tool_calls": 15,
+      "api_requests": 15,
+      "cache_read_tokens": 1052346,
+      "cache_write_tokens": 168749,
+      "effort": [
+        "medium"
+      ],
+      "check_passed": true,
+      "story_1": true,
+      "story_2": true,
+      "story_3": true,
+      "probes": {
+        "get_unknown_id_status": 500,
+        "post_missing_fields_status": 400
+      },
+      "tests_passed": 70,
+      "tests_failed": 0,
+      "impl_coverage_pct": 89.6,
+      "tessercheck_findings": 0,
+      "red_verify_exit": 1,
+      "green_verify_exit": 0,
+      "integrity_ok": true,
+      "red_files": 77,
+      "green_files": 3,
+      "green_impl_lines": 78,
+      "green_test_lines": 0,
+      "tessercheck_runs_by_agents": 7,
+      "ran_alongside_max": 0
+    },
+    {
+      "cell": "sonnet-B",
+      "sample": 1,
+      "runs": [
+        "ab3-sonnet-B"
+      ],
+      "agent_s": 41.0,
+      "checking_s": 0.0,
+      "setup_s": 17.0,
+      "probing_s": 1.4,
+      "other_s": 0.0,
+      "model_s": 22.6,
+      "tool_calls": 5,
+      "api_requests": 4,
+      "cache_read_tokens": 177439,
+      "cache_write_tokens": 42151,
+      "effort": [
+        "medium"
+      ],
+      "check_passed": true,
+      "story_1": true,
+      "story_2": true,
+      "story_3": true,
+      "probes": {
+        "get_unknown_id_status": 404,
+        "post_missing_fields_status": 422
+      },
+      "tests_passed": 0,
+      "tests_failed": 0,
+      "impl_coverage_pct": null,
+      "tessercheck_findings": null,
+      "files": 3,
+      "python_lines": 152,
+      "ran_alongside_max": 0
+    }
+  ]
+}

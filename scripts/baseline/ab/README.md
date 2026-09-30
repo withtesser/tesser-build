@@ -16,6 +16,51 @@ arm's output: it serves the output, registers the Restate endpoint, and drives
 the two level-2 stories over HTTP, tolerant of what the specs leave open (id
 shape, extra keys, how long drafting takes).
 
+## Running a round
+
+`round` runs a whole round the same way every time: every cell, N samples,
+in waves across the Restate slots, with every metric recorded.
+
+    scripts/baseline/ab/round plan ab4 --models opus,sonnet --n 3 --scaffold story-drafting-scaffold-s8
+    scripts/baseline/ab/round next ab4          # prints the launches as JSON
+    #   start every printed launch in one message: Agent, unnamed, with its
+    #   subagent_type, model and prompt verbatim (named spawns ignore the
+    #   definition's effort). Then, as each agent finishes:
+    scripts/baseline/ab/round done ab4 <run> <agent-id>
+    scripts/baseline/ab/round next ab4          # a finished red frees its green; a finished sample frees its slot
+    #   ...until status shows every run done or blocked...
+    scripts/baseline/ab/round report ab4        # results/ab4-metrics.json and ab4-table.md
+    scripts/baseline/ab/round push-refs ab4     # arm A trees to refs/trials/<run>
+
+Then write `results/<round>.md`, reading the generated table, and commit the
+records `done` wrote (`scripts/baseline/results/<run>*` for arm A,
+`results/<run>.json` and `<run>-check.json` here) with it.
+
+What `round` does for you:
+
+- **Scheduling.** Each sample holds one slot (1-9 by default), so up to nine
+  samples run at once. Arm A's green uses its red's slot. A slot whose host
+  ports something already listens on is skipped. Run one round at a time
+  across sessions: slots are machine-wide.
+- **Setup kept equal.** `plan` warms pip's cache with the packages a bare
+  agent usually installs, so no bare run pays for a download another did not.
+- **Measuring.** `done` kills whatever the run left listening on its ports
+  (only processes running from the run's own tree), then measures the run:
+  `measure` for red and green, plus the shared check for green, and
+  `measure-bare` for bare. `measure-bare` also runs the agent's own pytest
+  suite, if it wrote one.
+- **Failures.** A run whose prepare fails is marked blocked with the reason,
+  and the rest of the wave goes on. `prepare` removes whatever it made
+  before failing.
+- **The report.** It reports each cell's median and range over its samples:
+  agent time and its split, calls, API requests, tokens, the shared check
+  (per story, plus the probes), tests, coverage, tessercheck findings, green's
+  integrity, and files and lines. It also records, for each sample, the most
+  other agents that ran at the same time, because timings from rounds of
+  different concurrency are not comparable.
+
+## Running one run by hand
+
     scripts/baseline/ab/prepare-bare <run> <slot>          # arm B
     scripts/baseline/ab/measure-bare <run> <transcript>    # arm B: metrics + check
     scripts/baseline/ab/check-tree A|B <run>               # the shared check, alone

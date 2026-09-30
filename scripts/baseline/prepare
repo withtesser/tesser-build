@@ -68,6 +68,17 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
+# A prepare that fails from here on removes what it made, so the same run
+# can be prepared again.
+prepared=no
+undo() {
+  [ "$prepared" = yes ] && return
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  git branch -D "$branch" >/dev/null 2>&1 || true
+  rm -rf "$out"
+  docker rm -f "$container" >/dev/null 2>&1 || true
+}
+trap undo EXIT
 mkdir -p "$out"
 base_sha=$(git rev-parse "$base^{commit}")
 git worktree add -q -b "$branch" "$wt" "$base_sha"
@@ -145,4 +156,5 @@ for part in parts:
     out.append(include(token) if token else fill(part))
 open(sys.argv[2], "w").write("".join(out))
 PY
+prepared=yes
 echo "$out/prompt.md"
