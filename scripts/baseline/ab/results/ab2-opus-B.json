@@ -1,0 +1,94 @@
+{
+  "run": {
+    "phase": "bare",
+    "name": "ab2-opus-B",
+    "slot": 6,
+    "worktree": "<ab-runs>/ab2-opus-B/work",
+    "restate_ingress": "http://localhost:38680",
+    "restate_admin": "http://localhost:39670",
+    "host_port": 9360,
+    "prepared": "2026-09-30T16:36:47Z"
+  },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "tesser-red-trial-medium",
+      "task_kind": "subagent",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 334.9,
+    "api_requests": 36,
+    "tokens": {
+      "input": 72,
+      "cache_read": 2776894,
+      "cache_write": 80048
+    },
+    "tool_calls_total": 42,
+    "tool_calls": {
+      "Bash": 33,
+      "Write": 7,
+      "Read": 1,
+      "SubagentHandback": 1
+    },
+    "guidance": [],
+    "tessercheck_runs": [],
+    "tessercheck_runs_count": 0,
+    "final_message": "Now the modules."
+  },
+  "output": {
+    "files": 9,
+    "python_files": 6,
+    "python_lines": 275,
+    "commits": 2
+  },
+  "check": {
+    "cmd": ".venv/bin/python main.py",
+    "cwd": "<ab-runs>/ab2-opus-B/work",
+    "seconds_to_listen": 0.27,
+    "served": true,
+    "restate_registration": {
+      "ok": true,
+      "status": 200,
+      "detail": "{\"id\":\"dp_121z5ZMoAna2g4OqepN77nr\",\"services\":[{\"name\":\"StoryDraftingSkill\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"run\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"JSON object\",\"output_description\":\"JSON object\",\"input_json_schema\":{\"type\":\"object\"},\"output_json_schema\":{\"type\":\"object\"},\"retry"
+    },
+    "story_1": {
+      "passed": true,
+      "problems": [],
+      "answered": "{\"jtbd_id\":\"7413bac7-d6a8-4919-ab49-517ddbe0fd92\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"drafting_stories\",\"stories\":[]}"
+    },
+    "story_2": {
+      "passed": true,
+      "problems": [],
+      "seconds_until_drafted": 0.26,
+      "answered": "{\"jtbd_id\":\"7413bac7-d6a8-4919-ab49-517ddbe0fd92\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer\",\"when\":\"I my work to survive across sessions\",\"then\":\"I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer and I have stepped away part way through\",\"when\":\"I come back\",\"then\":\"I can still my work to survive across sessions, picking up where I left off, so that I can pick up where I left off\",\"state\":\"drafted\"}]}"
+    },
+    "probes": {
+      "get_unknown_id_status": 404,
+      "post_missing_fields_status": 400
+    },
+    "exited_early": false,
+    "seconds_to_listen_after_restart": 0.25,
+    "restart_registration": {
+      "ok": true,
+      "status": 200,
+      "detail": "{\"id\":\"dp_121z5ZMoAna2g4OqepN77nr\",\"services\":[{\"name\":\"StoryDraftingSkill\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"run\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"JSON object\",\"output_description\":\"JSON object\",\"input_json_schema\":{\"type\":\"object\"},\"output_json_schema\":{\"type\":\"object\"},\"retry"
+    },
+    "story_3": {
+      "passed": true,
+      "problems": [],
+      "answered": "{\"jtbd_id\":\"7413bac7-d6a8-4919-ab49-517ddbe0fd92\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer\",\"when\":\"I my work to survive across sessions\",\"then\":\"I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer and I have stepped away part way through\",\"when\":\"I come back\",\"then\":\"I can still my work to survive across sessions, picking up where I left off, so that I can pick up where I left off\",\"state\":\"drafted\"}]}"
+    },
+    "passed": true
+  }
+}
