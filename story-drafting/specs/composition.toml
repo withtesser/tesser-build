@@ -1,0 +1,99 @@
+# 4 COMPOSITION — the contracts of the drafting context.
+
+context = "drafting"
+
+[aggregate]
+name = "Jtbd"
+identity = "jtbd_id"
+serves = ["s-1", "s-2", "s-3"]
+
+[aggregate.spec]
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+stories = "StoryView[]"
+
+[aggregate.reads]
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+status = "JtbdStatus"
+stories = "StoryView[]"
+
+[aggregate.commands.record_stories]
+takes = { story_texts = "StoryText[]" }
+outcomes = ["recorded"]
+
+[shapes.StoryView]
+given = "str"
+when = "str"
+then = "str"
+state = "StoryState"
+
+[messages.StoryText]
+given = "str"
+when = "str"
+then = "str"
+
+[enums]
+JtbdStatus = ["drafting_stories", "awaiting_story_acceptance"]
+StoryState = ["drafted", "accepted"]
+
+[interfaces.http]
+serves = ["s-1-a-1", "s-2-a-1"]
+
+[client.operations.submit_jtbd]
+kind = "write"
+request = ["role", "i_want", "so_that"]
+response = ["jtbd_id", "status"]
+steps = ["identity.issue_jtbd_id", "repository.save_jtbd", "orchestrator.start_draft_jtbd_stories"]
+serves = ["s-1", "s-1-a-1"]
+
+[client.operations.get_jtbd]
+kind = "read"
+request = ["jtbd_id"]
+response = ["status", "stories"]
+steps = ["repository.load_jtbd"]
+serves = ["s-2", "s-3", "s-2-a-1", "s-3-a-1"]
+
+[orchestrator.operations.draft_jtbd_stories]
+request = ["jtbd_id", "role", "i_want", "so_that"]
+response = ["jtbd_id"]
+steps = ["actions.story.draft_stories", "actions.jtbd.record_stories"]
+serves = ["s-1", "s-2"]
+
+[actions.story]
+port = "StoryDrafter"
+
+[actions.story.operations.draft_stories]
+calls = "draft_stories"
+request = ["role", "i_want", "so_that"]
+response = ["story_texts"]
+serves = ["s-2"]
+
+[actions.jtbd]
+port = "JtbdRepository"
+
+[actions.jtbd.operations.record_stories]
+builds = "Jtbd"
+commands = ["record_stories"]
+calls_on = ["recorded"]
+calls = "save_jtbd"
+request = ["jtbd_id", "role", "i_want", "so_that", "story_texts"]
+response = ["jtbd_id"]
+serves = ["s-2", "s-3"]
+
+[ports.StoryDrafter]
+operations.draft_stories = { request = ["role", "i_want", "so_that"], response = ["story_texts: StoryText[]"] }
+serves = ["s-2"]
+
+[ports.JtbdRepository]
+operations.save_jtbd = { request = ["jtbd"], response = [] }
+operations.load_jtbd = { request = ["jtbd_id"], response = ["jtbd"] }
+serves = ["s-1", "s-2", "s-3"]
+
+[ports.JtbdIdentityRepository]
+operations.issue_jtbd_id = { request = [], response = ["jtbd_id"] }
+serves = ["s-1"]
