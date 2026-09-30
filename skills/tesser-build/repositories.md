@@ -1,0 +1,173 @@
+# Gateway: repository
+
+<!-- tb-status: full -->
+
+A repository is the **persistence boundary** for an aggregate: it maps the
+aggregate to and from storage and hides how that storage works (Evans,
+*Domain-Driven Design*, ch. 6; Vernon, *IDDD*, ch. 12). In the anatomy it is an
+**outbound adapter** behind a port the context owns, in its own adapter kind
+package (`map.md#adapters`); its sibling is the cross-context gateway
+(`gateway-cross-context.md`), which reaches a peer context instead of storage.
+The interface (the port) is declared in the context's `application/ports/`
+package — one port per module, with the request/response DTOs it speaks; the
+concrete implementations live in the context's `adapters/repositories/`, its
+own adapter kind package with its own reach — a `ts.Repository` in
+`adapters/gateways/` is a `TB052` finding — each module named
+for its backing (`file_repository.py`, `repo_memory.py`), and import that
+ports module and nothing else of the context. It has exactly two jobs
+— **save** an aggregate (decompose it into rows/documents) and **retrieve** one
+(reconstruct it through its constructor). It holds **no business logic**: the
+domain already enforced every invariant before the aggregate reached the repo.
+The interface speaks port DTOs — a whole aggregate carried as records, never
+raw rows.
+
+## Is this what I'm building?
+
+**Test:** *Am I moving an aggregate between the domain and storage, without
+deciding any domain rule?* Yes → repository.
+
+**Near-misses that are NOT repositories:**
+- A **domain service** or a method on an aggregate — anything that *computes* a
+  domain result. A repo maps and reconstructs; it never calculates.
+- A **query/read model** — a read that returns something other than a whole
+  aggregate (a list of child projections, a summary row) for display. That is a
+  legitimate *read concern*, and this file names it below, but it is not the
+  aggregate write path and must not grow domain logic.
+- An **application service** — it *calls* the repository; it is not one.
+- A **cross-context gateway** (`gateway-cross-context.md`) — the same
+  port+adapter shape, but it reaches a peer context's `Client`, not storage.
+
+## Rules
+
+1. **Save takes the whole aggregate; the repo decomposes it.** The caller passes
+   the root (`repo.save(MapToSaveOrderRequest(order))`), never extracted
+   children (`repo.save_line_items(...)`). Flattening the aggregate into
+   rows is a persistence concern and lives inside the repo, not in the service.
+2. **Retrieve reconstructs through the constructor.** Reading rebuilds the
+   aggregate by calling its constructor with a spec, so every invariant is
+   re-established on the way out. Storage never hands back a half-built object
+   with fields poked in directly.
+3. **No business logic.** No invariant checks, no domain calculations, no
+   domain decisions. If the repo is computing a total or deciding validity, that
+   logic belongs on a domain type. The repo may **filter, order, and reconstruct
+   as persistence mechanics** — but it must not *compute domain results*. That
+   line is the whole rule: mapping and selection, yes; domain math, no.
+4. **Speak port DTOs at the boundary.** The port speaks **port DTOs** —
+   primitives and records declared in the ports module, never domain objects
+   (TB081) — because the ports module is a leaf that cannot import the domain
+   at all; the aggregate is reconstructed on the application side of the port.
+   Raw storage types (rows, ORM models) never cross the interface, and neither
+   does persistence vocabulary.
+5. **The interface lives in the application role, in its own ports package.**
+   Define the repository port in the calling context's `application/ports/`
+   — a leaf package holding exactly one port plus the DTOs it speaks, and the
+   only part of `application` an adapter may import; concrete implementations
+   satisfy it structurally. Not in the domain, and not in the service module:
+   a port declared beside the service forces the gateway to import the
+   implementation it exists to be decoupled from. Mechanics and the enforced
+   DTO rules: `python.md#ports`.
+6. **A transaction boundary is a store, not a repository method.** When a use
+   case must read, decide, and write inside one transaction, the port splits in
+   two inside the one ports module: a long-lived **store** that declares only
+   `transaction()`, and the short-lived, connection-bound **repository** that
+   transaction yields. The service writes the boundary (`with
+   store.transaction() as repo:`) and never the mechanics; the repository keeps
+   rules 1-4 unchanged. This replaces the earlier "the unit-of-work lifetime is
+   a decision for the consuming codebase" position, which left the boundary
+   unmodeled. Mechanics and the enforced shape: `python.md#ports`; the
+   reasoning is `docs/design-asyncpg-repositories.md`.
+
+## The read side — draw the line explicitly
+
+certus's own repository does two things the write path doesn't, and conflating
+them is how agents put query logic in repos:
+
+- **Load an aggregate by identity** → returns the whole aggregate (or not
+  found). This is the mirror of save and the common case.
+- **Query for a read result** → may return **child objects or a projection**
+  (a tuple of transfer records, a summary), and may **filter/order/select**. This is a read
+  concern, named as such. It is allowed, but it is *persistence selection*, not
+  domain computation — no summing, no rule evaluation, no branching on domain
+  state inside the repo.
+
+A **query is a port request DTO** (`FindCampaignRequest`) — but it is **not a
+Spec**. Specs carry construction data for a domain object (`value-objects.md` /
+the Spec pattern); a query request carries selection criteria to the port. Keep
+them distinct: a spec builds a domain object, a query selects stored ones.
+
+## Shape
+
+```
+OrderRepository                     (the port, in application/ports/order_repository)
+  save(SaveOrderRequest) → SaveOrderResponse          # whole aggregate in, as records
+  load(LoadOrderRequest) → LoadOrderResponse          # records out; the service reconstructs via the constructor
+  find(FindOrdersRequest) → FindOrdersResponse        # read concern: projection out
+
+FindOrdersRequest                   (selection criteria — a request DTO, NOT a spec)
+  - customer_id  str
+  - period       str
+```
+
+Construction mechanics: `python.md#repositories`.
+
+## Decisions you must make
+
+1. **Aggregate load or read query?** If the caller will *change* the thing, load
+   the whole aggregate so its transitions and invariants are available. If the
+   caller only *displays* it, a read query returning a projection is fine — and
+   cheaper — but it is read-only by contract.
+2. **Where does decomposition live?** Always in the repo. If a service is
+   flattening an aggregate before calling the repo, move that into the
+   save mapping. The service should not know the aggregate's internal shape.
+3. **In-memory vs backed implementation.** Start with an in-memory
+   implementation (a map keyed by identity) for tests and early use; a
+   database-backed one satisfies the same interface later. Neither adds domain
+   logic.
+
+## How the machine sees it
+
+**No analyzer backs this in v2.** A repository has no structural signal `tessercheck`
+keys on. The tell that logic has leaked into a repo — arithmetic on domain
+quantities, a conditional on domain state, an invariant check — is the same
+signal set as the application-service leakage checks
+(`application-services.md#domain-logic-leakage-checks`), and it carries the same
+caveat: a repo *legitimately* loops to decompose an aggregate or map rows, so a
+bare "for-loop over domain objects" is not a violation here. Layer and intent
+decide. Review, not the compiler.
+
+## Tests you must write
+
+- **Round-trip:** save an aggregate, load it back, assert it equals the original
+  (by identity/value per the aggregate's rules) — reconstruction went through
+  the constructor.
+- **Whole-aggregate save:** the save request is built from the root; a test
+  that tries to save extracted children shouldn't type-check (or is absent by
+  design).
+- **No business logic:** there is no repo test that asserts a domain rule —
+  because the repo enforces none. If you're writing one, the rule is in the
+  wrong layer.
+- **Query is read-only and typed:** a find returns the projection records for
+  a query request; it never mutates and never computes a domain result.
+
+## Common mistakes
+
+- **Service extracts children before saving.** `order.items()` then
+  `repo.save_items(...)`. The service now depends on the aggregate's internals.
+  Pass the whole aggregate; the repo decomposes.
+- **Business logic in the repo.** Summing amounts, checking a balance, deciding
+  validity during save/load. That's domain work — it belongs on a domain type
+  (`application-services.md#domain-logic-leakage-checks`).
+- **Loose parameters in queries.** `find(customer_id)`. A port method takes
+  one `ts.Request` (`python.md#ports`), so selection criteria are named fields of a
+  declared request DTO.
+- **Reconstructing by field-poking.** Building the aggregate by assigning
+  fields instead of calling its constructor — the invariants are skipped and a
+  stored-but-invalid aggregate comes back to life. Reconstruct via the
+  constructor.
+- **A query request that's really a spec (or vice versa).** Construction data
+  in a query, or selection criteria in a spec. Keep selection criteria and
+  construction data apart.
+
+## Now build it
+
+- Python: `python.md#repositories`

@@ -1,0 +1,15 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import typing
+
+import tesser.application as ts
+
+import {{context}}.application.relays as relays
+
+
+class {{ApplicationClient}}(ts.Client, typing.Protocol):
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response: ...
+{{/operations}}

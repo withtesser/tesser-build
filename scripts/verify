@@ -1,0 +1,762 @@
+#!/usr/bin/env bash
+#
+# Every Python gate CI runs, runnable locally, one command per tree.
+#
+#   scripts/verify              all trees
+#   scripts/verify python-app   one tree
+#   scripts/verify serdepy python-app
+#
+# Each CI job calls this with its own tree, so the commands live here — in the
+# repo, reviewable — rather than inline in workflow YAML. That is the point:
+# "green locally" and "green in CI" have to mean the same thing, and they only
+# do if there is one definition of what green is.
+#
+# Tools are taken from PATH, exactly as in CI. Install them into the active
+# environment with scripts/install-dev.
+#
+set -uo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT" || exit 1
+
+# Step 0 is the layout app (layout/ — a full tesser app with its own gates):
+# it fails when the directories on disk, manifest.json, the .tesser-root
+# files, and the CI jobs disagree in any direction. The tree list also comes
+# from the layout app, never hand-maintained here: an `app` manifest row IS
+# the claim that scripts/verify runs that tree, and a manifest tree with no
+# run_* arm below fails as "unknown tree" rather than silently not running.
+(cd "$ROOT/layout" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.check "$ROOT") || exit 1
+
+# Capture the output in a variable first: a python3 failure inside process
+# substitution would be invisible, and an empty TREES list would make the
+# loop below report "all green (0 trees)" — a check that passes without
+# checking anything.
+TREE_LIST=$( (cd "$ROOT/layout" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.trees "$ROOT") ) || { echo "verify: could not derive trees from manifest.json" >&2; exit 1; }
+# Read with a while loop, not mapfile: mapfile is a bash 4 builtin and macOS
+# ships bash 3.2. Every CI job runs on ubuntu, so a bash-4-ism here fails only
+# on the machine this script exists to serve, and CI can never see it.
+TREES=()
+while IFS= read -r tree; do
+  if [ -n "$tree" ]; then TREES+=("$tree"); fi
+done <<<"$TREE_LIST"
+if [ ${#TREES[@]} -eq 0 ] || [ -z "${TREES[0]}" ]; then
+  echo "verify: no gated trees derived from manifest.json" >&2
+  exit 1
+fi
+
+failed=()
+
+step() { echo "  → $*"; }
+
+# The analyzer is an app, and an app is run through its host: tessercheck-py's
+# srv/cli/main.py. It runs from tessercheck-py's own directory — `-m
+# srv.cli.main` resolves against the current directory first, and a checked
+# tree may have an srv package of its own — so the tree to check is an
+# argument, not the working directory.
+tessercheck_tree() {
+  (cd "$ROOT/tessercheck-py" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.main "$1")
+}
+
+# stop_host <pid> <signal>: signals a served host, gives it two seconds to
+# exit, then kills it. A host whose Restate endpoint holds a suspended
+# invocation otherwise outlives its root tier by Restate's inactivity timeout
+# (about a minute), because cancelling that invocation's task waits on Restate.
+stop_host() {
+  kill "-$2" "$1" 2>/dev/null
+  local _
+  for _ in $(seq 1 20); do
+    kill -0 "$1" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -KILL "$1" 2>/dev/null
+  wait "$1" 2>/dev/null
+}
+
+run_llmport() {
+  cd "$ROOT/examples/llmport" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict scheduling protocol conftest.py || return 1
+  step "pytest"
+  pytest -q || return 1
+}
+
+run_python_app() {
+  cd "$ROOT/examples/python-app" || return 1
+  step "ruff (env edge + exit edge + dead imports + F823)"
+  ruff check . || return 1
+  step "import-linter (import direction)"
+  PYTHONPATH=. lint-imports || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict protocol kernel campaign linkpolicy reports app srv tests conftest.py || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  # The app reads its own environment through the config repository, so the
+  # runner supplies one — the same job a deploy does. Tests never inject it.
+  step "pytest (every tier but the root, no host served)"
+  CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
+    pytest -q --ignore=tests || return 1
+  # The root tier plays the user: it reaches the app only through a running
+  # host, so the arm serves the HTTP host and names its address in
+  # PYTHON_APP_ADDRESS, which the tier reads through ts.served. Locally the
+  # default port is 9240.
+  local port="${PYTHON_APP_PORT:-9240}"
+  local address="127.0.0.1:$port"
+  step "serve the HTTP host on $address"
+  (exec env CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" \
+    PYTHONPATH=.:../../tesser-py python3 -W ignore::RuntimeWarning -m srv.http.main >/dev/null) &
+  local host=$!
+  local serving=1
+  for _ in $(seq 1 50); do
+    if curl -sf "http://$address/reports/links-by-verdict" >/dev/null; then
+      serving=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$serving" -ne 0 ]; then
+    echo "python-app: the HTTP host did not answer on $address" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest (root tier against the HTTP host at $address)"
+  PYTHON_APP_ADDRESS="$address" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  [ "$status" -eq 0 ] || return 1
+}
+
+# The canonical application-ports tree: one context, two ports, an enum outcome
+# and a collection answer. The six rejected encodings it was chosen over are not
+# here on purpose — four of them exist *because* they produce findings, so a
+# zero-findings gate is the wrong shape for them. They stay executable on the
+# spike/application-ports branch, and docs/design-application-ports.md carries
+# the measurements.
+run_ports() {
+  cd "$ROOT/examples/ports" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict catalog || return 1
+  step "pytest"
+  pytest -q || return 1
+}
+
+# The minimal tree: a small app that uses every tesser role and object in a
+# conformant way, with about one test per sibling test file and the least
+# business logic that shows how things work. Two contexts, a kernel, an
+# exported kernel, protocol, srv, and app; alpha's durable kinds run on
+# Restate. The arm runs the tiers in the runner's order
+# (docs/design-test-tiers.md): every test outside the root tier first, with no
+# host served — alpha's context test serves the component's containers from
+# its own process under their own names, and each activities, workflows, and
+# dispatchers test serves its own registrations under fresh names, all at
+# MINIMAL_CALLBACK_HOST — then it serves srv/restate, registers it with the
+# Restate admin API (forcing over what the context test left), and runs the
+# root tier against it.
+# CI provides a Restate service container; locally the defaults are a server
+# of its own on 58080/59070. alpha's widgets are in Postgres at ALPHA_STORAGE;
+# locally the default is a `minimal` database on the asyncpg arm's server
+# (CREATE DATABASE minimal once):
+#
+#   docker run -d --name tesser-minimal-restate -p 58080:8080 -p 59070:9070 \
+#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+run_minimal() {
+  cd "$ROOT/examples/minimal" || return 1
+  local storage="${ALPHA_STORAGE:-postgres://tesser@localhost:5434/minimal}"
+  local ingress="${RESTATE_INGRESS:-http://localhost:58080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:59070}"
+  local port="${MINIMAL_DEPLOYMENT_PORT:-9085}"
+  local callback_host="${MINIMAL_CALLBACK_HOST:-host.docker.internal}"
+  local deployment="${MINIMAL_DEPLOYMENT:-http://$callback_host:$port}"
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests conftest.py || return 1
+  step "pytest, every tier but the root (no host served; Postgres at ALPHA_STORAGE, Restate at $ingress)"
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" \
+    MINIMAL_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
+  step "serve the Restate endpoint on :$port and register it at $admin"
+  (exec env ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" PYTHONPATH=.:../../tesser-py \
+    python3 -m srv.restate.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "minimal: could not register $deployment with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest, the root tier (against the served host)"
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
+}
+
+# The durable-execution example: one context whose workflows run on Restate.
+# One FastAPI host serves POST /submissions, /orders and /purchases and mounts
+# the Restate endpoint at /restate; the engine never touches the domain. The
+# adapter tests exercise the real engine (testing.md rule 10). The arm runs the
+# tiers in the runner's order (docs/design-test-tiers.md): every tier but the
+# root first, with no host served — the context test serves and registers the
+# component's containers under their own names at DURABLE_CALLBACK_HOST, and
+# each activities, workflows, and dispatchers test its own under fresh names,
+# then reads what the engine recorded in sys_invocation — then the arm serves
+# the host, registers it with the Restate admin API (forcing over whatever the
+# context tier left), and puts its address in DURABLE_EXECUTION_HOST for the
+# root-tier tests, which reach the app only through it. The app reads its own
+# environment through the config repository, so the runner supplies it — the
+# same job a deploy does. Tests never inject it. CI provides a Restate service
+# container; locally the defaults are a server of its own on 18080/19070, so a
+# local run never re-registers another tree's services:
+#
+#   docker run -d --name tesser-durable-restate -p 18080:8080 -p 19070:9070 \
+#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+run_durable_execution() {
+  cd "$ROOT/examples/durable-execution" || return 1
+  local ingress="${RESTATE_INGRESS:-http://localhost:18080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:19070}"
+  local port="${DURABLE_DEPLOYMENT_PORT:-9084}"
+  local callback_host="${DURABLE_CALLBACK_HOST:-host.docker.internal}"
+  local deployment="${DURABLE_DEPLOYMENT:-http://$callback_host:$port}"
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict protocol ordering app srv tests conftest.py || return 1
+  step "pytest every tier but the root (against Restate at $ingress, no host served)"
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
+    pytest -q --ignore=tests || return 1
+  step "serve the Restate endpoint on :$port and register it at $admin"
+  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../../tesser-py \
+    python3 -m srv.http.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment/restate\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "durable-execution: could not register $deployment/restate with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest the root tier (against the host on :$port)"
+  DURABLE_EXECUTION_HOST="http://127.0.0.1:$port" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
+}
+
+# The minimal tree with a real database behind it: the same two contexts, each
+# with an asyncpg repository behind a store that owns the transaction — it is
+# Postgres-only, there is no memory backend to fall back to — an async
+# client/service/port chain, and an e2e that runs the CLI host as a
+# subprocess and speaks only protocol to it. The app reads its own
+# environment through the config repository, so the runner supplies it — the
+# same job a deploy does, and the e2e passes it on to the host. Tests never
+# inject it. The gate needs a reachable Postgres at that
+# coordinate — there is no skip, because a skipped e2e is a gate that passes
+# without checking anything. CI provides a service container; locally:
+#
+#   docker run -d --name tesser-asyncpg-pg -e POSTGRES_USER=tesser \
+#     -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=tesser -p 5434:5432 postgres:16
+#
+# Trust auth on a throwaway container means the DSN carries no password, so
+# nothing credential-shaped is ever committed.
+run_asyncpg() {
+  cd "$ROOT/examples/asyncpg" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests pgdatabase conftest.py || return 1
+  step "pytest (against Postgres at ALPHA_STORAGE / BETA_STORAGE)"
+  ALPHA_STORAGE="${ALPHA_STORAGE:-postgres://tesser@localhost:5434/tesser}" \
+  BETA_STORAGE="${BETA_STORAGE:-postgres://tesser@localhost:5434/tesser}" \
+    pytest -q || return 1
+}
+
+run_serdepy() {
+  cd "$ROOT/examples/serdepy" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict conftest.py parcel || return 1
+  step "pytest"
+  pytest -q || return 1
+}
+
+run_errorspy() {
+  cd "$ROOT/examples/errorspy" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict storage conftest.py protocol campaign || return 1
+  step "pytest"
+  pytest -q || return 1
+}
+
+run_tesser_py() {
+  cd "$ROOT/tesser-py" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  mypy || return 1
+  # The mutmut fixture projects are excluded from the tree's own mypy run
+  # (each ships a package named vo, which would collide), so each gets its
+  # own strict invocation here — the cross-package consumer check the
+  # retired vobase job used to provide.
+  step "mypy --strict (mutmut fixtures)"
+  # --cache-dir=/dev/null: a .mypy_cache left inside a fixture would be
+  # copytree'd into the mutation runs (the test ignores known junk dirs, but
+  # not creating the junk is the honest half of that contract).
+  for fixture in tests/ecosystem/mutmut/fixtures/*/; do
+    (cd "$fixture" && MYPYPATH=../../../../..:. mypy --strict --cache-dir=/dev/null vo tests) || return 1
+  done
+  step "pytest"
+  pytest -q || return 1
+  step "built wheel ships every subpackage"
+  # Clean before and after: `pip wheel` leaves build/ and *.egg-info/ behind,
+  # and build/lib/ is a full duplicate of the source tree. tessercheck's reader
+  # now prunes build/ and dist/, but *.egg-info is not in the skip set and a
+  # clean tree is the honest baseline either way.
+  rm -rf dist build ./*.egg-info
+  trap 'rm -rf "$ROOT/tesser-py/dist" "$ROOT/tesser-py/build" "$ROOT"/tesser-py/*.egg-info' RETURN
+  pip wheel --no-deps -w dist . > /dev/null || return 1
+  python3 - <<'EOF' || return 1
+import glob, pathlib, sys, zipfile
+names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+shipped = {n.split("/")[1] for n in names if n.startswith("tesser/") and n.count("/") == 2}
+shipped |= {n.split("/")[1] for n in names if n.startswith("tesser/") and n.count("/") == 1 and n.endswith(".py")}
+on_disk = {p.parent.name for p in pathlib.Path("tesser").glob("*/__init__.py")}
+on_disk |= {
+    p.name
+    for p in pathlib.Path("tesser").glob("*.py")
+    if p.name != "__init__.py" and not p.name.startswith("test_")
+}
+missing = on_disk - shipped
+if missing:
+    sys.exit(f"wheel omits subpackages or modules: {sorted(missing)}")
+print(f"wheel ships: {sorted(on_disk)}")
+EOF
+}
+
+# The specs app: the product specification page and the service behind it.
+# One context (specification), one HTTP host that serves the page at / and
+# POST /jtbd/{id}/stories, and root-tier tests that play the user: one posts
+# a story over HTTP, one drives the page through Playwright — so this tree
+# needs a browser (python -m playwright install chromium) as well as the
+# Python tooling. The arm runs every tier but the root with no host served,
+# then serves the HTTP host as a process on SPECS_APP_PORT, puts its address
+# in SPECS_APP_URL, runs the root tier (pytest tests) against it, and stops it.
+run_specs_app() {
+  cd "$ROOT/specs-app" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../tesser-py mypy --strict protocol specification app srv tests conftest.py || return 1
+  step "pytest (every tier but the root, no host served)"
+  pytest -q --ignore=tests || return 1
+  local port="${SPECS_APP_PORT:-9283}"
+  local url="http://127.0.0.1:$port"
+  if curl -s -o /dev/null "$url/"; then
+    echo "specs-app: something already answers at $url; set SPECS_APP_PORT" >&2
+    return 1
+  fi
+  step "serve the HTTP host at $url"
+  SPECIFICATION_STORAGE=memory HTTP_HOST=127.0.0.1 HTTP_PORT="$port" PYTHONPATH=.:../tesser-py PYTHONUNBUFFERED=1 \
+    python3 -W ignore::RuntimeWarning -m srv.http.main &
+  local host=$!
+  local ready=1
+  for _ in $(seq 1 50); do
+    if curl -sf -o /dev/null "$url/"; then
+      ready=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$ready" -ne 0 ] || ! kill -0 "$host" 2>/dev/null; then
+    echo "specs-app: the HTTP host did not come up at $url" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  step "pytest tests (root tests against the host at SPECS_APP_URL)"
+  SPECS_APP_URL="$url" pytest -q tests
+  local status=$?
+  kill -TERM "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  return "$status"
+}
+
+# The story-drafting app: a two-step agent skill backed by a durable
+# workflow — the agent drafts user stories from a job, and the run waits on
+# Restate until the developer picks. It is also the repo's baseline for
+# measuring how agents build a tesser app from one user story (red acceptance
+# test, then green; runs start from the story-drafting-scaffold-v2 tag, and
+# this tree is the chosen green run). The arm runs the tiers in the
+# runner's order (docs/design-test-tiers.md): every tier but the root with no
+# host served, then the hosts the root tier drives, then the root tier. Extend
+# the middle step with the hosts the tree needs (serving and registering the
+# Restate endpoint, as run_durable_execution does). Everything machine-specific
+# comes from the environment, so baseline runs can go side by side: the
+# Restate server (RESTATE_INGRESS / RESTATE_ADMIN) and the first of ten ports
+# the arm may serve hosts on (STORY_DRAFTING_PORT). A tree the composition
+# renderer wrote carries .tesser-rendered, whose first line is its composition
+# directory (relative to the repo root); the arm then first checks the tree
+# against it (srv.cli.render --check), so a hand edit to a generated file fails
+# the gate. Locally, a Restate server of its own on 38080/39070:
+#
+#   docker run -d --name tesser-story-drafting-restate -p 38080:8080 -p 39070:9070 \
+#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+run_story_drafting() {
+  cd "$ROOT/story-drafting" || return 1
+  local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:39070}"
+  local port="${STORY_DRAFTING_PORT:-9300}"
+  local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  if [ -f .tesser-rendered ]; then
+    local composition
+    composition=$(head -n 1 .tesser-rendered)
+    step "the tree matches $composition (srv.cli.render --check)"
+    (cd "$ROOT/generator" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$ROOT/$composition" "$ROOT/story-drafting") || return 1
+  fi
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  local targets=()
+  local d
+  for d in */; do
+    if [ -f "$d/__init__.py" ]; then targets+=("${d%/}"); fi
+  done
+  if [ -f conftest.py ]; then targets+=(conftest.py); fi
+  if [ ${#targets[@]} -gt 0 ]; then
+    step "mypy --strict"
+    MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
+  fi
+  step "pytest every tier but the root (no host served; Restate at $ingress)"
+  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
+    pytest -q --ignore=tests || return 1
+  if [ ! -f srv/http/main.py ]; then
+    step "pytest the root tier (no srv/http/main.py to serve)"
+    pytest -q tests
+    return
+  fi
+  step "serve srv.http.main on :$port and register its Restate endpoint at $admin"
+  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+    python3 -m srv.http.main "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"http://$callback_host:$port/restate\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
+    stop_host "$host" TERM
+    return 1
+  fi
+  step "pytest the root tier (against the host on :$port, in STORY_DRAFTING_HOST)"
+  STORY_DRAFTING_HOST="http://127.0.0.1:$port" pytest -q tests
+  local status=$?
+  stop_host "$host" INT
+  return "$status"
+}
+
+# The voice example: one context (calls) whose root-tier test places a call
+# for a person through the CLI host (srv.cli.main place-call, run as a
+# subprocess) and reads the person's name back by the call id through the same
+# host (get-call), speaking only protocol. place_call runs the
+# CallOrchestrator workflow on Restate, and its record_call action writes the
+# call through an asyncpg repository; get_call reads it back directly. The gate needs a reachable Postgres at
+# CALLS_STORAGE and a Restate server at RESTATE_URL / RESTATE_ADMIN, and
+# has no skip. It serves the tree's Restate endpoint itself, registers it
+# with the server at VOICE_DEPLOYMENT (the address the server dials back),
+# and stops it after pytest. The adapter tests serve endpoints of their own
+# under fresh service names and register them at VOICE_CALLBACK_HOST through
+# RESTATE_ADMIN, so a test deployment never replaces the tree's. Locally:
+#
+#   docker run -d --name tesser-asyncpg-pg -e POSTGRES_USER=tesser \
+#     -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=tesser -p 5434:5432 postgres:16
+#   docker run -d --name tesser-voice-restate -p 28080:8080 -p 29070:9070 \
+#     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
+run_voice() {
+  cd "$ROOT/examples/voice" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../../tesser-py mypy --strict app calls pgdatabase protocol simulated srv tests conftest.py || return 1
+  local storage="${CALLS_STORAGE:-postgres://tesser@localhost:5434/tesser}"
+  local restate_url="${RESTATE_URL:-http://localhost:28080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:29070}"
+  local port="${VOICE_DEPLOYMENT_PORT:-9080}"
+  local callback_host="${VOICE_CALLBACK_HOST:-host.docker.internal}"
+  local deployment="${VOICE_DEPLOYMENT:-http://$callback_host:$port}"
+  export LIVEKIT_URL="${LIVEKIT_URL:-ws://livekit.invalid}"
+  export LIVEKIT_API_KEY="${LIVEKIT_API_KEY:-unused}"
+  export LIVEKIT_API_SECRET="${LIVEKIT_API_SECRET:-unused}"
+  export LIVEKIT_AGENT_NAME="${LIVEKIT_AGENT_NAME:-caller}"
+  export LIVEKIT_SIP_TRUNK_ID="${LIVEKIT_SIP_TRUNK_ID:-unused}"
+  step "pytest every tier but the root (no host served)"
+  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
+    VOICE_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
+  step "serve the Restate endpoint on :$port and register it at $admin (forcing)"
+  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" PYTHONPATH=.:../../tesser-py \
+    python3 -m srv.restate.main "0.0.0.0:$port" &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "voice: could not register $deployment with $admin" >&2
+    kill "$host" 2>/dev/null
+    wait "$host" 2>/dev/null
+    return 1
+  fi
+  local worker=""
+  if [ "${VOICE_EVALS:-0}" = "1" ]; then
+    step "serve the LiveKit agent server as $LIVEKIT_AGENT_NAME"
+    CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" PYTHONPATH=.:../../tesser-py \
+      python3 -m srv.livekit.agent_server &
+    worker=$!
+  fi
+  step "pytest the root tier (against the served hosts)"
+  CALLS_STORAGE="$storage" RESTATE_URL="$restate_url" RESTATE_ADMIN="$admin" \
+    VOICE_CALLBACK_HOST="$callback_host" pytest -q tests
+  local status=$?
+  kill -INT "$host" 2>/dev/null
+  wait "$host" 2>/dev/null
+  if [ -n "$worker" ]; then
+    kill -TERM "$worker" 2>/dev/null
+    wait "$worker" 2>/dev/null
+  fi
+  return "$status"
+}
+
+run_layout() {
+  cd "$ROOT/layout" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../tesser-py mypy --strict repo protocol app srv conftest.py || return 1
+  step "pytest"
+  pytest -q || return 1
+}
+
+# The generator app (generator/) writes a tesser app tree from a TOML spec: a
+# context whose service runs a Restate workflow, whose orchestrator runs one
+# action, and whose action writes to its store — Postgres, or memory when the
+# spec says `storage = "memory"` — served by a CLI host beside a Restate host, or
+# by one HTTP host that mounts the Restate endpoint at /restate when the spec
+# says `host = "http"`. Its own gates run first. Then every spec in
+# generator/specs/ is generated into a scratch directory and the generated tree
+# is gated at the bar of an example: tessercheck zero findings, mypy --strict,
+# and pytest against Postgres (a postgres tree only) and Restate in the runner's
+# order: every tier but the root with no host served, then the generated
+# endpoint served here and registered (forcing) with the Restate admin API, then
+# the root tier against it — an HTTP tree's root tier reaching the served host
+# at the address in its host_url variable. The local defaults are a `generator`
+# database and a Restate server of its own on 48080/49070, so a local run never
+# re-registers another tree's services. Then every composition in
+# generator/compositions/ is rendered by the composition-driven renderer
+# (srv.cli.render) into a scratch directory and the rendered tree is gated:
+# tessercheck zero findings, mypy --strict, and pytest over every tier but the
+# root (a rendered tree has no root tier; its acceptance tests are written by
+# hand; each render is first checked against its composition with
+# srv.cli.render --check), against the same Restate server, reached through the variables its
+# implementations.toml names for the engine.
+run_generator() {
+  cd "$ROOT/generator" || return 1
+  step "tessercheck (zero findings over the whole tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../tesser-py mypy --strict app protocol rendering srv tests trees conftest.py || return 1
+  step "pytest"
+  pytest -q || return 1
+  local scratch
+  scratch=$(mktemp -d) || return 1
+  local spec
+  for spec in specs/*.toml; do
+    run_generated_tree "$spec" "$scratch/$(basename "$spec" .toml)" || return 1
+  done
+  local composition
+  for composition in compositions/*/; do
+    run_rendered_tree "${composition%/}" "$scratch/rendered-$(basename "$composition")" || return 1
+  done
+  rm -rf "$scratch"
+}
+
+run_rendered_tree() {
+  local composition=$1
+  local out=$2
+  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
+  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
+  local names ingress_env admin_env callback_env
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/implementations.toml") || return 1
+  read -r ingress_env admin_env callback_env <<<"$names"
+  step "render $composition into $out"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
+  step "$composition: the rendered tree matches its composition (srv.cli.render --check)"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$composition" "$out" || return 1
+  step "$composition: tessercheck (zero findings over the rendered tree)"
+  tessercheck_tree "$out" || return 1
+  local packages=()
+  local d
+  for d in "$out"/*/; do
+    if [ -f "$d/__init__.py" ]; then packages+=("$(basename "$d")"); fi
+  done
+  if [ -f "$out/conftest.py" ]; then packages+=(conftest.py); fi
+  step "$composition: mypy --strict"
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
+  step "$composition: pytest every tier but the root, with no host served"
+  (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
+    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests)
+}
+
+run_generated_tree() {
+  local spec=$1
+  local out=$2
+  local storage="${GENERATED_STORAGE:-postgres://tesser@localhost:5434/generator}"
+  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
+  local port="${GENERATED_DEPLOYMENT_PORT:-9081}"
+  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
+  local names context storage_kind host_kind storage_env ingress_env host_env
+  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["restate_ingress_url"], e.get("host_url", "-"))' "$spec") || return 1
+  read -r context storage_kind host_kind storage_env ingress_env host_env <<<"$names"
+  local packages=("app" "$context" "protocol" "srv" "tests" "conftest.py")
+  local env_vars=("$ingress_env=$ingress")
+  if [ "$storage_kind" = postgres ]; then
+    packages+=("pgdatabase")
+    env_vars+=("$storage_env=$storage")
+  fi
+  local module=srv.restate.main
+  local deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port}"
+  local root_env=()
+  if [ "$host_kind" = http ]; then
+    module=srv.http.main
+    deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port/restate}"
+    root_env=("$host_env=http://localhost:$port")
+  fi
+  step "generate $spec into $out"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate "$spec" "$out" >/dev/null || return 1
+  step "$spec: tessercheck (zero findings over the generated tree)"
+  tessercheck_tree "$out" || return 1
+  step "$spec: mypy --strict"
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
+  step "$spec: pytest every tier but the root, with no host served"
+  (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests) || return 1
+  step "$spec: serve the generated $host_kind host's Restate endpoint on :$port and register it at $admin"
+  (cd "$out" && exec env "${env_vars[@]}" PYTHONPATH=".:$ROOT/tesser-py" \
+    python3 -m "$module" "0.0.0.0:$port") &
+  local host=$!
+  local registered=1
+  for _ in $(seq 1 50); do
+    if curl -sf -X POST "$admin/deployments" -H 'content-type: application/json' \
+      -d "{\"uri\": \"$deployment\", \"force\": true}" >/dev/null; then
+      registered=0
+      break
+    fi
+    sleep 0.2
+  done
+  if [ "$registered" -ne 0 ]; then
+    echo "generator: could not register $deployment with $admin" >&2
+    stop_host "$host" TERM
+    return 1
+  fi
+  step "$spec: pytest the root tier against the served host"
+  (cd "$out" && env "${env_vars[@]}" ${root_env[@]+"${root_env[@]}"} "RESTATE_ADMIN=$admin" \
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests)
+  local status=$?
+  stop_host "$host" INT
+  return "$status"
+}
+
+run_tessercheck_py() {
+  cd "$ROOT/tessercheck-py" || return 1
+  step "tessercheck (self-check over its own tree)"
+  tessercheck_tree "$PWD" || return 1
+  step "RULES.md drift gate"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.rules --check || return 1
+  step "mypy --strict"
+  MYPYPATH=.:../tesser-py mypy || return 1
+  step "pytest"
+  pytest -q || return 1
+  step "import contracts"
+  PYTHONPATH=.:../tesser-py lint-imports --no-cache || return 1
+}
+
+run_tree() {
+  local tree=$1
+  echo
+  echo "=== $tree ==="
+  case "$tree" in
+    llmport)        run_llmport ;;
+    python-app)     run_python_app ;;
+    minimal)        run_minimal ;;
+    durable-execution) run_durable_execution ;;
+    asyncpg)        run_asyncpg ;;
+    serdepy)        run_serdepy ;;
+    ports)          run_ports ;;
+    errorspy)       run_errorspy ;;
+    tesser-py)      run_tesser_py ;;
+    specs-app)      run_specs_app ;;
+    story-drafting) run_story_drafting ;;
+    voice)          run_voice ;;
+    layout)         run_layout ;;
+    generator)      run_generator ;;
+    tessercheck-py) run_tessercheck_py ;;
+    *) echo "unknown tree: $tree (known: ${TREES[*]})"; return 1 ;;
+  esac
+}
+
+selected=("$@")
+if [ ${#selected[@]} -eq 0 ]; then
+  selected=("${TREES[@]}")
+fi
+
+for tree in "${selected[@]}"; do
+  if run_tree "$tree"; then
+    echo "  PASS $tree"
+  else
+    echo "  FAIL $tree"
+    failed+=("$tree")
+  fi
+done
+
+echo
+if [ ${#failed[@]} -eq 0 ]; then
+  echo "all green (${#selected[@]} tree(s))"
+  exit 0
+fi
+echo "FAILED: ${failed[*]}"
+exit 1

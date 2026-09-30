@@ -1,0 +1,58 @@
+# pragma: tesser-agent-owned; generated once as a skeleton, the agent owns it from here
+from __future__ import annotations
+
+{{#reached}}
+import json
+{{/reached}}
+{{#polls}}
+import time
+{{/polls}}
+import urllib.error as urllib_error
+import urllib.request as urllib_request
+
+import tesser.testing as ts
+
+
+class Test{{Words}}:
+
+    def test_{{story}}(self) -> None:
+        host = ts.served("{{host_variable}}")
+{{#given}}
+{{#once}}
+        with urllib_request.urlopen(
+            urllib_request.Request(
+                f"{host}{{path}}", data={{body}}, headers={"Content-Type": "application/json"}, method="{{method}}"
+            ),
+            timeout=30,
+        ) as answer:
+            answered = json.loads(answer.read())
+{{/once}}
+{{#polling}}
+        for _ in range({{polls}}):
+            with urllib_request.urlopen(
+                urllib_request.Request(
+                    f"{host}{{path}}", data={{body}}, headers={"Content-Type": "application/json"}, method="{{method}}"
+                ),
+                timeout=30,
+            ) as answer:
+                answered = json.loads(answer.read())
+            if answered.get("{{until_field}}") == {{until_value}}:
+                break
+            time.sleep(0.25)
+{{/polling}}
+{{#binds}}
+        given_{{field}} = answered["{{field}}"]
+{{/binds}}
+{{/given}}
+        request = urllib_request.Request(
+            f"{host}{{path}}", data={{body}}, headers={"Content-Type": "application/json"}, method="{{method}}"
+        )
+
+        try:
+            with urllib_request.urlopen(request, timeout=30) as answer:
+                status, answered_body = answer.status, answer.read()
+        except urllib_error.HTTPError as error:
+            status, answered_body = error.code, error.read()
+
+        assert status == {{status}}
+        assert False, {{then}} + f" (answered {answered_body!r})"

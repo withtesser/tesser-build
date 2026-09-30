@@ -1,0 +1,45 @@
+# 2 STORY — what a librarian must be able to observe. See ../README.md.
+
+[[jtbds]]
+id = "j-root"
+level = 1
+as = "a librarian"
+i_want = "every book I lend to be on record until it comes back"
+so_that = "I always know who has which book"
+
+[[jtbds.stories]]
+id = "s-1"
+given = "a borrower and a book"
+when = "I lend the book to the borrower"
+then = "the loan is on record and I can read it back"
+
+[[jtbds.stories.jtbds]]
+id = "j-1-a"
+level = 2
+as = "the loans HTTP API"
+i_want = "to take a loan and answer with its identity"
+so_that = "s-1 is fulfilled"
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-a-1"
+given = "a borrower and a title"
+when = "I POST them as JSON to /loans"
+then = "I get back 201 with its loan_id"
+route = "POST /loans"
+status = 201
+
+[[jtbds.stories.jtbds]]
+id = "j-1-b"
+level = 2
+as = "the loans HTTP API"
+i_want = "to answer with a loan"
+so_that = "s-1 is fulfilled"
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-b-1"
+given = "the loan_id of a lent book"
+when = "I GET /loans/{loan_id}"
+then = "I get back 200 with its borrower and title"
+reached_by = [{ route = "POST /loans" }]
+route = "GET /loans/{loan_id}"
+status = 200

@@ -1,0 +1,83 @@
+# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
+# 5 generator. Each fact lives in the one spec whose question it answers; what a
+# convention derives (TB085 names, a class named for its aggregate) is in none.
+#
+# 2 STORY — What must a user be able to observe? Written by the product owner;
+# red writes one acceptance test per level-2 story, by hand. Names no component.
+#
+# Shape follows specs-app's obligation tree (specs-app/srv/http/index.html,
+# specs-app/specification/domain/jtbd.py): a JTBD is "as / I want / so that" at a
+# level (1 user, 2 interface, 3 service, 4 port), naming no solution at its own
+# level; a story is "given / when / then", one of each, and fulfils the JTBD it
+# sits under. A story's children are the next level's JTBDs, each fulfilling it.
+# Level 1 is in the developer's words; level 2 is the interface the developer
+# (or an agent) actually uses and names routes, fields, and values exactly, in
+# the language's code names. A level-2 story fulfils its level-2 JTBD, which
+# exists only to fulfil the level-1 story above it; so a level-2 story asserts
+# only what that level-1 story observes. Shapes, edge cases, and failures belong
+# lower down (generated contract tests, level 3, domain tests).
+
+[[jtbds]]
+id = "j-root"
+level = 1
+as = "a developer working through a multi-step piece of work with an agent (design something, get my sign-off, then build it)"
+i_want = "the steps and the checkpoints where I weigh in to be fixed in advance and to survive across sessions"
+so_that = "I can step away, come back, and pick up at the step we were on, with what was decided so far, instead of re-explaining and hoping the agent follows the procedure this time"
+
+# ---- s-1 ---------------------------------------------------------------------
+
+[[jtbds.stories]]
+id = "s-1"
+given = "a job to be done"
+when = "I submit it to the story-drafting skill"
+then = "I can come back to it, and I can see it is drafting its stories"
+
+[[jtbds.stories.jtbds]]
+id = "j-1-a"
+level = 2
+as = "the story-drafting HTTP API"
+i_want = "to take a submitted job to be done and answer with its identity and where it stands"
+so_that = "s-1 is fulfilled"
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-a-1"
+given = "a job to be done's role, i_want, and so_that"
+when = "I POST them as JSON to /jtbds"
+then = "I get back 201 with its jtbd_id and status \"drafting_stories\""
+route = "POST /jtbds"
+status = 201
+
+# ---- s-2 ---------------------------------------------------------------------
+
+[[jtbds.stories]]
+id = "s-2"
+given = "a job to be done whose stories have been drafted"
+when = "I read the job to be done"
+then = "its stories are given to me, each one drafted and none accepted, and it is awaiting my acceptance of its stories"
+
+[[jtbds.stories.jtbds]]
+id = "j-2-a"
+level = 2
+as = "the story-drafting HTTP API"
+i_want = "to answer with a job to be done, its stories, and where each stands"
+so_that = "s-2 is fulfilled"
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-2-a-1"
+given = "the jtbd_id of a job to be done whose status is \"awaiting_story_acceptance\""
+when = "I GET /jtbds/{jtbd_id}"
+then = "I get back 200 with status \"awaiting_story_acceptance\" and at least one story, each with a given, a when, and a then, and in state \"drafted\""
+reached_by = [
+  { route = "POST /jtbds" },
+  { route = "GET /jtbds/{jtbd_id}", until = { status = "awaiting_story_acceptance" } },
+]
+route = "GET /jtbds/{jtbd_id}"
+status = 200
+
+[scope]
+out = [
+  "accepting stories (and so rejecting the rest)",
+  "revising a job to be done's stories",
+  "story drafting with a language model",
+  "the agent-facing skill document (SKILL.md)",
+]
