@@ -104,8 +104,8 @@ code names.
 ## 2 `story.toml`
 
 A tree of JTBDs and stories. The renderer reads two things from it: story ids,
-and each served level-2 story's `when` and `then`, to check each client
-operation's route against the story it serves.
+and each HTTP-served level-2 story's `route` and `status`, which are the route
+of the client operation that serves it.
 
 ```toml
 [[jtbds]]                         # level 1, in the user's words
@@ -128,15 +128,18 @@ level = 2
 [[jtbds.stories.jtbds.stories]]
 id = "s-1-a-1"
 given = "a borrower and a title"
-when = "I POST them as JSON to /loans"          # the method, then the path
-then = "I get back 201 with its loan_id"        # "get back <status>"
+when = "I POST them as JSON to /loans"
+then = "I get back 201 with its loan_id"
+route = "POST /loans"                           # the method, a space, and the path
+status = 201                                    # the 2xx it answers with
 reached_by = "..."                              # optional, for the acceptance test's given
 ```
 
-A level-2 story an HTTP route serves says the route's method and path as words
-of its `when` (`I GET /loans/{loan_id}`) and its status as a word of its
-`then` (`I get back 200 ...`): the renderer checks the client operation's
-`route` and `status` against them. Acceptance tests are written by hand from
+A route is observable, so it belongs to the level-2 story: each level-2 story
+an HTTP route serves carries its `route` — the method (`GET`, `POST`, `PUT`,
+`PATCH`, `DELETE`), a space, and a path of lowercase segments and `{field}`
+parameters — and its `status`, the 2xx it answers with. The `given`, `when`,
+and `then` stay prose; the renderer does not read them. Acceptance tests are written by hand from
 the level-2 stories; the renderer writes none.
 
 ## 3 `composition.toml`
@@ -206,21 +209,17 @@ serves = ["s-1-a-1", "s-1-b-1"]       # the level-2 stories the HTTP routes are
 ```toml
 [client.operations.lend_book]
 kind = "write"                        # informational
-route = "POST /loans"                 # required: the method, a space, and the path
-status = 201                          # required: the 2xx it answers with
 request = ["borrower", "title"]
 response = ["loan_id"]
 steps = ["identity.issue_loan_id", "repository.save_loan", "orchestrator.start_arrange_loan"]
 serves = ["s-1", "s-1-a-1"]           # exactly one of these must be in [interfaces.http] serves
 ```
 
-Each operation is one route. `route` is the method (`GET`, `POST`, `PUT`,
-`PATCH`, `DELETE`), a space, and a path of lowercase segments and `{field}`
-parameters; `status` is the 2xx it answers with. Both must appear, word for
-word, in the one served level-2 story it names (`route` in its `when`, the
-status in its `then`). Its request fields are read from the path (a `{field}`
-in it) or else from the JSON body (as text, or an integer for `int`); its
-response fields are answered as JSON. Two operations may call the same port
+Each operation is one route, and it is the route of the level-2 story it
+serves: of the stories in its `serves`, exactly one is a level-2 story with a
+`route`, and that story is in `[interfaces.http] serves`. Its request fields
+are read from the path (a `{field}` in it) or else from the JSON body (as
+text, or an integer for `int`); its response fields are answered as JSON. Two operations may call the same port
 operation; each gets its own mapper.
 
 **Steps**, in order:
@@ -414,11 +413,11 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 ## Checklist for a new composition
 
 1. `language.toml`: the terms and their code names.
-2. `story.toml`: level-1 and level-2 stories; each level-2 route story says
-   its method and path in `when` and its status in `then`.
+2. `story.toml`: level-1 and level-2 stories; each level-2 story an HTTP
+   route serves carries its `route` and `status`.
 3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
-   with its `route` and `status` and its steps in order; exactly one orchestrator operation whose request holds
+   serving it and its steps in order; exactly one orchestrator operation whose request holds
    the identity; its actions (one port each) and any signal; every port.
 4. `implementations.toml`: `app`; an implementation for every port;
    `[engine.restate]` with its three variables; an environment; `[hosts.http]`.

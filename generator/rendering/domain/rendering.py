@@ -2210,24 +2210,21 @@ class Model(ts.Entity):
         answers: list[str] = []
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
-            story_ids = [str(story) for story in operation.get("serves", []) if str(story) in served]
-            if len(story_ids) != 1:
-                raise ValueError(f"client operation {operation_name} serves {len(story_ids)} of the http interface's stories; a route is one level-2 story")
-            story = stories.get(story_ids[0])
-            if story is None:
-                raise ValueError(f"{story_ids[0]} is served, and story.toml holds no story of that id")
-            route = ROUTE.fullmatch(str(operation.get("route", "")))
+            routed = [str(story) for story in operation.get("serves", []) if "route" in stories.get(str(story), {})]
+            if len(routed) != 1:
+                raise ValueError(f"client operation {operation_name} serves {len(routed)} level-2 stories with a route; "
+                                 "it serves exactly one, whose route it is")
+            story = stories[routed[0]]
+            if routed[0] not in served:
+                raise ValueError(f"{routed[0]} has a route, and [interfaces.http] does not serve it")
+            route = ROUTE.fullmatch(str(story.get("route", "")))
             if route is None:
-                raise ValueError(f"client operation {operation_name} has no route like \"POST /loans\" (a method, a space, and a path whose parameters are written {{field}})")
-            status_code = operation.get("status")
+                raise ValueError(f"{routed[0]}'s route is not like \"POST /loans\" (a method, a space, and a path of "
+                                 "lowercase segments whose parameters are written {field})")
+            status_code = story.get("status")
             if not isinstance(status_code, int) or isinstance(status_code, bool) or not 200 <= status_code < 300:
-                raise ValueError(f"client operation {operation_name} has no status, the 2xx it answers with, like 201")
+                raise ValueError(f"{routed[0]} has no status, the 2xx its route answers with, like 201")
             method, path = route.group(1), route.group(2)
-            when = str(story.get("when", ""))
-            then = str(story.get("then", ""))
-            if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
-                raise ValueError(f"client operation {operation_name} is {method} {path} answering {status_code}, and {story_ids[0]}, "
-                                 f"the story it serves, does not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
             request = self._messages[("client", Operation + "Request")]
             response = self._messages[("client", Operation + "Response")]

@@ -28,11 +28,15 @@ level = 2
 id = "s-1-a-1"
 when = "I POST a borrower as JSON to /loans"
 then = "I get back 201 with its loan_id"
+route = "POST /loans"
+status = 201
 
 [[jtbds.stories.jtbds.stories]]
 id = "s-1-a-2"
 when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower"
+route = "GET /loans/{loan_id}"
+status = 200
 """,
         ),
         (
@@ -57,16 +61,12 @@ borrower = "str"
 serves = ["s-1-a-1", "s-1-a-2"]
 
 [client.operations.lend_book]
-route = "POST /loans"
-status = 201
 request = ["borrower"]
 response = ["loan_id"]
 steps = ["identity.issue_loan_id", "orchestrator.run_arrange_loan"]
 serves = ["s-1-a-1"]
 
 [client.operations.get_loan]
-route = "GET /loans/{loan_id}"
-status = 200
 request = ["loan_id"]
 response = ["loan_id", "borrower"]
 steps = ["repository.load_loan"]

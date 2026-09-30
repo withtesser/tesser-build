@@ -25,6 +25,8 @@ id = "s-1-a-1"
 given = "a borrower and a title"
 when = "I POST them as JSON to /loans"
 then = "I get back 201 with its loan_id"
+route = "POST /loans"
+status = 201
 
 [[jtbds.stories.jtbds]]
 id = "j-1-b"
@@ -38,3 +40,5 @@ id = "s-1-b-1"
 given = "the loan_id of a lent book"
 when = "I GET /loans/{loan_id}"
 then = "I get back 200 with its borrower and title"
+route = "GET /loans/{loan_id}"
+status = 200
