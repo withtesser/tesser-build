@@ -56,6 +56,18 @@ All red trials from v3 on fail at the user story's *then* and nowhere earlier.
   Sonnet at low effort was fastest with correct decisions; at medium and high
   it modeled the JTBD as situation / motivation / outcome. n = 1 per arm.
 
+## Green, by iteration
+
+| Iteration | What changed | Calls | Time | Files changed | Findings |
+|---|---|---|---|---|---|
+| v2 | host-only root tier | 45–53 | 9–13 min | 40–45 | 5–18 |
+| v3 | from generator-built red trials | 50–56 | 12–26 min | 40–46 | 0–5 |
+| v4 | from a tree rendered from the five-spec formats (scaffold g5): the contract generated, green owning only the aggregate module and the template drafter; compiled prompt | 9–14 | 3.3–3.7 min | 4 | 0–1 |
+
+- **The generated contract removes green's structure work.** Every v4 trial changed exactly its four owned files (the domain module, the drafter, their tests), passed the drift check, left the acceptance tests unchanged, and reported no contract gap. v3 trials built ports, actions, relays, and the signal by hand and reworked start-and-return.
+- **What is left is story behavior, and it converged.** All three derived status from the stories, answered `record_stories`' three outcomes the same way, added the same two value objects (`StoryText`, `StoryTexts`) to keep TB083, and refused blank text. They differed only in the drafter's template wording and story count (one or two).
+- **Calls include one Read of the prompt file:** the compiled prompt (80 KB) was handed over as a file rather than inline.
+
 ## Harness pitfalls
 
 - **A named Agent spawn ignores the agent definition.** Spawning with a
