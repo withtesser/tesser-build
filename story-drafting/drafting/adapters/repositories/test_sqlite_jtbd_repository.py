@@ -38,3 +38,27 @@ class TestSqliteJtbdRepository:
         async with other_store.transaction() as jtbd_repository:
             with pytest.raises(KeyError):
                 await jtbd_repository.load_jtbd(ports.LoadJtbdRequest(jtbd_id="jtbd-1"))
+
+    async def test_a_saved_jtbd_is_loaded_by_a_new_store_on_the_same_location(self, tmp_path: pathlib.Path) -> None:
+        location = str(tmp_path / "sqlite_jtbd_repository")
+        jtbd = ports.Jtbd(jtbd_id="jtbd-1", role="a developer", i_want="my checkpoints fixed in advance", so_that="I can step away and come back", stories=(ports.Story(given="a job to be done", when="I submit it", then="it is drafting its stories", state="drafted"), ports.Story(given="a job to be done", when="I read it", then="its stories are given to me", state="drafted")))
+
+        async with repositories.SqliteJtbdRepository(location=location).transaction() as jtbd_repository:
+            await jtbd_repository.save_jtbd(ports.SaveJtbdRequest(jtbd=jtbd))
+        async with repositories.SqliteJtbdRepository(location=location).transaction() as jtbd_repository:
+            load_jtbd_response = await jtbd_repository.load_jtbd(ports.LoadJtbdRequest(jtbd_id="jtbd-1"))
+
+        assert load_jtbd_response.jtbd == jtbd
+
+    async def test_a_jtbd_saved_again_is_loaded_as_last_saved(self, tmp_path: pathlib.Path) -> None:
+        sqlite_jtbd_repository = repositories.SqliteJtbdRepository(location=str(tmp_path / "sqlite_jtbd_repository"))
+        jtbd = ports.Jtbd(jtbd_id="jtbd-1", role="a developer", i_want="my checkpoints fixed in advance", so_that="I can step away and come back", stories=(ports.Story(given="a job to be done", when="I submit it", then="it is drafting its stories", state="drafted"),))
+
+        async with sqlite_jtbd_repository.transaction() as jtbd_repository:
+            await jtbd_repository.save_jtbd(ports.SaveJtbdRequest(jtbd=ports.Jtbd(jtbd_id="jtbd-1", role="a developer", i_want="my checkpoints fixed in advance", so_that="I can step away and come back", stories=())))
+        async with sqlite_jtbd_repository.transaction() as jtbd_repository:
+            await jtbd_repository.save_jtbd(ports.SaveJtbdRequest(jtbd=jtbd))
+        async with sqlite_jtbd_repository.transaction() as jtbd_repository:
+            load_jtbd_response = await jtbd_repository.load_jtbd(ports.LoadJtbdRequest(jtbd_id="jtbd-1"))
+
+        assert load_jtbd_response.jtbd == jtbd
