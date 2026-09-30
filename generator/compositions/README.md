@@ -1,6 +1,6 @@
-# Compositions: the five spec formats `srv.cli.render` reads
+# Compositions: the six spec formats `srv.cli.render` reads
 
-A composition is a directory holding five TOML files. `srv.cli.render` reads them
+A composition is a directory holding six TOML files. `srv.cli.render` reads them
 and writes a complete tesser app tree:
 
 ```sh
@@ -47,7 +47,7 @@ when the composition is inside that repo, else absolute. A tree's
 rendered tree is checked against its composition by default.
 
 **Names.** Every name that reaches a path or an identifier is checked: the
-context, app, fields, action keys, and enum members and outcomes are
+context, app, storages, fields, action keys, and enum members and outcomes are
 snake_case (`loan_id`); operations, commands, and signals are snake_case of at
 least two words (`lend_book`); the aggregate, ports, shapes, messages, enums,
 and implementation classes are PascalCase (`LoanRepository`); variables are
@@ -59,7 +59,9 @@ names (`adapters`, `app`, `application`, `client`, `component`, `config`,
 
 Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
-`mypy --strict`, and every test tier but the root. `library/` is the small
+`mypy --strict`, and every test tier but the root, with the engine variables
+its `infra.toml` names set and every storage `location_variable` set to a fresh
+temporary path. `library/` is the small
 worked example.
 
 ## Which file answers which question
@@ -68,12 +70,18 @@ worked example.
 |---|---|---|
 | `language.toml` | What do our words mean? | the product owner, with the agent |
 | `story.toml` | What must a user be able to observe? | the product owner |
+| `infra.toml` | What does this app run on, and what must an operator provide? | the engineer, up front (never red) |
 | `composition.toml` | Which pieces exist and how do they connect? The contracts only. | the agent, reviewed |
-| `implementations.toml` | What satisfies each contract, in which environment? | a tech lead, reviewed |
+| `implementations.toml` | Which implementation satisfies each port, in which environment? | red, reviewed |
 | `generator.toml` | Sample values for the generated tests, and nothing a reviewer cares about. | anyone |
 
-Each fact lives in one file. `composition.toml` never says what implements a
-contract; `implementations.toml` never declares a contract. Every name in
+Each fact lives in one file. `infra.toml` holds the technology decisions (the
+app, the runtime, the engine, the host, the storages, the variables) and never
+a contract or a port; `composition.toml` never says what implements a
+contract; `implementations.toml` never declares a contract, and holds only the
+port-level mapping (`[implementations]` and `[environments]`): an
+`implementations.toml` that still carries `app`, `[engine]`, `[hosts]`, or
+`[variables]` is a problem saying each moved to `infra.toml`. Every name in
 `composition.toml` is a code name from `language.toml` (a snake_case field or
 operation, a PascalCase type) or a word the conventions derive (below).
 
@@ -183,7 +191,49 @@ the story's `then`, verbatim. So a freshly rendered tree is red at the first
 unwritten placeholder, then at the then, and rendering again keeps the edited
 test.
 
-## 3 `composition.toml`
+## 3 `infra.toml`
+
+What the app runs on and what an operator must provide: the engineer's
+technology decisions, made up front, before any contract, and never written by
+red. A composition without it is a problem.
+
+```toml
+app = "story_drafting"                    # required: the app, snake_case
+
+[runtime]                                 # informational: read by no one yet
+language = "python"
+version = "3.12"
+
+[engine.restate]                          # required, and the only engine
+body = "supported"                        # informational
+engine_path = "/restate"                  # required: where the Restate endpoint is mounted
+ingress_variable = "RESTATE_INGRESS"      # required: the variable the app reads the ingress from
+admin_variable = "RESTATE_ADMIN"          # required: read by the tests that register an endpoint
+callback_host_variable = "RESTATE_CALLBACK_HOST"   # required: likewise
+
+[hosts.http]                              # required, and the only host
+serves = "interfaces.http"                # informational: the composition's interface it serves
+mounts_engine_endpoint = true             # informational: the engine endpoint is served in the same process
+listen_port_variable = "STORY_DRAFTING_PORT"   # required: the port it listens on when not given one
+
+[storage.sqlite]                          # [storage.<name>]: where stored things live
+location_variable = "JTBD_DB_PATH"        # the variable that names its location (a SQLite file path)
+
+[variables]                               # informational: what each variable is
+JTBD_DB_PATH = "the path of the SQLite database file"
+```
+
+A storage is named by its key (snake_case). `[storage.memory]` needs no
+`location_variable`, since it lives in the process; every other storage names
+one, or it is a problem. A store port in `implementations.toml` is implemented
+by a key that names a declared storage (below); a declared storage no port
+uses is allowed. When a store port's storage has a `location_variable`, the app
+reads that variable when it loads (refusing with `missing_env` when it is
+unset, as it does the ingress), the component config carries it as
+`<storage>_location`, and the component builds the store with
+`location=config.<storage>_location`.
+
+## 4 `composition.toml`
 
 ```toml
 context = "loans"                     # required: the context package, snake_case
@@ -401,12 +451,14 @@ its store is the same name ending in `Store`.
 
 `serves = [...]` is allowed on any table and read by no one yet.
 
-## 4 `implementations.toml`
+## 5 `implementations.toml`
+
+Red's port-level mapping, and nothing else: which implementation satisfies each
+port, and which is used in each environment. The engine, the hosts, the
+storages, and the variables are `infra.toml`'s.
 
 ```toml
-app = "library"                           # required: the app, snake_case
-
-[implementations.LoanRepository.memory]   # [implementations.<Port>.<key>]
+[implementations.LoanRepository.memory]   # [implementations.<Port>.<key>]; a store's key is a declared storage
 body = "supported"
 
 [implementations.LoanIdentityRepository.uuid]
@@ -416,32 +468,22 @@ body = "supported"
 class = "PrintedNoticeSender"             # required with body = "agent"
 body = "agent"
 
-[engine.restate]                          # required, and the only engine
-body = "supported"
-ingress_variable = "RESTATE_INGRESS"      # required: the variable the app reads the ingress from
-admin_variable = "RESTATE_ADMIN"          # required: read by the tests that register an endpoint
-callback_host_variable = "RESTATE_CALLBACK_HOST"   # required: likewise
-
 [environments.gate]                       # [environments.<name>], at least one
 implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
-engine = "restate"
-hosts = ["http"]
-
-[hosts.http]                              # required, and the only host
-engine_path = "/restate"                  # required: where the Restate endpoint is mounted
-listen_port_variable = "LIBRARY_PORT"     # required: the port it listens on when not given one
-
-[variables]                               # informational: what each variable is
-RESTATE_INGRESS = "..."
+engine = "restate"                        # the engine infra.toml declares
+hosts = ["http"]                          # the host infra.toml declares
 ```
 
 Every environment names an implementation for every port, and the same one as
 every other environment (differing ones would need a selector variable, which
-is not rendered).
+is not rendered). A store port (one that carries the aggregate) is implemented
+by a key that is the name of a storage `infra.toml` declares: `memory` for
+`[storage.memory]`, `sqlite` for `[storage.sqlite]`; a store implemented by a
+key with no `[storage.<key>]` is a problem naming both.
 The implementation types:
 
-- `memory`, `body = "supported"`: a store port only; an in-memory store,
-  rendered in full.
+- `memory`, `body = "supported"`: a store port only, on `[storage.memory]`;
+  an in-memory store, rendered in full.
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
   and answers one field; issues version-4 UUIDs from a seed, rendered in full.
 - any key with `body = "agent"` and a `class` on a gateway port: a stub gateway
@@ -453,10 +495,18 @@ The implementation types:
   has `transaction()`); its repository is `<class>Transaction`. The stub starts
   as a working in-memory store, equal to `memory`, so the tree passes every gate
   before the agent replaces the body with a durable one (a file, SQLite); no
-  sample beyond the aggregate's is needed. The port's kind decides gateway or
-  store, not a key.
+  sample beyond the aggregate's is needed. On a storage with a
+  `location_variable`, its `__init__` takes `location: str`, which the stub
+  ignores until the agent writes the durable body, and its sibling test builds
+  it on a temporary path. The port's kind decides gateway or store, not a key.
 
-## 5 `generator.toml`
+```toml
+[implementations.JtbdRepository.sqlite]   # the storage infra.toml declares
+class = "SqliteJtbdRepository"
+body = "agent"
+```
+
+## 6 `generator.toml`
 
 ```toml
 [sample_values]
@@ -527,13 +577,18 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    route serves carries its `route` and `status`, and its `when` and `then`
    say them word for word; a story whose given needs calls first says in its
    `given`, in words, how it is reached.
-3. `composition.toml`: `context`; the aggregate's spec and reads (identity in
+3. `infra.toml`: `app`; `[runtime]`; `[engine.restate]` with its
+   `engine_path` and three variables; `[hosts.http]` with its listen port
+   variable; a `[storage.<name>]` for each storage (every one but `memory`
+   with its `location_variable`); `[variables]`.
+4. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; exactly one orchestrator operation whose request holds
    the identity; its actions (one port each, each named for the term it acts
    on, never for its port) and any signal; every port.
-4. `implementations.toml`: `app`; an implementation for every port;
-   `[engine.restate]` with its three variables; an environment; `[hosts.http]`.
-5. `generator.toml`: two sample values for every field.
-6. Render into a fresh directory and run the gate on it; then write each root
-   test's then where its skeleton's placeholder stands.
+5. `implementations.toml`: an implementation for every port, a store's named
+   for a storage `infra.toml` declares; an environment.
+6. `generator.toml`: two sample values for every field.
+7. Render into a fresh directory and run the gate on it, with every storage
+   `location_variable` set; then write each root test's then where its
+   skeleton's placeholder stands.
