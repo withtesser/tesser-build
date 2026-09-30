@@ -61,8 +61,10 @@ All red trials from v3 on fail at the user story's *then* and nowhere earlier.
 | Iteration | What changed | Calls | Time | Findings | Gate |
 |---|---|---|---|---|---|
 | s1 (Sonnet, low, ×3) | red writes composition, implementations, and sample values from the language and story specs, renders with `srv.cli.render` (render-8), and writes one acceptance test per level-2 story | 7–9 | 135–139 s | 0 | through the non-root tiers; s-1-a-1 passes (the stubs satisfy it), s-2-a-1 fails at its then |
+| s2 (Sonnet, low, ×3) | the renderer refuses a class of actions not named for a language code name, and the format reference states the rule | 7–9 | 131–144 s | 0 | same as s1 |
 
 - **Red reproduced the reference composition** (`generator/compositions/story-drafting/`, written by hand) in every trial: the same aggregate contract (spec, `record_stories` and its three outcomes, reads), the same client steps (issue, save before start, `start_`), the same orchestrator steps and signal, ports, shapes, enums, and messages. The one difference, identical in all three: the class of actions on `StoryDrafter` is named `drafter`, not `story`. The language has no term that names it, so the language left it open.
+- **s2 closed the naming gap:** with the rule stated and enforced, all three named the class of actions `story`, and every compared key of all three compositions matches the reference. All three committed.
 - **One trial (s1-1) did the work but never committed** and handed back "placeholder"; its specs and test are copied into `results/red-s1-sonnet-low-1/` from its worktree. A process failure at low effort, not a design one.
 - Calls include one Read of the prompt file (40 KB, handed over as a file).
 
