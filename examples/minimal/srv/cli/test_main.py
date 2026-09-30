@@ -9,16 +9,16 @@ import srv.cli as cli
 
 class TestCliHost:
 
-    def test_add_runs_the_add_command(self, postgres_dsn: str) -> None:
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": postgres_dsn, "BETA_KEY": "a", "RESTATE_URL": "http://engine.invalid:8080"}
+    def test_add_runs_the_add_command(self, storage_url: str) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": storage_url, "BETA_KEY": "a", "RESTATE_URL": "http://engine.invalid:8080"}
         added = subprocess.run(
             [sys.executable, "-m", cli.CliHost.__module__, "add", "a", "p"],
             capture_output=True, text=True, check=False, env=env,
         )
         assert added.returncode == 0, added.stderr
 
-    def test_a_missing_argument_or_command_exits_two_with_the_usage(self, postgres_dsn: str) -> None:
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": postgres_dsn, "BETA_KEY": "a", "RESTATE_URL": "http://engine.invalid:8080"}
+    def test_a_missing_argument_or_command_exits_two_with_the_usage(self, storage_url: str) -> None:
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "ALPHA_STORAGE": storage_url, "BETA_KEY": "a", "RESTATE_URL": "http://engine.invalid:8080"}
         missing_argument = subprocess.run(
             [sys.executable, "-m", cli.CliHost.__module__, "add", "a"],
             capture_output=True, text=True, check=False, env=env,

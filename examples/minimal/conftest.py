@@ -11,7 +11,7 @@ import typing
 import httpx
 import pytest
 import restate.harness as restate_harness
-import testcontainers.community.postgres as testcontainers_postgres
+import testcontainers.core.container as testcontainers_container
 
 _root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _root)
@@ -25,6 +25,8 @@ else:
 
 RESTATE_IMAGE: typing.Final[str] = "docker.io/restatedev/restate:1.7"
 POSTGRES_IMAGE: typing.Final[str] = "docker.io/library/postgres:16"
+POSTGRES_USER: typing.Final[str] = "tesser"
+POSTGRES_DB: typing.Final[str] = "alpha"
 DEADLINE_SECONDS: typing.Final[float] = 30.0
 
 
@@ -50,13 +52,13 @@ def engine_callback_host() -> str:
 
 
 @pytest.fixture(scope="session")
-def postgres_dsn() -> typing.Iterator[str]:
-    with private_postgres() as container:
-        yield str(container.get_connection_url(driver=None))
+def storage_url() -> typing.Iterator[str]:
+    with private_postgres() as url:
+        yield url
 
 
 @pytest.fixture(scope="session")
-def host_engine_url(postgres_dsn: str) -> typing.Iterator[str]:
+def host_engine_url(storage_url: str) -> typing.Iterator[str]:
     with private_engine() as host_engine:
         url = f"http://{host_engine.get_container_host_ip()}:{host_engine.get_exposed_port(8080)}"
         port = unused_port()
@@ -67,7 +69,7 @@ def host_engine_url(postgres_dsn: str) -> typing.Iterator[str]:
                 **os.environ,
                 "PYTHONPATH": os.pathsep.join(sys.path),
                 "RESTATE_URL": url,
-                "ALPHA_STORAGE": postgres_dsn,
+                "ALPHA_STORAGE": storage_url,
                 "BETA_KEY": "k",
             },
             start_new_session=True,
@@ -122,10 +124,27 @@ def private_engine() -> typing.Iterator[restate_harness.RestateContainer]:
 
 
 @contextlib.contextmanager
-def private_postgres() -> typing.Iterator[testcontainers_postgres.PostgresContainer]:
-    with testcontainers_postgres.PostgresContainer(POSTGRES_IMAGE, driver=None) as container:
+def private_postgres() -> typing.Iterator[str]:
+    container = (
+        testcontainers_container.DockerContainer(POSTGRES_IMAGE)
+        .with_env("POSTGRES_USER", POSTGRES_USER)
+        .with_env("POSTGRES_DB", POSTGRES_DB)
+        .with_env("POSTGRES_HOST_AUTH_METHOD", "trust")
+        .with_exposed_ports(5432)
+    )
+    with container:
         with watchdog(["docker", "rm", "-f", str(container.get_wrapped_container().id)]):
-            yield container
+            deadline = time.monotonic() + DEADLINE_SECONDS
+            ready = container.exec(["pg_isready", "--host", "127.0.0.1", "--username", POSTGRES_USER])
+            while ready.exit_code != 0 and time.monotonic() < deadline:
+                time.sleep(0.2)
+                ready = container.exec(["pg_isready", "--host", "127.0.0.1", "--username", POSTGRES_USER])
+            if ready.exit_code != 0:
+                pytest.fail(f"postgres was not ready within {DEADLINE_SECONDS}s: {ready.output!r}")
+            yield (
+                f"postgres://{POSTGRES_USER}@{container.get_container_host_ip()}:"
+                f"{container.get_exposed_port(5432)}/{POSTGRES_DB}"
+            )
 
 
 @contextlib.contextmanager

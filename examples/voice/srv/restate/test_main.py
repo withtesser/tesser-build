@@ -11,13 +11,13 @@ import urllib.request as urllib_request
 
 class TestRestateHost:
     def test_the_served_restate_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(
-        self, postgres_dsn: str, engine_url: str, free_port: int
+        self, storage_url: str, engine_url: str, free_port: int
     ) -> None:
         port = free_port
         env = {
             **os.environ,
             "PYTHONPATH": os.pathsep.join(sys.path),
-            "CALLS_STORAGE": postgres_dsn,
+            "CALLS_STORAGE": storage_url,
             "RESTATE_URL": engine_url,
             "LIVEKIT_URL": "ws://livekit.invalid",
             "LIVEKIT_API_KEY": "unused",

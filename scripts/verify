@@ -167,7 +167,7 @@ run_ports() {
 # Restate and its widgets are in Postgres. The tests own their infrastructure
 # (docs/design-test-tiers.md): a plain pytest runs every tier, and the root
 # conftest starts what they ask for — a private Restate engine, a private
-# Postgres (postgres_dsn), and for the root tier a second private engine with
+# Postgres (storage_url), and for the root tier a second private engine with
 # srv/restate served and registered on it (host_engine_url), the CLI host run
 # as a subprocess per command. Docker is the one prerequisite.
 run_minimal() {
@@ -384,7 +384,7 @@ run_story_drafting() {
 # call through an asyncpg repository; get_call reads it back directly. The
 # tests own their infrastructure (docs/design-test-tiers.md): a plain pytest
 # runs every tier, and the root conftest starts a private Restate engine, a
-# private Postgres (postgres_dsn), and for the root tier a second private
+# private Postgres (storage_url), and for the root tier a second private
 # engine with srv/restate served and registered on it (host_engine_url). The
 # root tier is an opt-in eval against real LiveKit and model APIs: it skips
 # unless VOICE_EVALS=1, and then takes LIVEKIT_URL, LIVEKIT_API_KEY,

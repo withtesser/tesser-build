@@ -39,21 +39,21 @@ class FakeKeyedBetaCheck(ports.BetaCheck):
 
 class TestAlphaContext:
 
-    async def test_a_cli_add_reaches_the_wired_service(self, postgres_dsn: str) -> None:
-        alpha = component.Alpha(component.Config(component.Spec(storage=postgres_dsn, engine_url="http://localhost:8080")), FakeBetaCheck())
+    async def test_a_cli_add_reaches_the_wired_service(self, storage_url: str) -> None:
+        alpha = component.Alpha(component.Config(component.Spec(storage=storage_url, engine_url="http://localhost:8080")), FakeBetaCheck())
         cli_response = await handlers.Handler(alpha.client).add_part(protocol.CliRequest(args=("a", "p")))
         assert cli_response.line.text == "a"
 
-    async def test_a_widget_beta_holds_a_key_for_stands_as_kept_and_one_it_holds_none_for_as_released(self, postgres_dsn: str) -> None:
-        alpha = component.Alpha(component.Config(component.Spec(storage=postgres_dsn, engine_url="http://localhost:8080")), FakeKeyedBetaCheck(frozenset({"k"})))
+    async def test_a_widget_beta_holds_a_key_for_stands_as_kept_and_one_it_holds_none_for_as_released(self, storage_url: str) -> None:
+        alpha = component.Alpha(component.Config(component.Spec(storage=storage_url, engine_url="http://localhost:8080")), FakeKeyedBetaCheck(frozenset({"k"})))
         kept = await alpha.client.add_part(client.AddPartRequest(name="k", part="k"))
         released = await alpha.client.add_part(client.AddPartRequest(name="z", part="z"))
         assert (kept.standing, released.standing) == ("kept", "released")
 
-    async def test_a_created_widget_is_found_only_once_its_name_is_approved(self, postgres_dsn: str, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
+    async def test_a_created_widget_is_found_only_once_its_name_is_approved(self, storage_url: str, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         name = "w-" + uuid.uuid4().hex
         alpha = component.Alpha(
-            component.Config(component.Spec(storage=postgres_dsn, engine_url=engine_url)),
+            component.Config(component.Spec(storage=storage_url, engine_url=engine_url)),
             FakeBetaCheck(),
         )
         port = free_port

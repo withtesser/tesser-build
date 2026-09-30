@@ -72,9 +72,9 @@ class TestEnvConfigRepository:
 class TestAppLoader:
 
     async def test_the_loader_builds_an_app_whose_client_can_look_up_a_call(
-        self, postgres_dsn: str, engine_url: str
+        self, storage_url: str, engine_url: str
     ) -> None:
-        voice_app = app.AppLoader(FakeConfigRepository(postgres_dsn, engine_url)).load()
+        voice_app = app.AppLoader(FakeConfigRepository(storage_url, engine_url)).load()
         await voice_app.open()
 
         raised: list[calls_client.CallNotFound] = []

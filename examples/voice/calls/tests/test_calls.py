@@ -9,10 +9,10 @@ import pgdatabase.database as pgdatabase_database
 
 class TestCallsContext:
 
-    async def test_a_call_that_was_never_placed_is_not_found(self, postgres_dsn: str, engine_url: str) -> None:
+    async def test_a_call_that_was_never_placed_is_not_found(self, storage_url: str, engine_url: str) -> None:
         config = component.Config(
             component.Spec(
-                storage=postgres_dsn,
+                storage=storage_url,
                 engine_url=engine_url,
                 livekit_url="ws://livekit.invalid",
                 livekit_api_key="unused",
