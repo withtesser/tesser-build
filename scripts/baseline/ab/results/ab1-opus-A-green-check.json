@@ -1,0 +1,28 @@
+{
+  "cmd": "python3 -m srv.http.main 0.0.0.0:9310",
+  "cwd": "<repo>/.claude/worktrees/run-ab1-opus-A-green/story-drafting",
+  "seconds_to_listen": 0.52,
+  "served": true,
+  "restate_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_155p9R6B8tqSRlVKlqt4EMh\",\"services\":[{\"name\":\"JtbdActions\",\"ty\":\"Service\",\"handlers\":[{\"name\":\"record_stories\",\"public\":false,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy\":{\"max_attempts\":nul"
+  },
+  "story_1": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"f5e84bd8-1f24-41d7-a5c9-bc518457af2b\", \"status\": \"drafting_stories\"}"
+  },
+  "story_2": {
+    "passed": true,
+    "problems": [],
+    "seconds_until_drafted": 0.26,
+    "answered": "{\"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"I am a developer\", \"when\": \"I have my work to survive across sessions\", \"then\": \"I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "probes": {
+    "get_unknown_id_status": 500,
+    "post_missing_fields_status": 400
+  },
+  "exited_early": false,
+  "passed": true
+}

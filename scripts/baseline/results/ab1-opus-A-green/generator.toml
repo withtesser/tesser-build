@@ -1,0 +1,13 @@
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+role = ["a developer", "a tech lead"]
+i_want = ["my steps fixed in advance", "my checkpoints kept"]
+so_that = ["I can pick up where we were", "I need not re-explain"]
+story_texts = [
+  [{ given = "a job to be done", when = "I submit it", then = "I can come back to it" }],
+  [{ given = "a drafted job to be done", when = "I read it", then = "its stories are given to me" }],
+]
+stories = [
+  [{ given = "a job to be done", when = "I submit it", then = "I can come back to it", state = "drafted" }],
+  [{ given = "a drafted job to be done", when = "I read it", then = "its stories are given to me", state = "drafted" }],
+]

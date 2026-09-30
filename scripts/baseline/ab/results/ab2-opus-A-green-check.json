@@ -1,0 +1,39 @@
+{
+  "cmd": "python3 -m srv.http.main 0.0.0.0:9350",
+  "cwd": "<repo>/.claude/worktrees/run-ab2-opus-A-green/story-drafting",
+  "seconds_to_listen": 0.52,
+  "served": true,
+  "restate_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_12Jn0OPDQZBFpQSYbRzey6B\",\"services\":[{\"name\":\"JtbdOrchestrator\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"conduct_story_drafting\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retr"
+  },
+  "story_1": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"3af37ed4-1722-434e-b3ee-d0ec52535c83\", \"status\": \"drafting_stories\"}"
+  },
+  "story_2": {
+    "passed": true,
+    "problems": [],
+    "seconds_until_drafted": 0.26,
+    "answered": "{\"jtbd_id\": \"3af37ed4-1722-434e-b3ee-d0ec52535c83\", \"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"I am a developer\", \"when\": \"I get my work to survive across sessions\", \"then\": \"I can pick up where I left off\", \"state\": \"drafted\"}, {\"given\": \"I am a developer and I do not yet have my work to survive across sessions\", \"when\": \"I try to go on without it\", \"then\": \"I am told what is missing before I rely on it, because I need that so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "probes": {
+    "get_unknown_id_status": 500,
+    "post_missing_fields_status": 400
+  },
+  "exited_early": false,
+  "seconds_to_listen_after_restart": 0.51,
+  "restart_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_12Jn0OPDQZBFpQSYbRzey6B\",\"services\":[{\"name\":\"JtbdActions\",\"ty\":\"Service\",\"handlers\":[{\"name\":\"record_stories\",\"public\":false,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy\":{\"max_attempts\":nul"
+  },
+  "story_3": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"3af37ed4-1722-434e-b3ee-d0ec52535c83\", \"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"I am a developer\", \"when\": \"I get my work to survive across sessions\", \"then\": \"I can pick up where I left off\", \"state\": \"drafted\"}, {\"given\": \"I am a developer and I do not yet have my work to survive across sessions\", \"when\": \"I try to go on without it\", \"then\": \"I am told what is missing before I rely on it, because I need that so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "passed": true
+}

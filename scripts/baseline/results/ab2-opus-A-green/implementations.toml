@@ -1,0 +1,17 @@
+# 5 IMPLEMENTATIONS — what satisfies each contract, per environment.
+
+[implementations.StoryDrafter.template]
+class = "TemplateStoryDrafter"
+body = "agent"
+
+[implementations.JtbdRepository.sqlite]
+class = "SqliteJtbdRepository"
+body = "agent"
+
+[implementations.JtbdIdentityRepository.uuid]
+body = "supported"
+
+[environments.gate]
+implementations = { StoryDrafter = "template", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
+engine = "restate"
+hosts = ["http"]
