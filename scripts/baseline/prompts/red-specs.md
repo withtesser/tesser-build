@@ -27,10 +27,15 @@ The work is two decisions, and the rest is mechanical:
    is a decision: nothing a convention derives, and no behavior — what the
    domain does inside is the green agent's, so the aggregate appears only as
    its contract. Then render the tree straight into `story-drafting/`.
-2. **The acceptance tests.** One root test per level-2 story, in
-   `story-drafting/tests/`, each asserting exactly that story's *then* and
-   nothing more, reaching its *given* the way the story says (`reached_by`,
-   when it has one), and driving the app only through the running host.
+2. **The acceptance tests.** The render writes one root test skeleton per
+   level-2 story with a route, named for the route
+   (`story-drafting/tests/test_submitting_jtbds.py` for `POST /jtbds`,
+   `test_reading_jtbds.py` for `GET /jtbds/{jtbd_id}`): it reaches the
+   served host, reaches the story's *given* as its `reached_by` says, calls
+   the route, asserts its status, and ends in one placeholder assertion
+   carrying the story's *then*. Replace each placeholder with assertions of
+   exactly that story's *then* and nothing more. The render command below
+   prints both skeletons, so you have them without reading them.
 
 Done means all of these hold:
 
@@ -87,9 +92,11 @@ composition's names:
 ## The harness
 
 - Render with
-  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render {worktree}/story-drafting/specs {worktree}/story-drafting`.
-  It prints the path of every file it wrote. The README and the specs already
-  in `story-drafting/` stay.
+  `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render {worktree}/story-drafting/specs {worktree}/story-drafting --print tests/test_submitting_jtbds.py --print tests/test_reading_jtbds.py`.
+  It prints the path of every file it wrote, then each skeleton verbatim. The
+  README and the specs already in `story-drafting/` stay. If the render
+  reports a problem, it writes nothing: fix the spec it names and render
+  again.
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh

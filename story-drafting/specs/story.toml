@@ -67,7 +67,10 @@ id = "s-2-a-1"
 given = "the jtbd_id of a job to be done whose status is \"awaiting_story_acceptance\""
 when = "I GET /jtbds/{jtbd_id}"
 then = "I get back 200 with status \"awaiting_story_acceptance\" and at least one story, each with a given, a when, and a then, and in state \"drafted\""
-reached_by = "POST /jtbds with a job to be done, then GET /jtbds/{jtbd_id} until its status is \"awaiting_story_acceptance\""
+reached_by = [
+  { route = "POST /jtbds" },
+  { route = "GET /jtbds/{jtbd_id}", until = { status = "awaiting_story_acceptance" } },
+]
 route = "GET /jtbds/{jtbd_id}"
 status = 200
 

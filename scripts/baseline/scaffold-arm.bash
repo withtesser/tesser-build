@@ -4,6 +4,12 @@ run_story_drafting() {
   local admin="${RESTATE_ADMIN:-http://localhost:39070}"
   local port="${STORY_DRAFTING_PORT:-9300}"
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
+  if [ -f .tesser-rendered ]; then
+    local composition
+    composition=$(head -n 1 .tesser-rendered)
+    step "the tree matches $composition (srv.cli.render --check)"
+    (cd "$ROOT/generator" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$ROOT/$composition" "$ROOT/story-drafting") || return 1
+  fi
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   local targets=()
@@ -39,14 +45,12 @@ run_story_drafting() {
   done
   if [ "$registered" -ne 0 ]; then
     echo "story-drafting: could not register http://$callback_host:$port/restate with $admin" >&2
-    kill "$host" 2>/dev/null
-    wait "$host" 2>/dev/null
+    stop_host "$host" TERM
     return 1
   fi
   step "pytest the root tier (against the host on :$port, passed as --host)"
   pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
-  kill -INT "$host" 2>/dev/null
-  wait "$host" 2>/dev/null
+  stop_host "$host" INT
   return "$status"
 }
