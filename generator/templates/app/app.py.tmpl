@@ -66,9 +66,9 @@ class EnvConfigRepository(AppConfigRepository):
         if {{context}}_storage is None:
             raise errors.invalid("missing_env", "{{storage_env}} is required")
 {{/storage_postgres}}
-        ingress = os.environ.get("{{ingress_env}}")
-        if ingress is None:
-            raise errors.invalid("missing_env", "{{ingress_env}} is required")
+        engine_url = os.environ.get("{{engine_url_env}}")
+        if engine_url is None:
+            raise errors.invalid("missing_env", "{{engine_url_env}} is required")
         return AppConfig(
             Spec(
                 {{context}}={{context}}_component.Config(
@@ -76,7 +76,7 @@ class EnvConfigRepository(AppConfigRepository):
 {{#storage_postgres}}
                         storage={{context}}_storage,
 {{/storage_postgres}}
-                        ingress=ingress,
+                        engine_url=engine_url,
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
                     )
                 )

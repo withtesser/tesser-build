@@ -15,9 +15,9 @@ class FakeConfigRepository(app.AppConfigRepository):
 {{#storage_postgres}}
         {{context}}_storage = os.environ["{{storage_env}}"]
 {{/storage_postgres}}
-        ingress = os.environ["{{ingress_env}}"]
+        engine_url = os.environ["{{engine_url_env}}"]
         return app.AppConfig(
-            app.Spec({{context}}_component.Config({{context}}_component.Spec({{#storage_postgres}}{{context}}_storage, {{/storage_postgres}}ingress, 7)))
+            app.Spec({{context}}_component.Config({{context}}_component.Spec({{#storage_postgres}}{{context}}_storage, {{/storage_postgres}}engine_url, 7)))
         )
 
 
@@ -43,7 +43,7 @@ class TestEnvConfigRepository:
 {{#storage_postgres}}
         assert app_config.{{context}}.storage == os.environ["{{storage_env}}"]
 {{/storage_postgres}}
-        assert app_config.{{context}}.ingress == os.environ["{{ingress_env}}"]
+        assert app_config.{{context}}.engine_url == os.environ["{{engine_url_env}}"]
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:
         env_config_repository = app.EnvConfigRepository()

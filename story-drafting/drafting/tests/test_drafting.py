@@ -22,7 +22,7 @@ import protocol as protocol
 class TestDraftingContext:
 
     async def test_a_run_never_opened_is_not_found(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9", story_writer="canned", anthropic_api_key="")))
+        drafting = component.Drafting(component.Config(component.Spec(engine_url="http://127.0.0.1:9", story_writer="canned", anthropic_api_key="")))
         try:
             with pytest.raises(client.RunNotFound):
                 await drafting.client.get_run(client.GetRunRequest(run_id=str(uuid.uuid4())))
@@ -30,7 +30,7 @@ class TestDraftingContext:
             drafting.close()
 
     async def test_a_run_the_domain_refuses_is_rejected_through_the_handler(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress="http://127.0.0.1:9", story_writer="canned", anthropic_api_key="")))
+        drafting = component.Drafting(component.Config(component.Spec(engine_url="http://127.0.0.1:9", story_writer="canned", anthropic_api_key="")))
         try:
             http_response = await handlers.Handler(drafting.client).open_run(
                 protocol.HttpRequest(path_params={}, body=b'{"run_id": "r1", "job": ""}')
@@ -40,7 +40,7 @@ class TestDraftingContext:
         assert http_response.status_code == 422
 
     async def test_an_opened_run_is_drafted_and_waits_for_the_pick_with_its_stories_and_none_accepted(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(ingress=os.environ["RESTATE_INGRESS"], story_writer="canned", anthropic_api_key="")))
+        drafting = component.Drafting(component.Config(component.Spec(engine_url=os.environ["RESTATE_URL"], story_writer="canned", anthropic_api_key="")))
         first = int(os.environ["STORY_DRAFTING_PORT"])
         port = 0
         for candidate in range(first + 1, first + 10):

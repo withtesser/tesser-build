@@ -62,7 +62,7 @@ class TestRestateKeepWidget:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 keep_widget_response = await restate_client.Client(async_client).service_call(
                     restate_keep_widget.handler, relays.KeepWidgetRequest(name="a")
                 )

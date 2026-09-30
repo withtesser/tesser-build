@@ -43,7 +43,7 @@ def tree_spec(
     asserted_field: str = "person_name",
     random_values: tuple[tuple[str, str], ...] = (("str", "Ada"),),
     storage_url_variable: str = "CALLS_STORAGE",
-    restate_ingress_url_variable: str = "RESTATE_INGRESS",
+    engine_url_variable: str = "RESTATE_URL",
     templates: tuple[tuple[str, str], ...] = (("{{context}}/domain/{{aggregate}}.py.tmpl", "class {{Aggregate}}:\n"),),
 ) -> domain.TreeSpec:
     return domain.TreeSpec(
@@ -77,7 +77,7 @@ def tree_spec(
         asserted_field=asserted_field,
         random_values=random_values,
         storage_url_variable=storage_url_variable,
-        restate_ingress_url_variable=restate_ingress_url_variable,
+        engine_url_variable=engine_url_variable,
         templates=templates,
     )
 

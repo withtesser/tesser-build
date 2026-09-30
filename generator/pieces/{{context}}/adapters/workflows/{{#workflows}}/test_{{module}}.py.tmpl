@@ -84,7 +84,7 @@ class Test{{Workflow}}:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
                         {{workflow_param}}.handler,

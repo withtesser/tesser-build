@@ -121,7 +121,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             pay_for_order_response = await dispatchers.RestateHttpPurchaseOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_pay_for_order
+                os.environ["RESTATE_URL"], restate_pay_for_order
             ).run_pay_for_order(
                 relays.PayForOrderRequest(
                     order=domain.Order(order_spec(order_id=order_id, quantity=2)),
@@ -213,7 +213,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             restate_http_purchase_orchestrator_relay = dispatchers.RestateHttpPurchaseOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_pay_for_order
+                os.environ["RESTATE_URL"], restate_pay_for_order
             )
             first = await restate_http_purchase_orchestrator_relay.run_pay_for_order(
                 relays.PayForOrderRequest(
@@ -246,7 +246,7 @@ class TestRestateHttpPurchaseOrchestratorRelay:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_an_unreachable_ingress_is_a_fault(self) -> None:
+    async def test_an_unreachable_engine_url_is_a_fault(self) -> None:
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = f"http://127.0.0.1:{closed.getsockname()[1]}"

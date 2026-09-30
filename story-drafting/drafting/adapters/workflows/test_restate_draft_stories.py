@@ -96,7 +96,7 @@ class TestRestateDraftStories:
             assert registered.is_success, registered.text
 
             run = domain.Run(domain.RunSpec(run_id=run_id, job="ship", stage="drafting", stories=(), accepted_stories=()))
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 sent = await restate_client.Client(async_client).workflow_send(
                     restate_draft_stories.handler, key=run_id, arg=relays.DraftStoriesRequest(run=run)
                 )

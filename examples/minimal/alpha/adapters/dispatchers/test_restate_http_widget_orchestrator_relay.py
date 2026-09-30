@@ -51,7 +51,7 @@ class TestRestateHttpWidgetOrchestratorRelay:
         )
         restate_approve_widget = dispatchers.RestateApproveWidget(widget_orchestrator_workflow)
         restate_http_widget_orchestrator_relay = dispatchers.RestateHttpWidgetOrchestratorRelay(
-            os.environ["RESTATE_INGRESS"], restate_register_widget, restate_approve_widget
+            os.environ["RESTATE_URL"], restate_register_widget, restate_approve_widget
         )
         with socket.socket() as probe:
             probe.bind(("0.0.0.0", 0))
@@ -118,7 +118,7 @@ class TestRestateHttpWidgetOrchestratorRelay:
                 if fake_widget_application_client.kept:
                     break
                 await asyncio.sleep(0.05)
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
                         restate_approve_widget.handler, key="%2E%2E", arg=relays.ApproveWidgetRequest(name="other")

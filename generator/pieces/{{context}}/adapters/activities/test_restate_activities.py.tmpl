@@ -71,7 +71,7 @@ class Test{{Activity}}:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
                 {{operation}}_response = await restate_client.Client(async_client).service_call(
                     {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})
                 )
@@ -122,7 +122,7 @@ class TestRestateEngineRefusals:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).generic_call(
                         {{container_attr}}.name, {{activity_param}}.handler.__name__,
@@ -141,7 +141,7 @@ class TestRestateEngineRefusals:
             serving.cancel()
             await asyncio.wait_for(asyncio.gather(serving, return_exceptions=True), timeout=5.0)
 
-    async def test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service(self) -> None:
+    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(self) -> None:
         {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}", ingress_private=True)
         {{activity_param}} = activities.{{Activity}}({{container_attr}}, Fake{{ApplicationClient}}())
         with socket.socket() as probe:
@@ -171,7 +171,7 @@ class TestRestateEngineRefusals:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_variable}}"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).service_call(
                         {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})

@@ -124,7 +124,7 @@ there, not in your files.
 - Run the gate like this, keeping its whole output:
 
   ```sh
-  cd {worktree} && RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
+  cd {worktree} && RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
     scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
@@ -135,7 +135,7 @@ there, not in your files.
   it again to see more.
 - For a quick check while you work, run just your own tests:
   `cd {worktree}/story-drafting && PYTHONPATH=.:../tesser-py pytest -q drafting/domain drafting/adapters/gateways`.
-- Your Restate server is at ingress {ingress} and admin {admin}; serve hosts
+- Your Restate server's URL is {engine_url} and its admin API {admin}; serve hosts
   only on ports {port}–{port_last}. Other agents work side by side: don't
   touch processes you didn't start. Work only inside the worktree.
 

@@ -11,7 +11,7 @@ document.
 
     check.py --cwd DIR --cmd "python3 -m srv.http.main 0.0.0.0:9300" \\
              --port 9300 --admin http://localhost:39070 \\
-             --env RESTATE_INGRESS=http://localhost:38080 [--env K=V ...]
+             --env RESTATE_URL=http://localhost:38080 [--env K=V ...]
 """
 
 from __future__ import annotations

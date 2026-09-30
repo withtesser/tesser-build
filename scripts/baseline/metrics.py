@@ -356,8 +356,8 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     coverage = out / "coverage.json"
     env = dict(os.environ)
     run = json.loads((out / "run.json").read_text())
-    if "restate_ingress" in run:
-        env["RESTATE_INGRESS"] = run["restate_ingress"]
+    if "engine_url" in run:
+        env["RESTATE_URL"] = run["engine_url"]
         env["RESTATE_ADMIN"] = run["restate_admin"]
         env["STORY_DRAFTING_PORT"] = str(run["host_port"])
     env["COVERAGE_FILE"] = str(out / ".coverage")

@@ -21,7 +21,7 @@ version = "3.12"
 [engine.restate]                       # implements composition's relays and signal: activities, workflows, dispatchers
 body = "supported"
 engine_path = "/restate"               # where the Restate endpoint is mounted
-ingress_variable = "RESTATE_INGRESS"     # the variables below, by the part each plays for the engine
+engine_url_variable = "RESTATE_URL"     # the variables below, by the part each plays for the engine
 admin_variable = "RESTATE_ADMIN"
 callback_host_variable = "RESTATE_CALLBACK_HOST"
 
@@ -42,7 +42,7 @@ location_variable = "JTBD_DB_PATH"     # the variable that names its location (a
 # ---- environment variables --------------------------------------------------
 
 [variables]
-RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
+RESTATE_URL = "the engine's URL, the one the client starts workflows through"
 RESTATE_ADMIN = "the Restate admin URL the tests register a served endpoint with"
 RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
 STORY_DRAFTING_PORT = "the port the HTTP host listens on"

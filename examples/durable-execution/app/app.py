@@ -38,10 +38,10 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 class EnvConfigRepository(AppConfigRepository):
 
     def get(self) -> AppConfig:
-        ingress = os.environ.get("RESTATE_INGRESS")
-        if ingress is None:
-            raise errors.invalid("missing_env", "RESTATE_INGRESS is required")
-        return AppConfig(Spec(ordering=ordering_component.Config(ordering_component.Spec(ingress=ingress))))
+        engine_url = os.environ.get("RESTATE_URL")
+        if engine_url is None:
+            raise errors.invalid("missing_env", "RESTATE_URL is required")
+        return AppConfig(Spec(ordering=ordering_component.Config(ordering_component.Spec(engine_url=engine_url))))
 
 
 class AppLoader(ts.Loader):

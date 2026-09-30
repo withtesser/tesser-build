@@ -19,8 +19,8 @@ _ALREADY_INVOKED: typing.Final[str] = "the workflow method was already invoked"
 
 class RestateHttpPurchaseOrchestratorRelay(ts.Dispatcher):
 
-    def __init__(self, ingress: str, restate_pay_for_order: workflows.RestatePayForOrder) -> None:
-        self._ingress = ingress
+    def __init__(self, engine_url: str, restate_pay_for_order: workflows.RestatePayForOrder) -> None:
+        self._engine_url = engine_url
         self._restate_pay_for_order = restate_pay_for_order
 
     async def run_pay_for_order(
@@ -29,7 +29,7 @@ class RestateHttpPurchaseOrchestratorRelay(ts.Dispatcher):
         key = str(pay_for_order_request.order.identity)
         try:
             async with httpx.AsyncClient(
-                base_url=self._ingress, timeout=_RUN_TIMEOUT
+                base_url=self._engine_url, timeout=_RUN_TIMEOUT
             ) as async_client:
                 return await restate_client.Client(async_client).workflow_call(
                     self._restate_pay_for_order.handler,

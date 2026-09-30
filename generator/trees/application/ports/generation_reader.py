@@ -72,7 +72,7 @@ class SpecRecord(ts.Response):
         asserted_field: str,
         random_values: tuple[ValueRecord, ...],
         storage_url_variable: str,
-        restate_ingress_url_variable: str,
+        engine_url_variable: str,
     ) -> None:
         self.state = state
         self.note = note
@@ -101,7 +101,7 @@ class SpecRecord(ts.Response):
         self.asserted_field = asserted_field
         self.random_values = random_values
         self.storage_url_variable = storage_url_variable
-        self.restate_ingress_url_variable = restate_ingress_url_variable
+        self.engine_url_variable = engine_url_variable
 
 
 class ExistingFileRecord(ts.Response):

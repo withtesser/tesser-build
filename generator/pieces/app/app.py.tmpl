@@ -49,9 +49,9 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 class EnvConfigRepository(AppConfigRepository):
 
     def get(self) -> AppConfig:
-        ingress = os.environ.get("{{ingress_variable}}")
-        if ingress is None:
-            raise errors.invalid("missing_env", "{{ingress_variable}} is required")
+        engine_url = os.environ.get("{{engine_url_variable}}")
+        if engine_url is None:
+            raise errors.invalid("missing_env", "{{engine_url_variable}} is required")
 {{#locations}}
         {{location_attr}} = os.environ.get("{{location_variable}}")
         if {{location_attr}} is None:
@@ -61,7 +61,7 @@ class EnvConfigRepository(AppConfigRepository):
             Spec(
                 {{context}}={{context}}_component.Config(
                     {{context}}_component.Spec(
-                        ingress=ingress,
+                        engine_url=engine_url,
 {{#identity_seeded}}
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
 {{/identity_seeded}}

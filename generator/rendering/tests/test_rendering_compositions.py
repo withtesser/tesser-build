@@ -69,7 +69,7 @@ class TestRenderingCompositions:
         tested = subprocess.run(
             [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "loans/application", "srv/http/test_main.py", "-k", "not discovers"],
             cwd=tmp_path / "out", capture_output=True, text=True, check=False,
-            env={**os.environ, "RESTATE_INGRESS": "http://127.0.0.1:9",
+            env={**os.environ, "RESTATE_URL": "http://127.0.0.1:9",
                  "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
         )
 
@@ -475,7 +475,7 @@ class TestRenderingCompositions:
                 'app = "library"\n\n[implementations.NoticeSender.printed]',
             ), (
                 "[environments.gate]",
-                '[engine.restate]\ningress_variable = "RESTATE_INGRESS"\n\n[hosts.http]\n'
+                '[engine.restate]\nengine_url_variable = "RESTATE_URL"\n\n[hosts.http]\n'
                 'listen_port_variable = "LIBRARY_PORT"\n\n[variables]\nLIBRARY_PORT = "the port"\n\n[environments.gate]',
             )],
         }
@@ -635,7 +635,7 @@ class TestRenderingCompositions:
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
         env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
                "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
-               "LOAN_DB_PATH": str(tmp_path / "loans.sqlite"), "RESTATE_INGRESS": "http://127.0.0.1:9"}
+               "LOAN_DB_PATH": str(tmp_path / "loans.sqlite"), "RESTATE_URL": "http://127.0.0.1:9"}
 
         render_composition_response = rendering.client.render_composition(
             client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())

@@ -37,4 +37,4 @@ random_values = ["Ada", "Grace"]
 
 [environment_variables]
 storage_url = "VISITS_STORAGE"
-restate_ingress_url = "RESTATE_INGRESS"
+engine_url = "RESTATE_URL"

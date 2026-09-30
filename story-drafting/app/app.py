@@ -38,9 +38,9 @@ class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
 class EnvConfigRepository(AppConfigRepository):
 
     def get(self) -> AppConfig:
-        ingress = os.environ.get("RESTATE_INGRESS")
-        if ingress is None:
-            raise errors.invalid("missing_env", "RESTATE_INGRESS is required")
+        engine_url = os.environ.get("RESTATE_URL")
+        if engine_url is None:
+            raise errors.invalid("missing_env", "RESTATE_URL is required")
         story_writer = os.environ.get("STORY_WRITER")
         if story_writer is None:
             raise errors.invalid("missing_env", "STORY_WRITER is required")
@@ -48,7 +48,7 @@ class EnvConfigRepository(AppConfigRepository):
             Spec(
                 drafting=drafting_component.Config(
                     drafting_component.Spec(
-                        ingress=ingress,
+                        engine_url=engine_url,
                         story_writer=story_writer,
                         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
                     )

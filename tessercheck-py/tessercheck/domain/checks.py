@@ -7221,7 +7221,7 @@ class ClassDecl(ts.Entity):
                     int(init.lineno()),
                     "TB081",
                     f"{where} parameter {arg!r} is a ts.Relay; a relay is invoked "
-                    "only by a service, through an ingress runner, or by an orchestrator, "
+                    "only by a service, through an HTTP runner, or by an orchestrator, "
                     "through an in-invocation runner",
                 ))
             )

@@ -20,7 +20,7 @@ class TestRestateHost:
             os.environ,
             ALPHA_STORAGE="postgres://nobody@nowhere/none",
             BETA_KEY="a",
-            RESTATE_INGRESS="http://ingress.invalid:8080",
+            RESTATE_URL="http://engine.invalid:8080",
             PYTHONPATH=os.pathsep.join(sys.path),
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.restate.main", f"127.0.0.1:{port}"], env=env)

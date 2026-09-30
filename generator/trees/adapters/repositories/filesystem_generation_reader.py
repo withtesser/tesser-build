@@ -31,7 +31,7 @@ SCALARS: typing.Final[tuple[tuple[str, str, str], ...]] = (
     ("test_method_name", "acceptance_test", "test_method_name"),
     ("asserted_field", "acceptance_test", "asserted_field"),
     ("storage_url_variable", "environment_variables", "storage_url"),
-    ("restate_ingress_url_variable", "environment_variables", "restate_ingress_url"),
+    ("engine_url_variable", "environment_variables", "engine_url"),
 )
 
 LISTS: typing.Final[tuple[tuple[str, str], ...]] = (

@@ -13,7 +13,7 @@
 # starts from the same commit: a red run from the empty scaffold tag (the
 # story-drafting tree on the branch is a finished green run, not a start; the
 # scaffold is cut by scripts/baseline/scaffold). The slot (0-9) gives the run its own Restate
-# container (tesser-story-drafting-restate-<slot>, ingress 38080+100*slot,
+# container (tesser-story-drafting-restate-<slot>, engine URL on port 38080+100*slot,
 # admin 39070+100*slot) and ten host ports from 9300+10*slot, so runs in
 # different slots go side by side; the container is replaced, so a run never
 # inherits another's registrations. The filled prompt lands in
@@ -42,7 +42,7 @@ prompt="$HERE/prompts/$phase.md"
 # before it starts a container or cuts a worktree it would leave behind.
 python3 - "$prompt" <<'PY'
 import re, sys
-known = {"worktree", "venv", "ingress", "admin", "port_last", "port", "spec", "log"}
+known = {"worktree", "venv", "engine_url", "admin", "port_last", "port", "spec", "log"}
 text = re.sub(r"\{\{(?:FILE|SECTION|EXAMPLE):[^}]+\}\}", "", open(sys.argv[1]).read())
 unknown = sorted({m for m in re.findall(r"(?<!\{)\{([a-z_]+)\}(?!\})", text) if m not in known})
 if unknown:
@@ -56,12 +56,12 @@ out="$MAIN/.baseline-runs/$name"
 [ ! -e "$wt" ] || { echo "baseline: $wt already exists" >&2; exit 1; }
 [ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
 
-ingress_port=$((38080 + 100 * slot))
+engine_port=$((38080 + 100 * slot))
 admin_port=$((39070 + 100 * slot))
 host_port=$((9300 + 10 * slot))
 container="tesser-story-drafting-restate-$slot"
 docker rm -f "$container" >/dev/null 2>&1 || true
-docker run -d --name "$container" -p "$ingress_port:8080" -p "$admin_port:9070" \
+docker run -d --name "$container" -p "$engine_port:8080" -p "$admin_port:9070" \
   --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
 for _ in $(seq 1 50); do
   if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
@@ -73,7 +73,7 @@ base_sha=$(git rev-parse "$base^{commit}")
 git worktree add -q -b "$branch" "$wt" "$base_sha"
 
 cat >"$out/run.json" <<JSON
-{"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"phase": "$phase", "name": "$name", "slot": $slot, "base_ref": "$base", "base_sha": "$base_sha", "branch": "$branch", "worktree": "$wt", "engine_url": "http://localhost:$engine_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 
 # A red trial is shown a generated tree, rendered from a gated spec by the
@@ -95,11 +95,11 @@ fi
 # {{EXAMPLE:path}} a file of the example tree, each pasted verbatim (run
 # values are not filled inside them). A name, path, or heading that does not
 # resolve stops the prepare.
-WT="$wt" VENV="$MAIN/.venv" INGRESS="http://localhost:$ingress_port" ADMIN="http://localhost:$admin_port" \
+WT="$wt" VENV="$MAIN/.venv" ENGINE_URL="http://localhost:$engine_port" ADMIN="http://localhost:$admin_port" \
   PORT="$host_port" PORT_LAST="$((host_port + 9))" SPEC="$out/spec.toml" LOG="$out/verify.log" EXAMPLE="$out/example" \
   python3 - "$prompt" "$out/prompt.md" <<'PY'
 import os, pathlib, re, sys
-values = {"worktree": "WT", "venv": "VENV", "ingress": "INGRESS", "admin": "ADMIN", "port_last": "PORT_LAST", "port": "PORT", "spec": "SPEC", "log": "LOG"}
+values = {"worktree": "WT", "venv": "VENV", "engine_url": "ENGINE_URL", "admin": "ADMIN", "port_last": "PORT_LAST", "port": "PORT", "spec": "SPEC", "log": "LOG"}
 roots = {"FILE": pathlib.Path(os.environ["WT"]), "EXAMPLE": pathlib.Path(os.environ["EXAMPLE"])}
 def fill(text):
     def value(match):

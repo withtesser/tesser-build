@@ -21,16 +21,16 @@ _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationR
 
 class Spec(ts.Spec):
 
-    def __init__(self, storage: str, ingress: str) -> None:
+    def __init__(self, storage: str, engine_url: str) -> None:
         self.storage = storage
-        self.ingress = ingress
+        self.engine_url = engine_url
 
 
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
         self.storage = spec.storage
-        self.ingress = spec.ingress
+        self.engine_url = spec.engine_url
 
 
 class Alpha(ts.Component):
@@ -53,7 +53,7 @@ class Alpha(ts.Component):
             self._postgres_widget_store,
             beta_check,
             dispatchers.RestateHttpWidgetOrchestratorRelay(
-                config.ingress,
+                config.engine_url,
                 restate_register_widget,
                 dispatchers.RestateApproveWidget(self.widget_orchestrator_workflow),
             ),

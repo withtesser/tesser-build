@@ -182,7 +182,7 @@ run_ports() {
 run_minimal() {
   cd "$ROOT/examples/minimal" || return 1
   local storage="${ALPHA_STORAGE:-postgres://tesser@localhost:5434/minimal}"
-  local ingress="${RESTATE_INGRESS:-http://localhost:58080}"
+  local engine_url="${RESTATE_URL:-http://localhost:58080}"
   local admin="${RESTATE_ADMIN:-http://localhost:59070}"
   local port="${MINIMAL_DEPLOYMENT_PORT:-9085}"
   local callback_host="${MINIMAL_CALLBACK_HOST:-host.docker.internal}"
@@ -191,11 +191,11 @@ run_minimal() {
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict kernel shared protocol alpha beta app srv tests conftest.py || return 1
-  step "pytest, every tier but the root (no host served; Postgres at ALPHA_STORAGE, Restate at $ingress)"
-  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" \
+  step "pytest, every tier but the root (no host served; Postgres at ALPHA_STORAGE, Restate at $engine_url)"
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" \
     MINIMAL_CALLBACK_HOST="$callback_host" pytest -q --ignore=tests || return 1
   step "serve the Restate endpoint on :$port and register it at $admin"
-  (exec env ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" PYTHONPATH=.:../../tesser-py \
+  (exec env ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" PYTHONPATH=.:../../tesser-py \
     python3 -m srv.restate.main "0.0.0.0:$port") &
   local host=$!
   local registered=1
@@ -214,7 +214,7 @@ run_minimal() {
     return 1
   fi
   step "pytest, the root tier (against the served host)"
-  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_INGRESS="$ingress" pytest -q tests
+  ALPHA_STORAGE="$storage" BETA_KEY=k RESTATE_URL="$engine_url" pytest -q tests
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -242,7 +242,7 @@ run_minimal() {
 #     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
 run_durable_execution() {
   cd "$ROOT/examples/durable-execution" || return 1
-  local ingress="${RESTATE_INGRESS:-http://localhost:18080}"
+  local engine_url="${RESTATE_URL:-http://localhost:18080}"
   local admin="${RESTATE_ADMIN:-http://localhost:19070}"
   local port="${DURABLE_DEPLOYMENT_PORT:-9084}"
   local callback_host="${DURABLE_CALLBACK_HOST:-host.docker.internal}"
@@ -251,11 +251,11 @@ run_durable_execution() {
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
   MYPYPATH=.:../../tesser-py mypy --strict protocol ordering app srv tests conftest.py || return 1
-  step "pytest every tier but the root (against Restate at $ingress, no host served)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
+  step "pytest every tier but the root (against Restate at $engine_url, no host served)"
+  RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" DURABLE_CALLBACK_HOST="$callback_host" \
     pytest -q --ignore=tests || return 1
   step "serve the Restate endpoint on :$port and register it at $admin"
-  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../../tesser-py \
+  (exec env RESTATE_URL="$engine_url" PYTHONPATH=.:../../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
   local registered=1
@@ -433,7 +433,7 @@ run_specs_app() {
 # the middle step with the hosts the tree needs (serving and registering the
 # Restate endpoint, as run_durable_execution does). Everything machine-specific
 # comes from the environment, so baseline runs can go side by side: the
-# Restate server (RESTATE_INGRESS / RESTATE_ADMIN) and the first of ten ports
+# Restate server (RESTATE_URL / RESTATE_ADMIN) and the first of ten ports
 # the arm may serve hosts on (STORY_DRAFTING_PORT). A tree the composition
 # renderer wrote carries .tesser-rendered, whose first line is its composition
 # directory (relative to the repo root); the arm then first checks the tree
@@ -444,7 +444,7 @@ run_specs_app() {
 #     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
 run_story_drafting() {
   cd "$ROOT/story-drafting" || return 1
-  local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
+  local engine_url="${RESTATE_URL:-http://localhost:38080}"
   local admin="${RESTATE_ADMIN:-http://localhost:39070}"
   local port="${STORY_DRAFTING_PORT:-9300}"
   if [ -f .tesser-rendered ]; then
@@ -466,12 +466,12 @@ run_story_drafting() {
     MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
   fi
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
-  step "pytest every tier but the root (no host served; Restate at $ingress)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" STORY_DRAFTING_PORT="$port" \
+  step "pytest every tier but the root (no host served; Restate at $engine_url)"
+  RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" STORY_DRAFTING_PORT="$port" \
     STORY_DRAFTING_CALLBACK_HOST="$callback_host" RESTATE_CALLBACK_HOST="$callback_host" STORY_WRITER=canned \
     pytest -q --ignore=tests || return 1
   step "serve the HTTP host and its Restate endpoint on :$port and register it at $admin"
-  (exec env RESTATE_INGRESS="$ingress" STORY_WRITER=canned PYTHONPATH=.:../tesser-py \
+  (exec env RESTATE_URL="$engine_url" STORY_WRITER=canned PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
   local host_started
@@ -632,12 +632,12 @@ run_generator() {
 run_rendered_tree() {
   local composition=$1
   local out=$2
-  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local engine_url="${RESTATE_URL:-http://localhost:48080}"
   local admin="${RESTATE_ADMIN:-http://localhost:49070}"
   local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
-  local names ingress_env admin_env callback_env
-  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
-  read -r ingress_env admin_env callback_env <<<"$names"
+  local names engine_url_env admin_env callback_env
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["engine_url_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/infra.toml") || return 1
+  read -r engine_url_env admin_env callback_env <<<"$names"
   local location_names location_name locations
   local location_env=()
   location_names=$(python3 -c 'import sys, tomllib; print(" ".join(s["location_variable"] for s in tomllib.load(open(sys.argv[1], "rb")).get("storage", {}).values() if "location_variable" in s))' "$composition/infra.toml") || return 1
@@ -661,7 +661,7 @@ run_rendered_tree() {
     location_env+=("$location_name=$locations/$location_name")
   done
   local tested=0
-  (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
+  (cd "$out" && env "$engine_url_env=$engine_url" "$admin_env=$admin" "$callback_env=$callback_host" \
     ${location_env[@]+"${location_env[@]}"} PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests .) || tested=$?
   rm -rf "$locations"
   return "$tested"
@@ -671,15 +671,15 @@ run_generated_tree() {
   local spec=$1
   local out=$2
   local storage="${GENERATED_STORAGE:-postgres://tesser@localhost:5434/generator}"
-  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local engine_url="${RESTATE_URL:-http://localhost:48080}"
   local admin="${RESTATE_ADMIN:-http://localhost:49070}"
   local port="${GENERATED_DEPLOYMENT_PORT:-9081}"
   local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
-  local names context storage_kind host_kind storage_env ingress_env
-  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["restate_ingress_url"])' "$spec") || return 1
-  read -r context storage_kind host_kind storage_env ingress_env <<<"$names"
+  local names context storage_kind host_kind storage_env engine_url_env
+  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["engine_url"])' "$spec") || return 1
+  read -r context storage_kind host_kind storage_env engine_url_env <<<"$names"
   local packages=("app" "$context" "protocol" "srv" "tests" "conftest.py")
-  local env_vars=("$ingress_env=$ingress")
+  local env_vars=("$engine_url_env=$engine_url")
   if [ "$storage_kind" = postgres ]; then
     packages+=("pgdatabase")
     env_vars+=("$storage_env=$storage")

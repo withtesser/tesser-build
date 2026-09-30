@@ -23,9 +23,9 @@ Follow the repo's `CLAUDE.md` and the `tesser-build` skill. You may extend the
 tree's `run_story_drafting` arm in `scripts/verify`; keep taking the Restate
 server and host ports from the environment, and after editing
 `scripts/verify` diff it and confirm only `run_story_drafting` changed. Your
-Restate server is at ingress {ingress} and admin {admin}; serve hosts only on
+Restate server's URL is {engine_url} and its admin API {admin}; serve hosts only on
 ports {port}–{port_last}. Invoke the gate as
-`RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} scripts/verify story-drafting`.
+`RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} scripts/verify story-drafting`.
 Other agents work side by side on other ports: don't touch processes you
 didn't start. Do not add `skip` lines to any `.tesser-root`. Work only
 inside the worktree.

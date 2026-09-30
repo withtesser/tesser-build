@@ -84,7 +84,7 @@ class Test{{Dispatcher}}:
 
             try:
                 {{result}} = await asyncio.wait_for(
-                    dispatchers.{{Dispatcher}}(os.environ["{{ingress_variable}}"], {{workflow_param}}).{{method}}(
+                    dispatchers.{{Dispatcher}}(os.environ["{{engine_url_variable}}"], {{workflow_param}}).{{method}}(
                         relays.{{Request}}({{keyed_request_sample}})
                     ),
                     timeout=15.0,
@@ -170,7 +170,7 @@ class Test{{Dispatcher}}:
             assert registered.is_success, registered.text
 
             {{result}} = await dispatchers.{{Dispatcher}}(
-                os.environ["{{ingress_variable}}"], {{workflow_param}}
+                os.environ["{{engine_url_variable}}"], {{workflow_param}}
             ).{{method}}(relays.{{Request}}({{keyed_request_sample}}))
             invoked = await admin.post(
                 "/query",

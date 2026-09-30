@@ -56,7 +56,7 @@ class TestHttpHost:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
         env = dict(
-            os.environ, {{ingress_env}}=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path)
+            os.environ, {{engine_url_env}}=f"http://127.0.0.1:{unreachable}", PYTHONPATH=os.pathsep.join(sys.path)
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []

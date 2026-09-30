@@ -14897,7 +14897,7 @@ def test_a_relay_is_held_only_by_a_service_or_an_orchestrator() -> None:
     assert any(
         "shop.adapters.gateways.holding.HoldingGateway.__init__ parameter "
         "'quote_actions_relay' is a ts.Relay; a relay is invoked only by a service, "
-        "through an ingress runner, or by an orchestrator, through an "
+        "through an HTTP runner, or by an orchestrator, through an "
         "in-invocation runner" in f
         for f in findings
     ), findings
@@ -21428,18 +21428,18 @@ def test_activities_workflows_and_dispatchers_reach_one_way_from_dispatchers_to_
                 "import shop.adapters.activities.record as record\n"
                 "import shop.application.orchestrators as orchestrators\n"
                 "import shop.application.client as client\n"
-                "import shop.adapters.dispatchers.ingress as ingress\n"
+                "import shop.adapters.dispatchers.restate_http_conduct_relay as restate_http_conduct_relay\n"
                 "class Conduct(ts.Workflow):\n"
                 "    pass\n",
                 False,
             ),
             (
-                "shop/adapters/dispatchers/ingress.py",
-                "shop.adapters.dispatchers.ingress",
+                "shop/adapters/dispatchers/restate_http_conduct_relay.py",
+                "shop.adapters.dispatchers.restate_http_conduct_relay",
                 "import tesser.adapters as ts\n"
                 "import shop.adapters.workflows.conduct as conduct\n"
                 "import shop.adapters.activities.record as record\n"
-                "class Ingress(ts.Dispatcher):\n"
+                "class RestateHttpConductRelay(ts.Dispatcher):\n"
                 "    pass\n",
                 False,
             ),
@@ -21471,7 +21471,7 @@ def test_activities_workflows_and_dispatchers_reach_one_way_from_dispatchers_to_
         ("activities.record", "application.client"),
         ("workflows.conduct", "adapters.activities.record"),
         ("workflows.conduct", "application.orchestrators"),
-        ("dispatchers.ingress", "adapters.workflows.conduct"),
+        ("dispatchers.restate_http_conduct_relay", "adapters.workflows.conduct"),
     ):
         assert not any(
             f"shop.adapters.{importer} imports shop.{imported};" in f and "TB060" in f for f in findings
@@ -21488,8 +21488,8 @@ def test_activities_workflows_and_dispatchers_reach_one_way_from_dispatchers_to_
     ), findings
     for importer, imported in (
         ("activities.record", "adapters.workflows.conduct"),
-        ("workflows.conduct", "adapters.dispatchers.ingress"),
-        ("dispatchers.ingress", "adapters.activities.record"),
+        ("workflows.conduct", "adapters.dispatchers.restate_http_conduct_relay"),
+        ("dispatchers.restate_http_conduct_relay", "adapters.activities.record"),
         ("runners.leg", "adapters.activities.record"),
     ):
         assert any(
