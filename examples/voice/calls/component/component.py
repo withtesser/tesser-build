@@ -25,14 +25,14 @@ class Spec(ts.Spec):
     def __init__(
         self,
         storage: str,
-        restate_url: str,
+        engine_url: str,
         livekit_url: str,
         livekit_api_key: str,
         livekit_api_secret: str,
         livekit_agent_name: str,
     ) -> None:
         self.storage = storage
-        self.restate_url = restate_url
+        self.engine_url = engine_url
         self.livekit_url = livekit_url
         self.livekit_api_key = livekit_api_key
         self.livekit_api_secret = livekit_api_secret
@@ -42,7 +42,7 @@ class Spec(ts.Spec):
 class Config(ts.Config):
     def __init__(self, spec: Spec) -> None:
         self.storage = spec.storage
-        self.restate_url = spec.restate_url
+        self.engine_url = spec.engine_url
         self.livekit_url = spec.livekit_url
         self.livekit_api_key = spec.livekit_api_key
         self.livekit_api_secret = spec.livekit_api_secret
@@ -138,7 +138,7 @@ class Calls(ts.Component):
         restate_person_joined = dispatchers.RestatePersonJoined(self.call_orchestrator_workflow)
         restate_person_turn_completed = dispatchers.RestatePersonTurnCompleted(self.call_orchestrator_workflow)
         restate_http_call_orchestrator_relay = dispatchers.RestateHttpCallOrchestratorRelay(
-            config.restate_url,
+            config.engine_url,
             restate_conduct_call,
             restate_person_joined,
             restate_person_turn_completed,

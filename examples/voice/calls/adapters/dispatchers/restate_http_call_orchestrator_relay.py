@@ -139,18 +139,18 @@ class RestatePersonTurnCompleted(ts.Signal):
 class RestateHttpCallOrchestratorRelay(ts.Dispatcher):
     def __init__(
         self,
-        restate_url: str,
+        engine_url: str,
         restate_conduct_call: workflows.RestateConductCall,
         restate_person_joined: RestatePersonJoined,
         restate_person_turn_completed: RestatePersonTurnCompleted,
     ) -> None:
-        self._restate_url = restate_url
+        self._engine_url = engine_url
         self._restate_conduct_call = restate_conduct_call
         self._restate_person_joined = restate_person_joined
         self._restate_person_turn_completed = restate_person_turn_completed
 
     async def run_conduct_call(self, conduct_call_request: relays.ConductCallRequest) -> relays.ConductCallResponse:
-        async with httpx.AsyncClient(base_url=self._restate_url, timeout=_MAIN_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_MAIN_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._restate_conduct_call.handler,
                 key=urllib_parse.quote(str(conduct_call_request.call.identity), safe=""),
@@ -158,7 +158,7 @@ class RestateHttpCallOrchestratorRelay(ts.Dispatcher):
             )
 
     async def run_person_joined(self, person_joined_request: relays.PersonJoinedRequest) -> relays.PersonJoinedResponse:
-        async with httpx.AsyncClient(base_url=self._restate_url, timeout=_SHARED_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_SHARED_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._restate_person_joined.handler,
                 key=urllib_parse.quote(person_joined_request.call_id, safe=""),
@@ -168,7 +168,7 @@ class RestateHttpCallOrchestratorRelay(ts.Dispatcher):
     async def run_person_turn_completed(
         self, person_turn_completed_request: relays.PersonTurnCompletedRequest
     ) -> relays.PersonTurnCompletedResponse:
-        async with httpx.AsyncClient(base_url=self._restate_url, timeout=_SHARED_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_SHARED_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._restate_person_turn_completed.handler,
                 key=urllib_parse.quote(person_turn_completed_request.call_id, safe=""),

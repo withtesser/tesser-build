@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -64,7 +62,7 @@ def call_spec(call_id: str = "c7", person_name: str = "") -> domain.CallSpec:
 
 class TestRestateConductCall:
     async def test_conduct_call_reaches_the_handler_it_holds_and_waits_on_the_promise_the_relays_name(
-        self,
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
     ) -> None:
         call_id = str(uuid.uuid4())
         fake_dialing_application_client = FakeDialingApplicationClient()
@@ -78,9 +76,7 @@ class TestRestateConductCall:
             activities.RestateHangUp(dialing_actions_service, fake_dialing_application_client),
             activities.RestateSayUtterance(restate.Service("SpeechActions"), FakeSpeechApplicationClient()),
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -91,20 +87,20 @@ class TestRestateConductCall:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['VOICE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 sent = await restate_client.Client(async_client).workflow_send(
                     restate_conduct_call.handler,
                     key=call_id,

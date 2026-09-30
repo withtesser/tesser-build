@@ -5,22 +5,26 @@ import os
 import subprocess
 import sys
 
-import pytest
-
 import simulated.person as simulated_person
 
 
 class TestTakePersonName:
-    async def test_the_agent_asks_hears_and_greets_the_person_by_the_name_it_heard(self) -> None:
-        if os.environ.get("VOICE_EVALS") != "1":
-            pytest.skip("set VOICE_EVALS=1 and run scripts/verify voice with LiveKit credentials, Postgres and Restate")
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    async def test_the_agent_asks_hears_and_greets_the_person_by_the_name_it_heard(
+        self, voice_evals: None, livekit_environ: dict[str, str], postgres_dsn: str, host_engine_url: str, agent_server: str
+    ) -> None:
+        env = {
+            **os.environ,
+            **livekit_environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "CALLS_STORAGE": postgres_dsn,
+            "RESTATE_URL": host_engine_url,
+        }
         for person_name in ("Sarah", "David", "Michael"):
             person = simulated_person.Person(
-                url=os.environ["LIVEKIT_URL"],
-                api_key=os.environ["LIVEKIT_API_KEY"],
-                api_secret=os.environ["LIVEKIT_API_SECRET"],
-                agent_name=os.environ["LIVEKIT_AGENT_NAME"],
+                url=livekit_environ["LIVEKIT_URL"],
+                api_key=livekit_environ["LIVEKIT_API_KEY"],
+                api_secret=livekit_environ["LIVEKIT_API_SECRET"],
+                agent_name=agent_server,
                 name=person_name,
                 answers=simulated_person.WHEN_ASKED,
             )
@@ -46,15 +50,21 @@ class TestTakePersonName:
             assert person.heard, person.said
             assert person_name.casefold() in person.heard[-1].casefold(), person.heard
 
-    async def test_the_person_hears_the_whole_goodbye_before_the_line_drops(self) -> None:
-        if os.environ.get("VOICE_EVALS") != "1":
-            pytest.skip("set VOICE_EVALS=1 and run scripts/verify voice with LiveKit credentials, Postgres and Restate")
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    async def test_the_person_hears_the_whole_goodbye_before_the_line_drops(
+        self, voice_evals: None, livekit_environ: dict[str, str], postgres_dsn: str, host_engine_url: str, agent_server: str
+    ) -> None:
+        env = {
+            **os.environ,
+            **livekit_environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "CALLS_STORAGE": postgres_dsn,
+            "RESTATE_URL": host_engine_url,
+        }
         person = simulated_person.Person(
-            url=os.environ["LIVEKIT_URL"],
-            api_key=os.environ["LIVEKIT_API_KEY"],
-            api_secret=os.environ["LIVEKIT_API_SECRET"],
-            agent_name=os.environ["LIVEKIT_AGENT_NAME"],
+            url=livekit_environ["LIVEKIT_URL"],
+            api_key=livekit_environ["LIVEKIT_API_KEY"],
+            api_secret=livekit_environ["LIVEKIT_API_SECRET"],
+            agent_name=agent_server,
             name="Sarah",
             answers=simulated_person.WHEN_ASKED,
         )
@@ -78,15 +88,21 @@ class TestTakePersonName:
         assert "sarah" in person.events[heard_at[-1]][1].casefold(), person.events
         assert person.events[dropped_at[0]][1] == "ROOM_DELETED", person.events
 
-    async def test_an_answer_spoken_over_the_question_is_not_lost(self) -> None:
-        if os.environ.get("VOICE_EVALS") != "1":
-            pytest.skip("set VOICE_EVALS=1 and run scripts/verify voice with LiveKit credentials, Postgres and Restate")
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
+    async def test_an_answer_spoken_over_the_question_is_not_lost(
+        self, voice_evals: None, livekit_environ: dict[str, str], postgres_dsn: str, host_engine_url: str, agent_server: str
+    ) -> None:
+        env = {
+            **os.environ,
+            **livekit_environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+            "CALLS_STORAGE": postgres_dsn,
+            "RESTATE_URL": host_engine_url,
+        }
         person = simulated_person.Person(
-            url=os.environ["LIVEKIT_URL"],
-            api_key=os.environ["LIVEKIT_API_KEY"],
-            api_secret=os.environ["LIVEKIT_API_SECRET"],
-            agent_name=os.environ["LIVEKIT_AGENT_NAME"],
+            url=livekit_environ["LIVEKIT_URL"],
+            api_key=livekit_environ["LIVEKIT_API_KEY"],
+            api_secret=livekit_environ["LIVEKIT_API_SECRET"],
+            agent_name=agent_server,
             name="Sarah",
             answers=simulated_person.OVER_THE_QUESTION,
         )

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -63,13 +61,11 @@ def call_spec(call_id: str = "c7", person_name: str = "Grace") -> domain.CallSpe
 
 
 class TestRestateRecordCall:
-    async def test_restate_serves_record_call_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_record_call_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         call_actions_service = restate.Service(f"CallActions{uuid.uuid4().hex}")
         fake_call_application_client = FakeCallApplicationClient()
         restate_record_call = activities.RestateRecordCall(call_actions_service, fake_call_application_client)
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -80,20 +76,20 @@ class TestRestateRecordCall:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['VOICE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 record_call_response = await restate_client.Client(async_client).service_call(
                     restate_record_call.handler, relays.RecordCallRequest(call=domain.Call(call_spec()))
                 )
@@ -110,13 +106,11 @@ class TestRestateRecordCall:
 
 
 class TestRestateDialPerson:
-    async def test_restate_serves_dial_person_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_dial_person_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         dialing_actions_service = restate.Service(f"DialingActions{uuid.uuid4().hex}")
         fake_dialing_application_client = FakeDialingApplicationClient()
         restate_dial_person = activities.RestateDialPerson(dialing_actions_service, fake_dialing_application_client)
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -127,20 +121,20 @@ class TestRestateDialPerson:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['VOICE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 dial_person_response = await restate_client.Client(async_client).service_call(
                     restate_dial_person.handler, relays.DialPersonRequest(call=domain.Call(call_spec()))
                 )
@@ -157,13 +151,11 @@ class TestRestateDialPerson:
 
 
 class TestRestateHangUp:
-    async def test_restate_serves_hang_up_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_hang_up_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         dialing_actions_service = restate.Service(f"DialingActions{uuid.uuid4().hex}")
         fake_dialing_application_client = FakeDialingApplicationClient()
         restate_hang_up = activities.RestateHangUp(dialing_actions_service, fake_dialing_application_client)
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -174,20 +166,20 @@ class TestRestateHangUp:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['VOICE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 hang_up_response = await restate_client.Client(async_client).service_call(
                     restate_hang_up.handler, relays.HangUpRequest(call=domain.Call(call_spec()))
                 )
@@ -204,13 +196,11 @@ class TestRestateHangUp:
 
 
 class TestRestateSayUtterance:
-    async def test_restate_serves_say_utterance_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_say_utterance_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         speech_actions_service = restate.Service(f"SpeechActions{uuid.uuid4().hex}")
         fake_speech_application_client = FakeSpeechApplicationClient()
         restate_say_utterance = activities.RestateSayUtterance(speech_actions_service, fake_speech_application_client)
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -221,20 +211,20 @@ class TestRestateSayUtterance:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['VOICE_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 say_utterance_response = await restate_client.Client(async_client).service_call(
                     restate_say_utterance.handler, relays.SayUtteranceRequest(call_id="c7", text="Hello.")
                 )
