@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import json
+import random
+{{#calling_start}}
+import time
+import urllib.error as urllib_error
+{{/calling_start}}
+import urllib.request as urllib_request
+
+import tesser.testing as ts
+
+
+class {{test_class}}:
+
+    def {{test_method}}(self) -> None:
+        {{asserts}} = random.choice({{random_choices}})
+        {{write}} = urllib_request.Request(
+            f"{ts.served('{{host_env}}')}/{{collection}}",
+            data=json.dumps(
+                {
+{{#fields}}
+                    "{{field}}": {{#is_asserted}}{{asserts}}{{/is_asserted}}{{^is_asserted}}{{sample}}{{/is_asserted}},
+{{/fields}}
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+
+        with urllib_request.urlopen({{write}}, timeout=30) as answer:
+            {{write}}_status = answer.status
+            {{identity}} = json.loads(answer.read())["{{identity}}"]
+{{#calling_run}}
+        with urllib_request.urlopen(f"{ts.served('{{host_env}}')}/{{collection}}/{{{identity}}}", timeout=30) as answer:
+            {{read}}_status = answer.status
+            {{read}} = json.loads(answer.read())
+{{/calling_run}}
+{{#calling_start}}
+        deadline = time.monotonic() + 30
+        {{read}}_status = 0
+        {{read}}: dict[str, object] = {}
+        while {{read}}_status != 200 and time.monotonic() < deadline:
+            try:
+                with urllib_request.urlopen(f"{ts.served('{{host_env}}')}/{{collection}}/{{{identity}}}", timeout=30) as answer:
+                    {{read}}_status = answer.status
+                    {{read}} = json.loads(answer.read())
+            except urllib_error.HTTPError as error:
+                {{read}}_status = error.code
+                error.close()
+                time.sleep(0.2)
+{{/calling_start}}
+
+        assert ({{write}}_status, {{read}}_status) == (201, 200)
+        assert {{read}}["{{asserts}}"] == {{asserts}}

@@ -1,0 +1,21 @@
+from __future__ import annotations
+
+import tessercheck.client as client
+
+
+class TestRulebookNotRendered:
+
+    def test_a_rulebook_that_was_not_rendered_carries_its_code_and_message(self) -> None:
+        rulebook_not_rendered = client.RulebookNotRendered(
+            "rulebook_unreadable", "TS_NAME_BY_BLOCK not found in checks.py"
+        )
+        assert rulebook_not_rendered.code == "rulebook_unreadable"
+        assert rulebook_not_rendered.message == "TS_NAME_BY_BLOCK not found in checks.py"
+        assert str(rulebook_not_rendered) == "TS_NAME_BY_BLOCK not found in checks.py"
+
+
+class TestErrors:
+
+    def test_the_declared_set_names_every_error_the_client_raises(self) -> None:
+        raised = {name for name, value in vars(client).items() if isinstance(value, type) and issubclass(value, Exception)}
+        assert {error.__name__ for error in client.ERRORS} == raised

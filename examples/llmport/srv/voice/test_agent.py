@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+import tesser.testing as ts
+import livekit.agents as livekit_agents
+
+import protocol
+import srv.voice as voice
+
+
+@ts.helper
+def tool_turn(reply: str = "spoken", tools: tuple[protocol.Tool, ...] = ()) -> protocol.ToolTurn:
+    return protocol.ToolTurn(reply=reply, tools=tools)
+
+
+@ts.fake
+class FakeToolSurface(protocol.ToolSurface):
+
+    def __init__(self, opening: protocol.ToolTurn, standing: protocol.ToolTurn) -> None:
+        self._opening = opening
+        self._standing = standing
+        self.begins = 0
+        self.statuses = 0
+
+    def begin(self) -> protocol.ToolTurn:
+        self.begins += 1
+        return self._opening
+
+    def status(self) -> protocol.ToolTurn:
+        self.statuses += 1
+        return self._standing
+
+
+@ts.fake
+class FakeUnreachableToolSurface(protocol.ToolSurface):
+
+    def begin(self) -> protocol.ToolTurn:
+        raise RuntimeError("the context is unreachable")
+
+    def status(self) -> protocol.ToolTurn:
+        raise RuntimeError("the context is unreachable")
+
+
+@ts.fake
+class FakeEndpoint(protocol.ToolEndpoint):
+
+    def __init__(self, tool_turn: protocol.ToolTurn) -> None:
+        self._tool_turn = tool_turn
+        self.calls: list[str] = []
+
+    def __call__(self, tool_call: protocol.ToolCall, /) -> protocol.ToolTurn:
+        self.calls.append(tool_call.text("name"))
+        return self._tool_turn
+
+
+@ts.fake
+class FakeRefusingEndpoint(protocol.ToolEndpoint):
+
+    def __call__(self, tool_call: protocol.ToolCall, /) -> protocol.ToolTurn:
+        raise protocol.BadToolCall("name must be a string")
+
+
+@ts.fake
+class FakeBrokenEndpoint(protocol.ToolEndpoint):
+
+    def __call__(self, tool_call: protocol.ToolCall, /) -> protocol.ToolTurn:
+        raise RuntimeError("the context is unreachable")
+
+
+@ts.fake
+class FakeToolHalt(protocol.ToolHalt):
+
+    def __init__(self) -> None:
+        self.halts: list[str] = []
+
+    async def __call__(self) -> None:
+        self.halts.append("halt")
+
+
+class TestToolAgent:
+
+    def test_the_agent_opens_with_the_instructions_to_book_an_appointment(self) -> None:
+        tool_agent = voice.ToolAgent(FakeToolSurface(tool_turn(), tool_turn()), (), FakeToolHalt())
+
+        assert "book an appointment" in tool_agent.instructions
+
+    def test_the_agent_never_lets_the_model_invent_slots(self) -> None:
+        tool_agent = voice.ToolAgent(FakeToolSurface(tool_turn(), tool_turn()), (), FakeToolHalt())
+
+        assert "never invent slots" in tool_agent.instructions
+
+    def test_building_the_agent_does_not_begin_the_booking(self) -> None:
+        fake_tool_surface = FakeToolSurface(tool_turn(), tool_turn())
+
+        voice.ToolAgent(fake_tool_surface, (), FakeToolHalt())
+
+        assert fake_tool_surface.begins == 0
+
+    def test_opening_the_session_mounts_the_tools_the_surface_handed_back(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        fake_tool_surface = FakeToolSurface(
+            tool_turn(tools=(protocol.Tool(name="provide_name", description="", parameters={}),)),
+            tool_turn(),
+        )
+        tool_agent = voice.ToolAgent(fake_tool_surface, (), fake_tool_halt)
+
+        asyncio.run(tool_agent.on_enter())
+
+        assert [mounted_tool.info.name for mounted_tool in tool_agent.tools] == ["provide_name"]
+        assert fake_tool_surface.begins == 1
+        assert fake_tool_halt.halts == []
+
+    def test_a_tool_call_reaches_the_route_of_that_name_and_rebinds_to_its_turn(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        fake_tool_surface = FakeToolSurface(
+            tool_turn(tools=(protocol.Tool(name="provide_name", description="", parameters={}),)),
+            tool_turn(),
+        )
+        fake_endpoint = FakeEndpoint(
+            tool_turn(
+                reply="recorded",
+                tools=(protocol.Tool(name="choose_slot", description="", parameters={}),),
+            )
+        )
+        tool_agent = voice.ToolAgent(
+            fake_tool_surface,
+            (protocol.Route(name="provide_name", endpoint=fake_endpoint),),
+            fake_tool_halt,
+        )
+
+        with asyncio.Runner() as runner:
+            runner.run(tool_agent.on_enter())
+            spoken = runner.run(tool_agent.tools[0]({"name": "Ada"}))
+
+        assert spoken == "recorded"
+        assert fake_endpoint.calls == ["Ada"]
+        assert [mounted_tool.info.name for mounted_tool in tool_agent.tools] == ["choose_slot"]
+        assert fake_tool_halt.halts == []
+
+    def test_a_tool_the_routes_do_not_name_is_a_tool_error_and_never_halts(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        fake_tool_surface = FakeToolSurface(
+            tool_turn(tools=(protocol.Tool(name="provide_name", description="", parameters={}),)),
+            tool_turn(),
+        )
+        tool_agent = voice.ToolAgent(fake_tool_surface, (), fake_tool_halt)
+
+        with asyncio.Runner() as runner:
+            with pytest.raises(livekit_agents.ToolError, match="unknown tool 'provide_name'"):
+                runner.run(tool_agent.on_enter())
+                runner.run(tool_agent.tools[0]({"name": "Ada"}))
+
+        assert fake_tool_halt.halts == []
+
+    def test_a_call_the_model_can_correct_rebinds_from_the_surface_and_never_halts(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        fake_tool_surface = FakeToolSurface(
+            tool_turn(tools=(protocol.Tool(name="provide_name", description="", parameters={}),)),
+            tool_turn(tools=(protocol.Tool(name="choose_slot", description="", parameters={}),)),
+        )
+        tool_agent = voice.ToolAgent(
+            fake_tool_surface,
+            (protocol.Route(name="provide_name", endpoint=FakeRefusingEndpoint()),),
+            fake_tool_halt,
+        )
+
+        with asyncio.Runner() as runner:
+            with pytest.raises(livekit_agents.ToolError, match="name must be a string"):
+                runner.run(tool_agent.on_enter())
+                runner.run(tool_agent.tools[0]({"name": "Ada"}))
+
+        assert fake_tool_surface.statuses == 1
+        assert [mounted_tool.info.name for mounted_tool in tool_agent.tools] == ["choose_slot"]
+        assert fake_tool_halt.halts == []
+
+    def test_a_failure_the_model_cannot_correct_halts_the_session_and_propagates(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        fake_tool_surface = FakeToolSurface(
+            tool_turn(tools=(protocol.Tool(name="provide_name", description="", parameters={}),)),
+            tool_turn(),
+        )
+        tool_agent = voice.ToolAgent(
+            fake_tool_surface,
+            (protocol.Route(name="provide_name", endpoint=FakeBrokenEndpoint()),),
+            fake_tool_halt,
+        )
+
+        with asyncio.Runner() as runner:
+            with pytest.raises(RuntimeError, match="the context is unreachable"):
+                runner.run(tool_agent.on_enter())
+                runner.run(tool_agent.tools[0]({"name": "Ada"}))
+
+        assert fake_tool_halt.halts == ["halt"]
+        assert fake_tool_surface.statuses == 0
+
+    def test_a_surface_that_cannot_open_halts_the_session_and_propagates(self) -> None:
+        fake_tool_halt = FakeToolHalt()
+
+        tool_agent = voice.ToolAgent(FakeUnreachableToolSurface(), (), fake_tool_halt)
+
+        with pytest.raises(RuntimeError, match="the context is unreachable"):
+            asyncio.run(tool_agent.on_enter())
+
+        assert fake_tool_halt.halts == ["halt"]
+        assert tool_agent.tools == []

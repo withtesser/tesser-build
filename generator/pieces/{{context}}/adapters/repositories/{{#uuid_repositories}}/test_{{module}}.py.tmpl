@@ -1,0 +1,28 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import uuid
+
+import {{context}}.adapters.repositories as repositories
+import {{context}}.application.ports as ports
+
+
+class Test{{Repository}}:
+
+    async def test_the_same_seed_issues_the_same_{{issued}}(self) -> None:
+        {{repository}} = repositories.{{Repository}}(7)
+        same_seed = repositories.{{Repository}}(7)
+
+        first = await {{repository}}.{{issue}}(ports.{{Issue}}Request())
+        second = await same_seed.{{issue}}(ports.{{Issue}}Request())
+
+        assert first.{{issued}} == second.{{issued}}
+
+    async def test_each_{{issued}}_issued_is_a_different_version_4_uuid(self) -> None:
+        {{repository}} = repositories.{{Repository}}(7)
+
+        first = await {{repository}}.{{issue}}(ports.{{Issue}}Request())
+        second = await {{repository}}.{{issue}}(ports.{{Issue}}Request())
+
+        assert first.{{issued}} != second.{{issued}}
+        assert uuid.UUID(first.{{issued}}).version == 4

@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#
+# Prepare one bare-agent run of the A/B experiment: an empty git repository
+# outside the tesser-build tree, a fresh Restate server, and the filled prose
+# prompt.
+#
+#   scripts/baseline/ab/prepare-bare <run-name> <slot>
+#
+# The work directory is $AB_WORK_ROOT/<run-name>/work (default /private/tmp/claude-501/ab-runs); the prompt lands in
+# .baseline-runs/<run-name>/prompt.md. The slot (0-9) gives the run its own
+# Restate container (ingress 38080+100*slot, admin 39070+100*slot) and host
+# port 9300+10*slot, the same as scripts/baseline/prepare.
+#
+set -euo pipefail
+[ $# -eq 2 ] || { echo "usage: scripts/baseline/ab/prepare-bare <run-name> <slot>" >&2; exit 2; }
+name=$1
+slot=$2
+case "$slot" in [0-9]) ;; *) echo "baseline: slot is 0-9" >&2; exit 2 ;; esac
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+out="$MAIN/.baseline-runs/$name"
+# Outside the tesser-build tree, so no CLAUDE.md of this repo is an ancestor of the
+# bare agent's working directory.
+work="${AB_WORK_ROOT:-/private/tmp/claude-501/ab-runs}/$name/work"
+[ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
+
+ingress_port=$((38080 + 100 * slot))
+admin_port=$((39070 + 100 * slot))
+host_port=$((9300 + 10 * slot))
+container="tesser-story-drafting-restate-$slot"
+docker rm -f "$container" >/dev/null 2>&1 || true
+docker run -d --name "$container" -p "$ingress_port:8080" -p "$admin_port:9070" \
+  --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
+for _ in $(seq 1 50); do
+  if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
+  sleep 0.2
+done
+
+mkdir -p "$out" "$work"
+git -C "$work" init -q
+cat >"$out/run.json" <<JSON
+{"phase": "bare", "name": "$name", "slot": $slot, "worktree": "$work", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+JSON
+
+python3 - "$HERE/prompts/bare.md" "$out/prompt.md" "$work" "$host_port" "http://localhost:$ingress_port" "http://localhost:$admin_port" <<'PY'
+import sys
+text = open(sys.argv[1]).read()
+for token, value in zip(("{workdir}", "{port}", "{ingress}", "{admin}"), sys.argv[3:7]):
+    text = text.replace(token, value)
+open(sys.argv[2], "w").write(text)
+PY
+echo "$out/prompt.md"

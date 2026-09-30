@@ -1,0 +1,83 @@
+import json
+import pathlib
+
+import tessercheck.adapters.repositories as repositories
+import tessercheck.application.ports as ports
+import tessercheck.domain as domain
+import tessercheck.tests.conftest as conftest
+
+
+def test_every_place_is_earned_by_a_checked_tree_or_is_a_finding() -> None:
+    finding_rows = (
+        ("homeless", False, "root"),
+        ("shop.stray", False, "context-stray"),
+        ("shop.tests.util", False, "context-tests-stray"),
+        ("shop.application.ports.test_x", False, "ports-stray"),
+        ("shop.application.ports", False, "ports-file"),
+        ("shop.application.client.test_x", False, "app-client-stray"),
+        ("shop.application.client", False, "app-client-file"),
+        ("shop.application.orchestrators", False, "orchestrators-file"),
+        ("shop.application.relays", False, "relays-file"),
+        ("shop.application.snapshots", False, "snapshots-file"),
+        ("shop.domain", False, "role-file"),
+        ("shop.domain.kernel", False, "context-kernel-file"),
+        ("kernel", False, "kernel-file"),
+    )
+    contexts = frozenset({"shop"})
+    for name, is_package, expected in finding_rows:
+        got = str(domain.Placement(domain.PlacementSpec(name, is_package, tuple(sorted(contexts)))))
+        assert got == expected, (
+            f"Placement({name!r}) = {got!r}, expected the finding place {expected!r}"
+        )
+    finding_places = frozenset(expected for _, _, expected in finding_rows)
+    repo = pathlib.Path(__file__).resolve().parents[3]
+    manifest = json.loads((repo / "manifest.json").read_text(encoding="utf-8"))
+    filesystem_source_reader = repositories.FilesystemSourceReader()
+    exercised: set[str] = set()
+    checked_trees = 0
+    exporting_trees = 0
+    for key, kind in sorted(manifest.items()):
+        if kind != "app" or not (repo / key / ".tesser-root").is_file():
+            continue
+        checked_trees += 1
+        read_sources_response = filesystem_source_reader.read_sources(ports.ReadSourcesRequest(tree=str(repo / key)))
+        names = [
+            (s.name, s.form is ports.ModuleForm.PACKAGE) for s in read_sources_response.sources
+        ]
+        export = read_sources_response.exports[0] if len(read_sources_response.exports) == 1 else None
+        if export is not None:
+            exporting_trees += 1
+        tree_contexts = frozenset(
+            name.split(".")[0]
+            for name, _ in names
+            if len(name.split(".")) >= 2
+            and name.split(".")[1] in domain.ROLES
+            and name.split(".")[0] != domain.KERNEL_PACKAGE
+            and name.split(".")[0] != export
+        )
+        for name, is_package in names:
+            exercised.add(
+                str(domain.Placement(domain.PlacementSpec(name, is_package, tuple(sorted(tree_contexts)), export)))
+            )
+    assert checked_trees >= 2, (
+        f"only {checked_trees} checked trees found from {repo / 'manifest.json'}; "
+        "this test must run from the tesser-build repo checkout"
+    )
+    assert exporting_trees >= 1, (
+        "no checked tree declares an export; the export branch of Placement is "
+        "reachable only from such a tree, so without one it is unearned"
+    )
+    tokens = conftest.returned_tokens(conftest.function_tree(domain.Placement.__init__))
+    assert tokens, "no placement tokens extracted from Placement.__init__; the totality below would pass on an empty set"
+    unearned = tokens - exercised - finding_places
+    assert unearned == frozenset(), (
+        f"Placement can produce {sorted(unearned)}, but no checked tree contains such "
+        "a module and it is not a finding place; a classification exists only if a "
+        "real tree earns it or a violation names it — an allowance the checker "
+        "grants only itself is how context-main lived unnoticed for six releases"
+    )
+    assert not (finding_places & exercised), (
+        f"a checked tree exercises the finding places "
+        f"{sorted(finding_places & exercised)}; a tree passing the zero-findings "
+        "gate should not contain violation-shaped modules"
+    )
