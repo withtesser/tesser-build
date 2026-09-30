@@ -24,8 +24,8 @@ class TestConfig:
 
 class TestAlpha:
 
-    async def test_the_wired_client_adds_a_widget(self, postgres_dsn: str) -> None:
-        alpha = component.Alpha(component.Config(component.Spec(storage=postgres_dsn, engine_url="http://localhost:8080")), FakeBetaCheck())
+    async def test_the_wired_client_adds_a_widget(self, storage_url: str) -> None:
+        alpha = component.Alpha(component.Config(component.Spec(storage=storage_url, engine_url="http://localhost:8080")), FakeBetaCheck())
         add_part_response = await alpha.client.add_part(client.AddPartRequest(name="a", part="p"))
         assert add_part_response.name == "a"
 

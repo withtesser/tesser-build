@@ -42,8 +42,8 @@ class TestEnvConfigRepository:
 
 class TestApp:
 
-    async def test_the_app_wires_alpha_through_beta(self, postgres_dsn: str) -> None:
-        spec = app.Spec(alpha_component.Config(alpha_component.Spec(postgres_dsn, "http://localhost:8080")), beta_component.Config(beta_component.Spec("a")))
+    async def test_the_app_wires_alpha_through_beta(self, storage_url: str) -> None:
+        spec = app.Spec(alpha_component.Config(alpha_component.Spec(storage_url, "http://localhost:8080")), beta_component.Config(beta_component.Spec("a")))
         minimal_app = app.MinimalApp(app.AppConfig(spec))
         add_part_response = await minimal_app.alpha.client.add_part(alpha_client.AddPartRequest(name="a", part="p"))
         assert add_part_response.name == "a"
@@ -51,8 +51,8 @@ class TestApp:
 
 class TestAppLoader:
 
-    async def test_the_loader_builds_an_app_from_its_repository(self, postgres_dsn: str) -> None:
-        app_loader = app.AppLoader(FakeConfigRepository(postgres_dsn))
+    async def test_the_loader_builds_an_app_from_its_repository(self, storage_url: str) -> None:
+        app_loader = app.AppLoader(FakeConfigRepository(storage_url))
         minimal_app = app_loader.load()
         add_part_response = await minimal_app.alpha.client.add_part(alpha_client.AddPartRequest(name="a", part="p"))
         assert add_part_response.name == "a"

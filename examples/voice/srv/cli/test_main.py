@@ -8,7 +8,7 @@ import sys
 class TestCliHost:
 
     def test_get_call_for_a_call_that_was_never_placed_exits_one_with_the_contexts_wording(
-        self, postgres_dsn: str, engine_url: str
+        self, storage_url: str, engine_url: str
     ) -> None:
         env = {
             **os.environ,
@@ -17,7 +17,7 @@ class TestCliHost:
             "LIVEKIT_API_SECRET": "unused",
             "LIVEKIT_AGENT_NAME": "caller",
             "PYTHONPATH": os.pathsep.join(sys.path),
-            "CALLS_STORAGE": postgres_dsn,
+            "CALLS_STORAGE": storage_url,
             "RESTATE_URL": engine_url,
         }
 
@@ -30,7 +30,7 @@ class TestCliHost:
         assert completed.stdout == "no call 'cli-never-placed'\n"
 
     def test_an_unknown_command_or_a_missing_argument_exits_two_with_the_usage(
-        self, postgres_dsn: str, engine_url: str
+        self, storage_url: str, engine_url: str
     ) -> None:
         env = {
             **os.environ,
@@ -39,7 +39,7 @@ class TestCliHost:
             "LIVEKIT_API_SECRET": "unused",
             "LIVEKIT_AGENT_NAME": "caller",
             "PYTHONPATH": os.pathsep.join(sys.path),
-            "CALLS_STORAGE": postgres_dsn,
+            "CALLS_STORAGE": storage_url,
             "RESTATE_URL": engine_url,
         }
 

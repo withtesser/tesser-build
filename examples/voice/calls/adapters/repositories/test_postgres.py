@@ -10,8 +10,8 @@ import pgdatabase.database as pgdatabase_database
 
 class TestPostgresCallStore:
 
-    async def test_a_saved_call_is_loaded_in_a_later_transaction(self, postgres_dsn: str) -> None:
-        dsn = postgres_dsn
+    async def test_a_saved_call_is_loaded_in_a_later_transaction(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS calls")
         await connection.close()
@@ -27,8 +27,8 @@ class TestPostgresCallStore:
 
         assert load_call_response.calls == (ports.Call(call_id="c1", person_name="Grace"),)
 
-    async def test_a_call_is_saved_into_a_table_left_by_an_earlier_schema(self, postgres_dsn: str) -> None:
-        dsn = postgres_dsn
+    async def test_a_call_is_saved_into_a_table_left_by_an_earlier_schema(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS calls")
         await connection.execute(
@@ -47,8 +47,8 @@ class TestPostgresCallStore:
 
         assert load_call_response.calls == (ports.Call(call_id="c1", person_name="Grace"),)
 
-    async def test_a_call_that_was_never_saved_is_not_found(self, postgres_dsn: str) -> None:
-        dsn = postgres_dsn
+    async def test_a_call_that_was_never_saved_is_not_found(self, storage_url: str) -> None:
+        dsn = storage_url
         database = pgdatabase_database.Database(pgdatabase_database.DatabaseRequest(dsn))
         await database.open()
         postgres_call_store = repositories.PostgresCallStore(database)
@@ -59,8 +59,8 @@ class TestPostgresCallStore:
 
         assert load_call_response.outcome is ports.LoadCallOutcome.NOT_FOUND
 
-    async def test_saving_a_call_a_second_time_is_a_retry_not_a_conflict(self, postgres_dsn: str) -> None:
-        dsn = postgres_dsn
+    async def test_saving_a_call_a_second_time_is_a_retry_not_a_conflict(self, storage_url: str) -> None:
+        dsn = storage_url
         connection = await asyncpg.connect(dsn)
         await connection.execute("DROP TABLE IF EXISTS calls")
         await connection.close()
@@ -77,8 +77,8 @@ class TestPostgresCallStore:
 
         assert [call.person_name for call in load_call_response.calls] == ["Grace"]
 
-    async def test_a_call_id_is_issued_for_each_new_call(self, postgres_dsn: str) -> None:
-        dsn = postgres_dsn
+    async def test_a_call_id_is_issued_for_each_new_call(self, storage_url: str) -> None:
+        dsn = storage_url
         database = pgdatabase_database.Database(pgdatabase_database.DatabaseRequest(dsn))
         await database.open()
         postgres_call_store = repositories.PostgresCallStore(database)
