@@ -133,8 +133,11 @@ listen_port_variable = "LIBRARY_PORT"
     target: str = "absent",
     existing: tuple[tuple[str, str], ...] = (),
     printed: tuple[str, ...] = (),
+    composition: str = "compositions/lending",
 ) -> domain.RenderedTreeSpec:
-    return domain.RenderedTreeSpec(documents=documents, pieces=pieces, target=target, existing=existing, printed=printed)
+    return domain.RenderedTreeSpec(
+        documents=documents, pieces=pieces, target=target, existing=existing, printed=printed, composition=composition
+    )
 
 
 class TestRenderedTree:
@@ -166,7 +169,14 @@ class TestRenderedTree:
             "lending/ports/loan_identity_repository.txt": "# pragma: tesser-generated; x\nLoanIdentityRepository\n",
             "lending/domain/loan.txt": "# pragma: tesser-agent-owned; x\nLoan by loan_id\n",
             "routes.txt": "POST /loans 201\nGET /loans/{loan_id} 200\n",
+            ".tesser-rendered": "compositions/lending\n",
         }
+
+    def test_a_render_names_its_composition_in_tesser_rendered_so_the_tree_is_checked_against_it(self) -> None:
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(composition="generator/compositions/lending"))
+
+        assert [str(rendered_file.content()) for rendered_file in rendered_tree.files()
+                if str(rendered_file.path()) == ".tesser-rendered"] == ["generator/compositions/lending\n"]
 
     def test_an_agent_owned_file_already_in_the_output_is_kept_as_it_is(self) -> None:
         rendered_tree = domain.RenderedTree(
@@ -218,6 +228,7 @@ class TestRenderedTree:
                     ("lending/ports/loan_identity_repository.txt", "LoanIdentityRepository\n"),
                     ("lending/domain/loan.txt", "the agent's own loan\n"),
                     ("routes.txt", "POST /loans 201\nGET /loans/{loan_id} 200\n"),
+                    (".tesser-rendered", "compositions/lending\n"),
                 ),
             )
         )

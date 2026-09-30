@@ -39,9 +39,12 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check <composition-dir> <t
 renders in memory, writes nothing, and exits 1 naming each generator-owned
 file that differs from what the composition renders, is missing, or has lost
 its generated mark (agent-owned files are not checked); otherwise it exits 0.
-A tree in this repo that the renderer wrote carries a `.tesser-rendered` file
-whose first line is its composition directory, relative to the repo root; its
-`scripts/verify` arm runs the check first.
+Every render writes `.tesser-rendered` (generator-owned, and like
+`.tesser-root` it carries no marker): its one line is the composition
+directory, relative to the root of the git repo the output directory is in
+when the composition is inside that repo, else absolute. A tree's
+`scripts/verify` arm runs the check first when the file is there, so a
+rendered tree is checked against its composition by default.
 
 **Names.** Every name that reaches a path or an identifier is checked: the
 context, app, fields, action keys, and enum members and outcomes are
@@ -254,9 +257,11 @@ serves = ["s-1", "s-1-a-1"]           # exactly one of these must be in [interfa
 Each operation is one route, and it is the route of the level-2 story it
 serves: of the stories in its `serves`, exactly one is a level-2 story with a
 `route`, and that story is in `[interfaces.http] serves`. Its request fields
-are read from the path (a `{field}` in it) or else from the JSON body (as
-text, or an integer for `int`); its response fields are answered as JSON. Two operations may call the same port
-operation; each gets its own mapper.
+are read from the path (a `{field}` in it, as text, or an integer for `int`;
+a path carries no other type) or else from the JSON body (as text, or an
+integer for `int`); its response fields are answered as JSON. No two
+operations have the same method and path, since HTTP would reach only one.
+Two operations may call the same port operation; each gets its own mapper.
 
 **Steps**, in order:
 
@@ -313,7 +318,7 @@ port = "LoanRepository"               # required: the one port this class calls
 calls = "save_loan"                   # required: the one port operation it calls
 request = ["loan_id", "borrower", "title"]
 response = ["loan_id"]
-builds = "Loan"                       # optional: build the aggregate from the request
+builds = "Loan"                       # optional: build the aggregate (its [aggregate] name) from the request
 commands = ["record_stories"]         # optional, needs builds: give it this one command...
 calls_on = ["recorded"]               # ...required with commands: the outcomes that make the call
 ```
@@ -345,6 +350,10 @@ operations.load_loan = { request = ["loan_id"], response = ["loan"] }
 [ports.LoanIdentityRepository]
 operations.issue_loan_id = { request = [], response = ["loan_id"] }
 ```
+
+A port operation's name is declared by one port only: its
+`<Operation>Request` and `<Operation>Response` are exported from one `ports`
+package, so two ports declaring one name is a problem.
 
 A port whose operations name the aggregate is a **store**: it has exactly one
 save (request `[<aggregate>]`, response `[]`) and one load (request

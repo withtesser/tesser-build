@@ -20,6 +20,7 @@ TEMPLATE_SUFFIX: typing.Final[str] = ".tmpl"
 AGENT_MARKER: typing.Final[str] = "# pragma: tesser-agent-owned;"
 
 GENERATED_MARKER: typing.Final[str] = "# pragma: tesser-generated;"
+RENDERED_FROM: typing.Final[str] = ".tesser-rendered"
 
 SNAKE: typing.Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 
@@ -1109,6 +1110,10 @@ class Model(ts.Entity):
                 raise ValueError(f"[actions.{key}] is named for {str(Word(str(key)).pascal())!r}, which is not a code name in "
                                  f"language.toml; a class of actions is named for the domain term it acts on, never for its "
                                  f"port ({table.get('port', '')})")
+            for operation_name, operation in table.get("operations", {}).items():
+                if "builds" in operation and str(operation["builds"]) != self._Aggregate:
+                    raise ValueError(f"actions.{key}.operations.{operation_name} builds {str(operation['builds'])!r}, and the "
+                                     f"one aggregate it can build is {self._Aggregate!r}")
         self._messages: dict[tuple[str, str], Record] = {}
         self._port_of: dict[str, str] = {}
         self._port_ops: dict[str, list[str]] = {}
@@ -1141,6 +1146,9 @@ class Model(ts.Entity):
                 Operation = str(Word(operation_name).pascal())
                 declared.append(("ports", module, Operation + "Request", "Request", request, False, port_name, False))
                 declared.append(("ports", module, Operation + "Response", "Response", response, False, port_name, False))
+                if operation_name in self._port_of:
+                    raise ValueError(f"ports {self._port_of[operation_name]} and {port_name} both declare {operation_name}, and "
+                                     f"ports exports one {Operation}Request and one {Operation}Response, so one port declares it")
                 self._port_of[operation_name] = port_name
                 self._port_ops[port_name].append(operation_name)
         for step in [step for operation in composition.get("client", {}).get("operations", {}).values()
@@ -2238,6 +2246,9 @@ class Model(ts.Entity):
             if not isinstance(status_code, int) or isinstance(status_code, bool) or not 200 <= status_code < 300:
                 raise ValueError(f"{routed[0]} has no status, the 2xx its route answers with, like 201")
             method, path = route.group(1), route.group(2)
+            if f"{method} {path}" in answered_by:
+                raise ValueError(f"client operations {answered_by[f'{method} {path}']['operation']} and {operation_name} are both "
+                                 f"{method} {path}, and HTTP reaches only one of them")
             when = str(story.get("when", ""))
             then = str(story.get("then", ""))
             if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
@@ -2250,8 +2261,10 @@ class Model(ts.Entity):
             body: dict[str, object] = {}
             for target in request.targets():
                 field = str(target.field())
+                if field in path_fields and str(target.type_text()) not in ("str", "int"):
+                    raise ValueError(f"{path} names {{{field}}}, a {target.type_text()}, and a path carries only text or an integer")
                 if field in path_fields:
-                    inputs.append({"field": field, "reader": "path_param"})
+                    inputs.append({"field": field, "reader": "path_param" if str(target.type_text()) == "str" else "integer_path_param"})
                 elif str(target.kind()) == "scalar":
                     inputs.append({"field": field, "reader": "text" if str(target.type_text()) == "str" else "integer"})
                     body[field] = json.loads(str(self._samples.value(target)))
@@ -2260,11 +2273,11 @@ class Model(ts.Entity):
             for field in path_fields:
                 if field not in [str(t.field()) for t in request.targets()]:
                     raise ValueError(f"{path} names {{{field}}}, which {operation_name} does not take")
-            path_params = {field: json.loads(str(self._samples.value(t))) for t in request.targets()
+            path_params = {field: str(json.loads(str(self._samples.value(t)))) for t in request.targets()
                            for field in [str(t.field())] if field in path_fields}
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
             answered_by[str(story["route"])] = {
-                "method": method, "path": path, "path_fields": path_fields,
+                "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
                 "body": repr(json.dumps(body).encode()) if body else "None",
                 "responds": [str(t.field()) for t in response.targets()],
             }
@@ -2279,7 +2292,11 @@ class Model(ts.Entity):
                 "body_sample": repr(json.dumps(body).encode()) if body else 'b""',
             })
             steps = [str(step) for step in operation.get("steps", [])]
-            probe_path = PATH_FIELD.sub("never-issued", path)
+            integers = {str(t.field()) for t in request.targets() if str(t.type_text()) == "int"}
+            probe_path = "/".join(
+                segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
+                for segment in path.split("/")
+            )
             if body:
                 probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
                 answers.append("400")
@@ -2408,12 +2425,14 @@ class RenderedTreeSpec(ts.Spec):
         target: str,
         existing: tuple[tuple[str, str], ...],
         printed: tuple[str, ...],
+        composition: str,
     ) -> None:
         self.documents = documents
         self.pieces = pieces
         self.target = target
         self.existing = existing
         self.printed = printed
+        self.composition = composition
 
 
 class RenderedTree(ts.AggregateRoot):
@@ -2454,6 +2473,7 @@ class RenderedTree(ts.AggregateRoot):
                             path=str(template.unguarded().render(placed)),
                             content=str(Template(text).render(placed)),
                         )))
+                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\n")))
             except KeyError as missing:
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:

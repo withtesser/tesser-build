@@ -21,6 +21,7 @@ class FakeCompositionReader(ports.CompositionReader):
             documents=self._documents,
             pieces=self._pieces,
             target=ports.TargetRecord(state=ports.TargetState.ABSENT, files=()),
+            composition="compositions/lending",
         )
 
 

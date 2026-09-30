@@ -51,3 +51,26 @@ class TestFilesystemCompositionReader:
         )
 
         assert read_composition_response.target.state == ports.TargetState.NOT_DIRECTORY
+
+    def test_a_composition_in_the_output_directorys_repo_is_named_from_the_repo_root(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "repo" / ".git").mkdir(parents=True)
+        (tmp_path / "repo" / "generator" / "compositions" / "lending").mkdir(parents=True)
+
+        read_composition_response = repositories.FilesystemCompositionReader(str(tmp_path / "pieces")).read_composition(
+            ports.ReadCompositionRequest(
+                composition_dir=str(tmp_path / "repo" / "generator" / "compositions" / "lending"),
+                out_dir=str(tmp_path / "repo" / "lending"),
+            )
+        )
+
+        assert read_composition_response.composition == "generator/compositions/lending"
+
+    def test_a_composition_outside_the_output_directorys_repo_is_named_by_its_absolute_path(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "repo" / ".git").mkdir(parents=True)
+        (tmp_path / "compositions" / "lending").mkdir(parents=True)
+
+        read_composition_response = repositories.FilesystemCompositionReader(str(tmp_path / "pieces")).read_composition(
+            ports.ReadCompositionRequest(composition_dir=str(tmp_path / "compositions" / "lending"), out_dir=str(tmp_path / "repo" / "lending"))
+        )
+
+        assert read_composition_response.composition == (tmp_path / "compositions" / "lending").resolve().as_posix()

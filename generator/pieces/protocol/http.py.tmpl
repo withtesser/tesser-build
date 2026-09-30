@@ -49,6 +49,14 @@ class HttpRequest(ts.Request):
             raise BadRequest(f"missing path parameter: {name}")
         return value
 
+    def integer_path_param(self, name: str) -> int:
+        value = self.path_params.get(name)
+        if not value:
+            raise BadRequest(f"missing path parameter: {name}")
+        if not value.lstrip("-").isdecimal():
+            raise BadRequest(f"path parameter {name} must be an integer")
+        return int(value)
+
 
 class HttpResponse(ts.Response):
 

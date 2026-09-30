@@ -55,6 +55,21 @@ class TestHttpRequest:
         with pytest.raises(protocol.BadRequest):
             protocol.HttpRequest(path_params={}, body=b"").path_param("id")
 
+    def test_an_integer_path_parameter_is_read_as_an_integer(self) -> None:
+        http_request = protocol.HttpRequest(path_params={"copies": "12"}, body=b"")
+
+        assert http_request.integer_path_param("copies") == 12
+
+    def test_an_integer_path_parameter_that_is_not_digits_is_a_bad_request(self) -> None:
+        with pytest.raises(protocol.BadRequest) as raised:
+            protocol.HttpRequest(path_params={"copies": "twelve"}, body=b"").integer_path_param("copies")
+
+        assert str(raised.value) == "path parameter copies must be an integer"
+
+    def test_a_missing_integer_path_parameter_is_a_bad_request(self) -> None:
+        with pytest.raises(protocol.BadRequest):
+            protocol.HttpRequest(path_params={}, body=b"").integer_path_param("copies")
+
     def test_two_requests_with_the_same_fields_are_equal(self) -> None:
         assert protocol.HttpRequest(path_params={}, body=b"{}") == protocol.HttpRequest(path_params={}, body=b"{}")
         assert protocol.HttpRequest(path_params={}, body=b"{}") != protocol.HttpRequest(path_params={}, body=b"[]")

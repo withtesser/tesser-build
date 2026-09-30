@@ -35,6 +35,7 @@ class MapToRenderedTreeSpec(ts.Mapper, domain.RenderedTreeSpec):
                 for existing_file_record in read_composition_response.target.files
             ),
             printed=render_composition_request.printed,
+            composition=read_composition_response.composition,
         )
 
 
@@ -53,6 +54,7 @@ class MapToRenderedTreeSpecWhenChecked(ts.Mapper, domain.RenderedTreeSpec):
                 for existing_file_record in read_composition_response.target.files
             ),
             printed=(),
+            composition=read_composition_response.composition,
         )
 
 

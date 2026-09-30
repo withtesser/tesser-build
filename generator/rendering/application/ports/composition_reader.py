@@ -57,11 +57,12 @@ class ReadCompositionRequest(ts.Request):
 class ReadCompositionResponse(ts.Response):
 
     def __init__(
-        self, documents: tuple[DocumentRecord, ...], pieces: tuple[PieceRecord, ...], target: TargetRecord
+        self, documents: tuple[DocumentRecord, ...], pieces: tuple[PieceRecord, ...], target: TargetRecord, composition: str
     ) -> None:
         self.documents = documents
         self.pieces = pieces
         self.target = target
+        self.composition = composition
 
 
 class CompositionReader(ts.Port, typing.Protocol):
