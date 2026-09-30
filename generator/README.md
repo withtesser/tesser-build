@@ -157,3 +157,19 @@ host_url = "LIBRARY_HOST"
 
 Every spec in `specs/` is gated: `scripts/verify generator` generates each one
 and runs the generated tree's own gates.
+
+## Rendering a composition
+
+The second entry point renders a tree from a composition directory (the five
+spec formats of `compositions/<name>/`) instead of a fixed-shape spec:
+
+```sh
+cd generator
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
+```
+
+`compositions/README.md` is the reference: every key each format takes, what
+the renderer derives, what it renders, and which rendered files are the
+agent's. Every composition in `compositions/` is gated: `scripts/verify
+generator` renders each one and runs the rendered tree's tessercheck,
+`mypy --strict`, and every test tier but the root.

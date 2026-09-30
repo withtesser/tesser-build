@@ -404,8 +404,11 @@ run_specs_app() {
 # Restate endpoint, as run_durable_execution does). Everything machine-specific
 # comes from the environment, so baseline runs can go side by side: the
 # Restate server (RESTATE_INGRESS / RESTATE_ADMIN) and the first of ten ports
-# the arm may serve hosts on (STORY_DRAFTING_PORT). Locally, a Restate server
-# of its own on 38080/39070:
+# the arm may serve hosts on (STORY_DRAFTING_PORT). A tree the composition
+# renderer wrote carries .tesser-rendered, whose first line is its composition
+# directory (relative to the repo root); the arm then first checks the tree
+# against it (srv.cli.render --check), so a hand edit to a generated file fails
+# the gate. Locally, a Restate server of its own on 38080/39070:
 #
 #   docker run -d --name tesser-story-drafting-restate -p 38080:8080 -p 39070:9070 \
 #     --add-host=host.docker.internal:host-gateway restatedev/restate:1.7
@@ -414,6 +417,12 @@ run_story_drafting() {
   local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
   local admin="${RESTATE_ADMIN:-http://localhost:39070}"
   local port="${STORY_DRAFTING_PORT:-9300}"
+  if [ -f .tesser-rendered ]; then
+    local composition
+    composition=$(head -n 1 .tesser-rendered)
+    step "the tree matches $composition (srv.cli.render --check)"
+    (cd "$ROOT/generator" && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$ROOT/$composition" "$ROOT/story-drafting") || return 1
+  fi
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   local targets=()
@@ -429,7 +438,8 @@ run_story_drafting() {
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
   step "pytest every tier but the root (no host served; Restate at $ingress)"
   RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" STORY_DRAFTING_PORT="$port" \
-    STORY_DRAFTING_CALLBACK_HOST="$callback_host" STORY_WRITER=canned pytest -q --ignore=tests || return 1
+    STORY_DRAFTING_CALLBACK_HOST="$callback_host" RESTATE_CALLBACK_HOST="$callback_host" STORY_WRITER=canned \
+    pytest -q --ignore=tests || return 1
   step "serve the HTTP host and its Restate endpoint on :$port and register it at $admin"
   (exec env RESTATE_INGRESS="$ingress" STORY_WRITER=canned PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
@@ -557,13 +567,20 @@ run_layout() {
 # the root tier against it — an HTTP tree's root tier reaching the served host
 # at the address in its host_url variable. The local defaults are a `generator`
 # database and a Restate server of its own on 48080/49070, so a local run never
-# re-registers another tree's services.
+# re-registers another tree's services. Then every composition in
+# generator/compositions/ is rendered by the composition-driven renderer
+# (srv.cli.render) into a scratch directory and the rendered tree is gated:
+# tessercheck zero findings, mypy --strict, and pytest over every tier but the
+# root (a rendered tree has no root tier; its acceptance tests are written by
+# hand; each render is first checked against its composition with
+# srv.cli.render --check), against the same Restate server, reached through the variables its
+# implementations.toml names for the engine.
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
   tessercheck_tree "$PWD" || return 1
   step "mypy --strict"
-  MYPYPATH=.:../tesser-py mypy --strict app protocol srv tests trees conftest.py || return 1
+  MYPYPATH=.:../tesser-py mypy --strict app protocol rendering srv tests trees conftest.py || return 1
   step "pytest"
   pytest -q || return 1
   local scratch
@@ -572,7 +589,39 @@ run_generator() {
   for spec in specs/*.toml; do
     run_generated_tree "$spec" "$scratch/$(basename "$spec" .toml)" || return 1
   done
+  local composition
+  for composition in compositions/*/; do
+    run_rendered_tree "${composition%/}" "$scratch/rendered-$(basename "$composition")" || return 1
+  done
   rm -rf "$scratch"
+}
+
+run_rendered_tree() {
+  local composition=$1
+  local out=$2
+  local ingress="${RESTATE_INGRESS:-http://localhost:48080}"
+  local admin="${RESTATE_ADMIN:-http://localhost:49070}"
+  local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
+  local names ingress_env admin_env callback_env
+  names=$(python3 -c 'import sys, tomllib; e = tomllib.load(open(sys.argv[1], "rb"))["engine"]["restate"]; print(e["ingress_variable"], e["admin_variable"], e["callback_host_variable"])' "$composition/implementations.toml") || return 1
+  read -r ingress_env admin_env callback_env <<<"$names"
+  step "render $composition into $out"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.render "$composition" "$out" >/dev/null || return 1
+  step "$composition: the rendered tree matches its composition (srv.cli.render --check)"
+  PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check "$composition" "$out" || return 1
+  step "$composition: tessercheck (zero findings over the rendered tree)"
+  tessercheck_tree "$out" || return 1
+  local packages=()
+  local d
+  for d in "$out"/*/; do
+    if [ -f "$d/__init__.py" ]; then packages+=("$(basename "$d")"); fi
+  done
+  if [ -f "$out/conftest.py" ]; then packages+=(conftest.py); fi
+  step "$composition: mypy --strict"
+  (cd "$out" && MYPYPATH=".:$ROOT/tesser-py" mypy --strict "${packages[@]}") || return 1
+  step "$composition: pytest every tier but the root, with no host served"
+  (cd "$out" && env "$ingress_env=$ingress" "$admin_env=$admin" "$callback_env=$callback_host" \
+    PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --ignore=tests)
 }
 
 run_generated_tree() {

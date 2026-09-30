@@ -1,0 +1,23 @@
+# Specs, in reading order: 1 language, 2 story, 3 composition, 4 implementations,
+# 5 generator. Each fact lives in the one spec whose question it answers; what a
+# convention derives (TB085 names, a class named for its aggregate) is in none.
+#
+# 5 GENERATOR — What does the generator need beyond the other four? Only what no
+# reviewer would care about. The generator is a function of composition.toml and
+# implementations.toml: it renders every piece by its kind (aggregate, entity,
+# value, enum, client operation, orchestrator operation, signal, actions, port,
+# adapter), with its sibling tests, wires them as the steps say, and builds each
+# environment's adapters and hosts as implementations.toml says. If composition
+# can say it, the generator renders it. Acceptance tests are red's, from the
+# level-2 stories.
+
+# Test data for the generated sibling tests.
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+role = ["a traveller", "a filer"]
+i_want = ["one itinerary we all agreed on", "my taxes filed on time"]
+so_that = ["I can book it", "I avoid the penalty"]
+story_texts = [
+  [{ given = "a trip with three friends", when = "I propose an itinerary", then = "each friend can agree to it" }],
+  [{ given = "my documents are gathered", when = "I file", then = "I get a confirmation before the deadline" }],
+]

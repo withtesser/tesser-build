@@ -1,2 +1,2 @@
 [tool.pytest.ini_options]
-testpaths = ["app", "protocol", "srv", "tests", "trees"]
+testpaths = ["app", "protocol", "rendering", "srv", "tests", "trees"]
