@@ -1,0 +1,49 @@
+# Specs, in reading order: 1 language, 2 story, 3 infra, 4 composition,
+# 5 implementations, 6 generator. Each fact lives in the one spec whose question
+# it answers; what a convention derives (TB085 names, a class named for its
+# aggregate) is in none.
+#
+# 3 INFRA — What does this app run on, and what must an operator provide? The
+# engineer's technology decisions, made up front: the runtime, the
+# durable-execution engine, the host, and each storage, with every environment
+# variable an operator sets. Written by the engineer, before any contract; not
+# written by red. The composition root (component/component.py), the app
+# (app/app.py), and the hosts (srv/) are the code that reads it.
+
+app = "story_drafting"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+# ---- engine -----------------------------------------------------------------
+
+[engine.restate]                       # implements composition's relays and signal: activities, workflows, dispatchers
+body = "supported"
+engine_path = "/restate"               # where the Restate endpoint is mounted
+ingress_variable = "RESTATE_INGRESS"     # the variables below, by the part each plays for the engine
+admin_variable = "RESTATE_ADMIN"
+callback_host_variable = "RESTATE_CALLBACK_HOST"
+
+# ---- hosts ------------------------------------------------------------------
+
+[hosts.http]
+serves = "interfaces.http"             # composition.toml
+mounts_engine_endpoint = true          # the Restate endpoint is served at engine_path in the same process
+listen_port_variable = "STORY_DRAFTING_PORT"
+
+# ---- storage ----------------------------------------------------------------
+# Where stored things live. A store port in implementations.toml is implemented
+# by a key that names one of these.
+
+[storage.sqlite]
+location_variable = "JTBD_DB_PATH"     # the variable that names its location (a SQLite file path)
+
+# ---- environment variables --------------------------------------------------
+
+[variables]
+RESTATE_INGRESS = "the Restate ingress URL the client starts workflows through"
+RESTATE_ADMIN = "the Restate admin URL the tests register a served endpoint with"
+RESTATE_CALLBACK_HOST = "the host name Restate reaches a served endpoint at, read by the tests that register one"
+STORY_DRAFTING_PORT = "the port the HTTP host listens on"
+JTBD_DB_PATH = "the path of the SQLite database file"

@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Measure one bare-agent run of the A/B experiment.
+
+    scripts/baseline/ab/measure-bare <run-name> <subagent-transcript.jsonl>
+
+Copies the transcript into .baseline-runs/<run-name>/, reads the agent's time,
+calls and tokens from it (the same reader the tesser arms use), counts the
+project it left (tracked and untracked files, Python lines), and runs the
+shared check (check-tree B). Writes .baseline-runs/<run-name>/ab-metrics.json.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+import metrics  # noqa: E402
+
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        sys.exit("usage: scripts/baseline/ab/measure-bare <run-name> <transcript.jsonl>")
+    name, transcript = sys.argv[1], pathlib.Path(sys.argv[2])
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True, check=True).stdout.strip()
+    out = pathlib.Path(common).parent / ".baseline-runs" / name
+    run = json.loads((out / "run.json").read_text())
+    shutil.copy(transcript, out / "transcript.jsonl")
+    meta_path = transcript.with_suffix(".meta.json")
+    if meta_path.is_file():
+        shutil.copy(meta_path, out / "transcript.meta.json")
+    rows = metrics.read_jsonl(out / "transcript.jsonl")
+    meta = json.loads(meta_path.read_text()) if meta_path.is_file() else {}
+
+    work = pathlib.Path(run["worktree"])
+    files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard"], cwd=work, capture_output=True, text=True).stdout.split()
+    files = [f for f in files if not f.startswith(".venv/") and "__pycache__" not in f]
+    py = [f for f in files if f.endswith(".py")]
+    lines = sum(len((work / f).read_text(errors="replace").splitlines()) for f in py)
+    commits = len(subprocess.run(["git", "rev-list", "--all"], cwd=work, capture_output=True, text=True).stdout.split())
+    result = subprocess.run([str(HERE / "check-tree"), "B", name], capture_output=True, text=True)
+    try:
+        check = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        check = {"passed": False, "unparsed": (result.stdout + result.stderr)[-500:]}
+
+    measured = {
+        "run": run,
+        "conditions": metrics.run_conditions(rows, meta),
+        "agent": metrics.transcript_metrics(rows),
+        "output": {"files": len(files), "python_files": len(py), "python_lines": lines, "commits": commits},
+        "check": check,
+    }
+    (out / "ab-metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
+    agent = measured["agent"]
+    print(f"bare: {agent['duration_s']}s, {agent['api_requests']} API requests, {agent['tool_calls_total']} tool calls, "
+          f"tokens {agent['tokens']}, models {agent['models']}, conditions {measured['conditions']['effort']}")
+    print(f"  time: {agent['time']}")
+    print(f"  output: {len(files)} files, {lines} Python lines, {commits} commits")
+    print(f"  check: passed={check.get('passed')} story_1={check.get('story_1', {}).get('passed')} "
+          f"story_2={check.get('story_2', {}).get('passed')} registration={check.get('restate_registration', {}).get('ok')} "
+          f"drafted in {check.get('story_2', {}).get('seconds_until_drafted')}s")
+
+
+if __name__ == "__main__":
+    main()

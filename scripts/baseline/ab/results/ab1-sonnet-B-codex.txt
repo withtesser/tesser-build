@@ -1,0 +1,36 @@
+I’ll read the requirements and implementation, then check failure cases and tests. I’ll stay within the permitted directories and stop once I have ten solid findings.
+The code delegates persistence and execution to Restate; there are no tests or deployment instructions in the directory. I’m checking the HTTP boundary and checkpoint behavior, especially delayed execution, upstream failures, and malformed input.
+I found ten issues and stopped. Checks ran against a temporary copy using mocked HTTP responses and a simulated workflow context. No tests are supplied; persistence and replay were not verified against a live Restate server. The happy path produces the required 201 response and drafted story states, and waits at the checkpoint.
+
+1. **Submission retries can orphan work and create duplicates.** [main.py:30](/private/tmp/claude-501/codex-review/review-1/app/main.py:30)  
+   If Restate accepts a submission but its acknowledgement times out, the caller gets 500 without the generated `jtbd_id`. Retrying generates another ID—even with the same `Idempotency-Key`, which is ignored. The original job becomes inaccessible to its submitter, undermining the requirement to return to it later.
+
+2. **A successfully submitted job can subsequently appear nonexistent.** [main.py:40](/private/tmp/claude-501/codex-review/review-1/app/main.py:40), [skill.py:48](/private/tmp/claude-501/codex-review/review-1/app/skill.py:48)  
+   Submission acknowledges enqueueing; the job’s readable state is created only when execution starts. If workers are unavailable or backlogged beyond the polling window, GET returns 404 for an ID already returned with 201. Confirmed with an upstream that continued returning null.
+
+3. **Unknown-ID reads amplify traffic and have no overall deadline.** [main.py:21](/private/tmp/claude-501/codex-review/review-1/app/main.py:21), [main.py:40](/private/tmp/claude-501/codex-review/review-1/app/main.py:40)  
+   One GET for a nonexistent ID creates 50 HTTP clients and makes 50 upstream requests. Confirmed that count. Each call separately permits a 30-second timeout, so slow null responses can keep one request active for roughly 25 minutes. Repeated arbitrary-ID requests can exhaust capacity.
+
+4. **Input size is unbounded before durable submission.** [skill.py:11](/private/tmp/claude-501/codex-review/review-1/app/skill.py:11), [skill.py:20](/private/tmp/claude-501/codex-review/review-1/app/skill.py:20)  
+   A two-million-character `role` received 201 and was forwarded intact. Story generation repeats that value six times, before accounting for workflow state and journal storage. Large submissions multiply memory, network, and storage consumption without application limits.
+
+5. **A redirect is reported as a successful submission.** [main.py:33](/private/tmp/claude-501/codex-review/review-1/app/main.py:33)  
+   An upstream 302 produced public HTTP 201 with a new ID. HTTPX does not follow redirects by default, and the code accepts every status below 400 without checking an acknowledgement. A redirecting ingress configuration therefore reports jobs that were never submitted.
+
+6. **Caller-controlled IDs alter the upstream URL structure.** [main.py:22](/private/tmp/claude-501/codex-review/review-1/app/main.py:22)  
+   `GET /jtbds/%2E%2E` constructed an upstream URL normalized to `/read`, outside the intended service/key path. Encoded `?` and `#` likewise moved the `/read` suffix into a query or fragment. IDs need validation or safe path-segment encoding; currently malformed reads reach unintended upstream paths.
+
+7. **Transport failures bypass the intended availability response.** [main.py:22](/private/tmp/claude-501/codex-review/review-1/app/main.py:22), [main.py:32](/private/tmp/claude-501/codex-review/review-1/app/main.py:32)  
+   Connection failures and timeouts raise before the status-code checks. Injected connection failures produced 500 on both routes, instead of the implemented 502 response. Backend outages consequently surface as unhandled application errors.
+
+8. **Generated stories do not consistently describe fulfillment of the job.** [skill.py:22](/private/tmp/claude-501/codex-review/review-1/app/skill.py:22)  
+   For “recover a deleted file,” the first story says the developer “does what it takes”; the second ends with being told what prevented recovery. The first supplies no concrete behavior, and the second never fulfills the job. These satisfy the JSON shape but fall short of the requirement’s definition of a story.
+
+9. **Empty jobs are accepted and drafted.** [skill.py:11](/private/tmp/claude-501/codex-review/review-1/app/skill.py:11)  
+   `{"role":"","i_want":"   ","so_that":"\\n"}` received 201. Required string fields enforce presence, but not meaningful content. The skill consequently records stories without an actor, need, or outcome.
+
+10. **The executable entry point crashes without undocumented configuration.** [main.py:50](/private/tmp/claude-501/codex-review/review-1/app/main.py:50)  
+    Running `python main.py` without `PORT` immediately raises `KeyError`. There is no default or startup documentation in the supplied directory, so the application cannot start through its own entry point in that environment.
+
+**Changeability verdict:** The code is small, but lifecycle rules are spread across dictionaries, `run()`, and `view()`. Adding acceptance would require stable story identifiers, a selection request model and HTTP route in `main.py`, and a skill handler that delivers the decision to the existing promise. In `skill.py`, the workflow should validate and apply that decision once, accepting named stories and rejecting the rest. `view()` must derive status from story states rather than list nonemptiness, and the requirements need a status for completed acceptance. Concurrent decisions, retries, and restart recovery would need integration tests.
+tokens used: 212032

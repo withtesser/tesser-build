@@ -1,0 +1,1 @@
+from ordering.adapters.repositories.memory_product_catalog_repository import MemoryProductCatalogRepository as MemoryProductCatalogRepository

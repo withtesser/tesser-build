@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#
+# Run the shared A/B check (check.py) on one run's output and keep the JSON.
+#
+#   scripts/baseline/ab/check-tree A <run-name>   # a tesser tree: <worktree>/story-drafting
+#   scripts/baseline/ab/check-tree B <run-name>   # a bare project: <worktree>/.venv/bin/python main.py
+#
+# The run's ports and Restate server come from .baseline-runs/<run-name>/run.json.
+# The result is written to .baseline-runs/<run-name>/ab-check.json and printed.
+#
+set -uo pipefail
+[ $# -eq 2 ] || { echo "usage: scripts/baseline/ab/check-tree A|B <run-name>" >&2; exit 2; }
+arm=$1
+name=$2
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+MAIN=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+out="$MAIN/.baseline-runs/$name"
+field() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$out/run.json" "$1"; }
+wt=$(field worktree)
+port=$(field host_port)
+ingress=$(field restate_ingress)
+admin=$(field restate_admin)
+source "$MAIN/.venv/bin/activate"
+# A fresh database file for this check, named by the variable the infra spec (arm A)
+# or the prompt (arm B, JTBD_DB_PATH) gives. The same file serves both sides of the
+# restart, and nothing else does.
+db="$out/jtbd.db"
+rm -f "$db" "$db-journal" "$db-wal" "$db-shm"
+storage_env=()
+case "$arm" in
+  A) if [ -f "$wt/story-drafting/specs/infra.toml" ]; then
+       while IFS= read -r name; do storage_env+=(--env "$name=$db"); done < <(python3 - "$wt/story-drafting/specs/infra.toml" <<'PY'
+import sys, tomllib
+for storage in tomllib.load(open(sys.argv[1], "rb")).get("storage", {}).values():
+    if "location_variable" in storage:
+        print(storage["location_variable"])
+PY
+)
+     fi ;;
+  B) storage_env=(--env "JTBD_DB_PATH=$db") ;;
+esac
+case "$arm" in
+  A) python3 "$HERE/check.py" --cwd "$wt/story-drafting" --cmd "python3 -m srv.http.main 0.0.0.0:$port" \
+       --port "$port" --admin "$admin" --env "PYTHONPATH=.:../tesser-py" --env "RESTATE_INGRESS=$ingress" \
+       --env "RESTATE_ADMIN=$admin" "${storage_env[@]}" --log "$out/ab-host.log" | tee "$out/ab-check.json" ;;
+  B) python3 "$HERE/check.py" --cwd "$wt" --cmd ".venv/bin/python main.py" \
+       --port "$port" --admin "$admin" --env "RESTATE_INGRESS=$ingress" --env "RESTATE_ADMIN=$admin" \
+       "${storage_env[@]}" --log "$out/ab-host.log" | tee "$out/ab-check.json" ;;
+  *) echo "arm is A or B" >&2; exit 2 ;;
+esac
