@@ -44,7 +44,8 @@ class TestGeneratingTrees:
         assert 'api.add_api_route("/loans/{loan_id}", http_routes.get_loan, methods=["GET"])' in (
             tmp_path / "srv" / "http" / "main.py"
         ).read_text()
-        assert "ts.served('LIBRARY_HOST')" in (tmp_path / "tests" / "test_acceptance.py").read_text()
+        assert 'f"{host}/loans"' in (tmp_path / "tests" / "test_acceptance.py").read_text()
+        assert 'parser.addoption("--host"' in (tmp_path / "tests" / "conftest.py").read_text()
         assert sorted(path.name for path in tmp_path.iterdir()) == [
             ".tesser-root",
             "app",

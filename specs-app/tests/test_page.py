@@ -4,16 +4,14 @@ import re
 
 import playwright.sync_api as playwright_sync_api
 
-import tesser.testing as ts
-
 
 class TestAddStoryOnThePage:
 
-    def test_s1_1_a_saved_story_is_nested_under_its_jtbd_with_its_identifier_level_and_links(self) -> None:
+    def test_s1_1_a_saved_story_is_nested_under_its_jtbd_with_its_identifier_level_and_links(self, host: str) -> None:
         with playwright_sync_api.sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             page = browser.new_page()
-            page.goto(ts.served("SPECS_APP_URL") + "/")
+            page.goto(host + "/")
 
             jtbd = page.locator('[data-label="J1"]')
             jtbd.hover()

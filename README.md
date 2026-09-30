@@ -125,9 +125,8 @@ host reads in a process of its own and would never see the store the served
 Restate endpoint writes. `host = "http"` writes `srv/http/main.py` (a FastAPI
 app: `POST /<collection>` and `GET /<collection>/{<identity>}`, the Restate
 endpoint mounted at `/restate`), its `protocol/http.py`, an `HttpHandler`, and
-a root acceptance test that reaches the served host through
-`ts.served(...)`, reading its address from the variable named by
-`environment_variables.host_url`. `specs/library.toml` is HTTP over memory,
+a root acceptance test that reaches the served host at the `host` fixture
+its `tests/conftest.py` answers from pytest's `--host` option. `specs/library.toml` is HTTP over memory,
 `specs/helpdesk.toml` HTTP over Postgres.
 
 The output directory may already hold files. A file the generator does not

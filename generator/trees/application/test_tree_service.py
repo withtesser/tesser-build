@@ -81,7 +81,6 @@ def spec_record(
     random_values: tuple[ports.ValueRecord, ...] = (value_record(text="Ada"),),
     storage_url_variable: str = "CALLS_STORAGE",
     restate_ingress_url_variable: str = "RESTATE_INGRESS",
-    host_url_variable: str = "",
 ) -> ports.SpecRecord:
     return ports.SpecRecord(
         state=state,
@@ -112,7 +111,6 @@ def spec_record(
         random_values=random_values,
         storage_url_variable=storage_url_variable,
         restate_ingress_url_variable=restate_ingress_url_variable,
-        host_url_variable=host_url_variable,
     )
 
 

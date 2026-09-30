@@ -83,9 +83,8 @@ run_python_app() {
   CAMPAIGN_STORAGE=memory LINKPOLICY_STORAGE=memory HTTP_HOST= HTTP_PORT=8080 \
     pytest -q --ignore=tests || return 1
   # The root tier plays the user: it reaches the app only through a running
-  # host, so the arm serves the HTTP host and names its address in
-  # PYTHON_APP_ADDRESS, which the tier reads through ts.served. Locally the
-  # default port is 9240.
+  # host, so the arm serves the HTTP host and passes its address to the tier
+  # as pytest's --host option. Locally the default port is 9240.
   local port="${PYTHON_APP_PORT:-9240}"
   local address="127.0.0.1:$port"
   step "serve the HTTP host on $address"
@@ -107,7 +106,7 @@ run_python_app() {
     return 1
   fi
   step "pytest (root tier against the HTTP host at $address)"
-  PYTHON_APP_ADDRESS="$address" pytest -q tests
+  pytest -q tests --host "http://$address"
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -201,7 +200,7 @@ run_minimal() {
 # each activities, workflows, and dispatchers test its own under fresh names,
 # then reads what the engine recorded in sys_invocation — then the arm serves
 # the host, registers it with the Restate admin API (forcing over whatever the
-# context tier left), and puts its address in DURABLE_EXECUTION_HOST for the
+# context tier left), and passes its address as pytest's --host option to the
 # root-tier tests, which reach the app only through it. The app reads its own
 # environment through the config repository, so the runner supplies it — the
 # same job a deploy does. Tests never inject it. CI provides a Restate service
@@ -244,7 +243,7 @@ run_durable_execution() {
     return 1
   fi
   step "pytest the root tier (against the host on :$port)"
-  DURABLE_EXECUTION_HOST="http://127.0.0.1:$port" pytest -q tests
+  pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -350,8 +349,8 @@ EOF
 # a story over HTTP, one drives the page through Playwright — so this tree
 # needs a browser (python -m playwright install chromium) as well as the
 # Python tooling. The arm runs every tier but the root with no host served,
-# then serves the HTTP host as a process on SPECS_APP_PORT, puts its address
-# in SPECS_APP_URL, runs the root tier (pytest tests) against it, and stops it.
+# then serves the HTTP host as a process on SPECS_APP_PORT, runs the root tier
+# (pytest tests --host <its address>) against it, and stops it.
 run_specs_app() {
   cd "$ROOT/specs-app" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -384,8 +383,8 @@ run_specs_app() {
     wait "$host" 2>/dev/null
     return 1
   fi
-  step "pytest tests (root tests against the host at SPECS_APP_URL)"
-  SPECS_APP_URL="$url" pytest -q tests
+  step "pytest tests (root tests against the host at $url)"
+  pytest -q tests --host "$url"
   local status=$?
   kill -TERM "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -460,7 +459,7 @@ run_story_drafting() {
     return 1
   fi
   step "pytest the root tier (against the host on :$port)"
-  STORY_DRAFTING_HOST="http://127.0.0.1:$port" pytest -q tests
+  pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null
@@ -565,7 +564,7 @@ run_layout() {
 # order: every tier but the root with no host served, then the generated
 # endpoint served here and registered (forcing) with the Restate admin API, then
 # the root tier against it — an HTTP tree's root tier reaching the served host
-# at the address in its host_url variable. The local defaults are a `generator`
+# at the address the arm passes as pytest's --host option. The local defaults are a `generator`
 # database and a Restate server of its own on 48080/49070, so a local run never
 # re-registers another tree's services. Then every composition in
 # generator/compositions/ is rendered by the composition-driven renderer
@@ -632,9 +631,9 @@ run_generated_tree() {
   local admin="${RESTATE_ADMIN:-http://localhost:49070}"
   local port="${GENERATED_DEPLOYMENT_PORT:-9081}"
   local callback_host="${GENERATED_CALLBACK_HOST:-host.docker.internal}"
-  local names context storage_kind host_kind storage_env ingress_env host_env
-  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["restate_ingress_url"], e.get("host_url", "-"))' "$spec") || return 1
-  read -r context storage_kind host_kind storage_env ingress_env host_env <<<"$names"
+  local names context storage_kind host_kind storage_env ingress_env
+  names=$(python3 -c 'import sys, tomllib; s = tomllib.load(open(sys.argv[1], "rb")); e = s["environment_variables"]; print(s["bounded_context_name"], s.get("storage", "postgres"), s.get("host", "cli"), e.get("storage_url", "-"), e["restate_ingress_url"])' "$spec") || return 1
+  read -r context storage_kind host_kind storage_env ingress_env <<<"$names"
   local packages=("app" "$context" "protocol" "srv" "tests" "conftest.py")
   local env_vars=("$ingress_env=$ingress")
   if [ "$storage_kind" = postgres ]; then
@@ -643,11 +642,11 @@ run_generated_tree() {
   fi
   local module=srv.restate.main
   local deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port}"
-  local root_env=()
+  local root_args=()
   if [ "$host_kind" = http ]; then
     module=srv.http.main
     deployment="${GENERATED_DEPLOYMENT:-http://$callback_host:$port/restate}"
-    root_env=("$host_env=http://localhost:$port")
+    root_args=(--host "http://localhost:$port")
   fi
   step "generate $spec into $out"
   PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate "$spec" "$out" >/dev/null || return 1
@@ -678,8 +677,8 @@ run_generated_tree() {
     return 1
   fi
   step "$spec: pytest the root tier against the served host"
-  (cd "$out" && env "${env_vars[@]}" ${root_env[@]+"${root_env[@]}"} "RESTATE_ADMIN=$admin" \
-    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests)
+  (cd "$out" && env "${env_vars[@]}" "RESTATE_ADMIN=$admin" \
+    "RESTATE_CALLBACK_HOST=$callback_host" PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider tests ${root_args[@]+"${root_args[@]}"})
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null

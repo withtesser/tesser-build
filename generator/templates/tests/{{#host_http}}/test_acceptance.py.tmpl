@@ -8,15 +8,13 @@ import urllib.error as urllib_error
 {{/calling_start}}
 import urllib.request as urllib_request
 
-import tesser.testing as ts
-
 
 class {{test_class}}:
 
-    def {{test_method}}(self) -> None:
+    def {{test_method}}(self, host: str) -> None:
         {{asserts}} = random.choice({{random_choices}})
         {{write}} = urllib_request.Request(
-            f"{ts.served('{{host_env}}')}/{{collection}}",
+            f"{host}/{{collection}}",
             data=json.dumps(
                 {
 {{#fields}}
@@ -31,7 +29,7 @@ class {{test_class}}:
             {{write}}_status = answer.status
             {{identity}} = json.loads(answer.read())["{{identity}}"]
 {{#calling_run}}
-        with urllib_request.urlopen(f"{ts.served('{{host_env}}')}/{{collection}}/{{{identity}}}", timeout=30) as answer:
+        with urllib_request.urlopen(f"{host}/{{collection}}/{{{identity}}}", timeout=30) as answer:
             {{read}}_status = answer.status
             {{read}} = json.loads(answer.read())
 {{/calling_run}}
@@ -41,7 +39,7 @@ class {{test_class}}:
         {{read}}: dict[str, object] = {}
         while {{read}}_status != 200 and time.monotonic() < deadline:
             try:
-                with urllib_request.urlopen(f"{ts.served('{{host_env}}')}/{{collection}}/{{{identity}}}", timeout=30) as answer:
+                with urllib_request.urlopen(f"{host}/{{collection}}/{{{identity}}}", timeout=30) as answer:
                     {{read}}_status = answer.status
                     {{read}} = json.loads(answer.read())
             except urllib_error.HTTPError as error:

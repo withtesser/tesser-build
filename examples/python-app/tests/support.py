@@ -4,8 +4,7 @@ import ast
 import http.client as http_client
 import json
 import pathlib
-
-import tesser.testing as ts
+import urllib.parse as urllib_parse
 
 import protocol as protocol
 
@@ -14,8 +13,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_OWNERS = frozenset({"cfg", "config"})
 
 
-def call_host(method: str, path: str, body: dict[str, object] | None = None) -> tuple[int, dict[str, object]]:
-    conn = http_client.HTTPConnection(ts.served("PYTHON_APP_ADDRESS"), timeout=5)
+def call_host(host: str, method: str, path: str, body: dict[str, object] | None = None) -> tuple[int, dict[str, object]]:
+    conn = http_client.HTTPConnection(urllib_parse.urlsplit(host).netloc, timeout=5)
     try:
         if body is None:
             conn.request(method, path)

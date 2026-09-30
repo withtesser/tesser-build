@@ -60,7 +60,6 @@ two words, a verb and a noun (`place_call`).
 | `acceptance_test.random_values` | values of that field's type | the values it picks from at random |
 | `environment_variables.restate_ingress_url` | UPPER_CASE | the variable the app reads the Restate ingress from |
 | `environment_variables.storage_url` | UPPER_CASE; postgres only | the variable the app reads its database from |
-| `environment_variables.host_url` | UPPER_CASE; http only | the variable the root test reads the served host's address from |
 
 **Refused up front:**
 
@@ -152,7 +151,6 @@ random_values = [7, 14, 21, 28]
 
 [environment_variables]
 restate_ingress_url = "RESTATE_INGRESS"
-host_url = "LIBRARY_HOST"
 ```
 
 Every spec in `specs/` is gated: `scripts/verify generator` generates each one

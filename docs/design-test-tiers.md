@@ -60,10 +60,16 @@ env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})`. The test's own
 could, and the answer is the `CompletedProcess` (`returncode`, `stdout`,
 `stderr`); there is no wrapper to learn.
 
-`tesser.testing` carries the one thing a root test cannot write for itself:
-`ts.served("APP_URL")` reads the address the runner named for a served host,
-and refuses loudly when the runner did not set it. `tesser.testing` is the one
-`tesser` namespace allowed `os` (TB062): it is imported only by tests.
+An HTTP host's address comes in the way the host's own configuration does:
+as an argument. The root `tests/conftest.py` registers a `--host` option with
+pytest and a session `host` fixture that answers it, failing loudly when the
+runner did not pass one; a root test takes `host: str` as a parameter and
+never reads the environment. The runner passes it —
+`pytest tests --host http://127.0.0.1:<port>` — whether the host is the one it
+just served, or a deployed one a smoke run points at. The address is the
+caller's configuration, as a base URL is for any client of an HTTP service,
+so it is one option named the same in every tree, and `tesser.testing` carries
+nothing for it.
 
 Root tests share a served host for the whole run, so each uses its own data —
 a fresh identity or a random value — and asserts only on what it created.

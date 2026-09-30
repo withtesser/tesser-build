@@ -43,8 +43,8 @@ run_story_drafting() {
     wait "$host" 2>/dev/null
     return 1
   fi
-  step "pytest the root tier (against the host on :$port, in STORY_DRAFTING_HOST)"
-  STORY_DRAFTING_HOST="http://127.0.0.1:$port" pytest -q tests
+  step "pytest the root tier (against the host on :$port, passed as --host)"
+  pytest -q tests --host "http://127.0.0.1:$port"
   local status=$?
   kill -INT "$host" 2>/dev/null
   wait "$host" 2>/dev/null

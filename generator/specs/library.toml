@@ -40,4 +40,3 @@ random_values = [7, 14, 21, 28]
 
 [environment_variables]
 restate_ingress_url = "RESTATE_INGRESS"
-host_url = "LIBRARY_HOST"
