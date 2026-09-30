@@ -1111,6 +1111,10 @@ class Model(ts.Entity):
                      for key in ("ingress_variable", "admin_variable", "callback_host_variable") if key in engine)
         if "engine_path" in engine:
             named.append(("path", "[engine.restate] engine_path", str(engine["engine_path"])))
+        for storage_name, storage in self._infra.get("storage", {}).items():
+            named.append(("snake", "[storage]", str(storage_name)))
+            if "location_variable" in storage:
+                named.append(("variable", f"[storage.{storage_name}] location_variable", str(storage["location_variable"])))
         host = self._infra.get("hosts", {}).get("http", {})
         if "listen_port_variable" in host:
             named.append(("variable", "[hosts.http] listen_port_variable", str(host["listen_port_variable"])))
@@ -2032,6 +2036,11 @@ class Model(ts.Entity):
         if host is None:
             raise ValueError("infra.toml declares no [hosts.http]")
         self._binding["listen_port_variable"] = str(host["listen_port_variable"])
+        storages = {str(name): dict(storage) for name, storage in infra.get("storage", {}).items()}
+        for storage_name, storage in storages.items():
+            if storage_name != "memory" and "location_variable" not in storage:
+                raise ValueError(f"[storage.{storage_name}] names no location_variable: every storage but memory says which "
+                                 f"variable locates it")
         port_exprs: dict[str, str] = {}
         shared_stores: list[dict[str, object]] = []
         memory_repositories: list[dict[str, object]] = []
@@ -2046,6 +2055,9 @@ class Model(ts.Entity):
             implementation = implementations.get("implementations", {}).get(port_name, {}).get(key)
             if implementation is None:
                 raise ValueError(f"{port_name} is implemented by {key}, which [implementations.{port_name}] does not declare")
+            if port_name in self._stores and key not in storages:
+                raise ValueError(f"{port_name} is a store implemented by {key}, a storage infra.toml does not declare: declare "
+                                 f"[storage.{key}] in infra.toml, or implement {port_name} by a declared storage")
             body = implementation.get("body")
             if body == "agent":
                 if "class" not in implementation:

@@ -485,6 +485,66 @@ class TestRenderingCompositions:
             "[implementations] and [environments]",
         )
 
+    def test_a_store_implemented_by_a_storage_infra_toml_does_not_declare_is_a_problem_naming_both(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"infra.toml": [("[storage.memory]", "[storage.sqlite]\nlocation_variable = \"LOAN_DB_PATH\"")]}
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "LoanRepository is a store implemented by memory, a storage infra.toml does not declare: "
+            "declare [storage.memory] in infra.toml, or implement LoanRepository by a declared storage",
+        )
+
+    def test_a_storage_other_than_memory_without_a_location_variable_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"infra.toml": [("[storage.memory]", "[storage.memory]\n\n[storage.sqlite]")]}
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "[storage.sqlite] names no location_variable: every storage but memory says which variable locates it",
+        )
+
+    def test_a_declared_storage_no_port_uses_renders(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"infra.toml": [("[storage.memory]", "[storage.memory]\n\n[storage.sqlite]\nlocation_variable = \"LOAN_DB_PATH\"")]}
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+        assert "LOAN_DB_PATH" not in (tmp_path / "out" / "app" / "app.py").read_text()
+
     def test_an_agent_owned_store_renders_a_working_store_stub_the_component_wires_and_keeps_it_on_a_second_render(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
@@ -492,6 +552,7 @@ class TestRenderingCompositions:
                 "[implementations.LoanRepository.memory]\nbody = \"supported\"",
                 "[implementations.LoanRepository.file]\nclass = \"FileLoanStore\"\nbody = \"agent\"",
             ), ('LoanRepository = "memory"', 'LoanRepository = "file"')],
+            "infra.toml": [("[storage.memory]", "[storage.file]\nlocation_variable = \"LOAN_FILE\"")],
         }
         for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
