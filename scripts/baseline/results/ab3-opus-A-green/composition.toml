@@ -1,0 +1,82 @@
+# 4 COMPOSITION — the contracts of the drafting context.
+
+context = "drafting"
+
+[aggregate]
+name = "Jtbd"
+identity = "jtbd_id"
+serves = ["s-1", "s-2", "s-3"]
+
+[aggregate.spec]
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+stories = "Story[]"
+
+[aggregate.reads]
+jtbd_id = "str"
+role = "str"
+i_want = "str"
+so_that = "str"
+status = "JtbdStatus"
+stories = "Story[]"
+
+[aggregate.commands.draft_stories]
+takes = {}
+outcomes = ["drafted"]
+serves = ["s-2"]
+
+[shapes.Story]
+given = "str"
+when = "str"
+then = "str"
+state = "StoryState"
+
+[enums]
+JtbdStatus = ["drafting_stories", "awaiting_story_acceptance"]
+StoryState = ["drafted"]
+
+[interfaces.http]
+serves = ["s-1-a-1", "s-2-a-1"]
+
+[client.operations.submit_jtbd]
+kind = "write"
+request = ["role", "i_want", "so_that"]
+response = ["jtbd_id", "status"]
+steps = ["identity.issue_jtbd_id", "repository.save_jtbd", "orchestrator.start_story_drafting"]
+serves = ["s-1", "s-1-a-1"]
+
+[client.operations.read_jtbd]
+kind = "read"
+request = ["jtbd_id"]
+response = ["jtbd_id", "status", "stories"]
+steps = ["repository.load_jtbd"]
+serves = ["s-2", "s-2-a-1", "s-3", "s-3-a-1"]
+
+[orchestrator.operations.story_drafting]
+request = ["jtbd_id", "role", "i_want", "so_that"]
+response = ["jtbd_id"]
+steps = ["actions.jtbd.draft_stories"]
+serves = ["s-1", "s-2"]
+
+[actions.jtbd]
+port = "JtbdRepository"
+
+[actions.jtbd.operations.draft_stories]
+builds = "Jtbd"
+commands = ["draft_stories"]
+calls_on = ["drafted"]
+calls = "save_jtbd"
+request = ["jtbd_id", "role", "i_want", "so_that"]
+response = ["jtbd_id"]
+serves = ["s-2"]
+
+[ports.JtbdRepository]
+operations.save_jtbd = { request = ["jtbd"], response = [] }
+operations.load_jtbd = { request = ["jtbd_id"], response = ["jtbd"] }
+serves = ["s-1", "s-2", "s-3"]
+
+[ports.JtbdIdentityRepository]
+operations.issue_jtbd_id = { request = [], response = ["jtbd_id"] }
+serves = ["s-1"]

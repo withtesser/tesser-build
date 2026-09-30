@@ -167,6 +167,16 @@ def main() -> None:
         key, _, value = pair.partition("=")
         env[key] = value
     result: dict[str, object] = {"cmd": args.cmd, "cwd": args.cwd}
+    # A port something already answers on would be checked in place of the
+    # host started here (a server the agent left running, say), and a restart
+    # of the host would restart nothing: refuse, and say so.
+    status, _, _ = call("GET", f"http://127.0.0.1:{args.port}/", timeout=2)
+    if status != 0:
+        refused = {"passed": False, "problems": [f"port {args.port} was already served before the check started"]}
+        result.update(served=False, port_in_use=True, story_1=refused, story_2=refused, story_3=refused, passed=False)
+        json.dump(result, sys.stdout, indent=2)
+        print()
+        sys.exit(1)
     with open(args.log, "w") as log:
         host = subprocess.Popen(shlex.split(args.cmd), cwd=args.cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                 start_new_session=True)
@@ -188,7 +198,9 @@ def main() -> None:
                 result["story_2"] = second
                 result["probes"] = probes(base)
                 result["exited_early"] = host.poll() is not None
-                if second["passed"]:
+                if result["exited_early"]:
+                    result["story_3"] = {"passed": False, "problems": ["the host exited before the restart; something else answered"]}
+                elif second["passed"]:
                     stop(host)
                     host = subprocess.Popen(shlex.split(args.cmd), cwd=args.cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                             start_new_session=True)
@@ -196,6 +208,8 @@ def main() -> None:
                     result["seconds_to_listen_after_restart"] = again
                     if again is None:
                         result["story_3"] = {"passed": False, "problems": ["never listened after the restart"]}
+                    elif host.poll() is not None:
+                        result["story_3"] = {"passed": False, "problems": ["the restarted host exited; something else answered"]}
                     else:
                         result["restart_registration"] = register(args.admin, args.callback_host, args.port)
                         result["story_3"] = story_3(base, jtbd_id, before, args.draft_seconds)
