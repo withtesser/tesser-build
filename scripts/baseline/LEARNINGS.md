@@ -75,9 +75,12 @@ All red trials from v3 on fail at the user story's *then* and nowhere earlier.
 | v2 | host-only root tier | 45–53 | 9–13 min | 40–45 | 5–18 |
 | v3 | from generator-built red trials | 50–56 | 12–26 min | 40–46 | 0–5 |
 | v4 | from a tree rendered from the five-spec formats (scaffold g5): the contract generated, green owning only the aggregate module and the template drafter; compiled prompt | 9–14 | 3.3–3.7 min | 4 | 0–1 |
+| v5 | on red-s2's own output (red's composition, rendered by red), plus a handoff commit adding the drift check | 9–13 | 3.1–4.2 min | 4 | 1–2, fixed on the next run |
 
 - **The generated contract removes green's structure work.** Every v4 trial changed exactly its four owned files (the domain module, the drafter, their tests), passed the drift check, left the acceptance tests unchanged, and reported no contract gap. v3 trials built ports, actions, relays, and the signal by hand and reworked start-and-return.
 - **What is left is story behavior, and it converged.** All three derived status from the stories, answered `record_stories`' three outcomes the same way, added the same two value objects (`StoryText`, `StoryTexts`) to keep TB083, and refused blank text. They differed only in the drafter's template wording and story count (one or two).
+- **The loop closes on red's design (v5).** Green on red's composition did as well as on the hand-written one: each trial changed only its four files, passed the drift check, and left red's acceptance tests unchanged. Their one finding each was TB085 on a local named `drafted` that held a `Text`.
+- **Green reported a composition flaw instead of working around it (v5-2).** `JtbdActions.record_stories` builds a fresh `Jtbd` from its request instead of loading the saved one, so `already_recorded` is unreachable and a retried record overwrites. It came from the reference composition (one port call per method, so no load before the save) and red reproduced it. No story exercises it; a level-3 story would.
 - **Calls include one Read of the prompt file:** the compiled prompt (80 KB) was handed over as a file rather than inline.
 
 ## Harness pitfalls

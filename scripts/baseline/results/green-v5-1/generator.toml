@@ -1,0 +1,11 @@
+# 5 GENERATOR — sample values for the generated tests.
+
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+role = ["a developer", "a reviewer"]
+i_want = ["stories drafted", "stories listed"]
+so_that = ["I can accept them", "I can compare them"]
+story_texts = [
+  [{ given = "a job to be done", when = "I submit it", then = "it is drafting" }],
+  [{ given = "a drafted job", when = "I read it", then = "I see its stories" }],
+]
