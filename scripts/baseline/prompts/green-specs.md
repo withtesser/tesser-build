@@ -70,7 +70,7 @@ there, not in your files.
 ```
 
 ```python
-{{FILE:story-drafting/tests/test_reading_jtbds.py}}
+{{FILE:story-drafting/tests/test_reading_jtbds_by_jtbd_id.py}}
 ```
 
 ## Your files as they stand
