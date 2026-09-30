@@ -932,6 +932,30 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story: write it in a story's given, when, or then, or remove it from the composition",)
 
+    def test_a_domain_stub_answers_the_first_listed_outcome_which_is_the_success_outcome(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            'composition.toml': [('[aggregate.reads]', '[aggregate.commands.renew_loan]\ntakes = { title = "str" }\noutcomes = ["renewed", "refused"]\n\n[aggregate.reads]'), ('builds = "Loan"\ncalls = "save_loan"', 'builds = "Loan"\ncommands = ["renew_loan"]\ncalls_on = ["renewed"]\ncalls = "save_loan"')],
+            'story.toml': [('then = "', 'then = "a renewal can be refused, and ')],
+        }
+        for name in ("language", "story", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+        domain_modules = [path for path in (tmp_path / "out").rglob("domain/loan.py")]
+        assert len(domain_modules) == 1
+        assert "return RenewLoanOutcome.RENEWED" in domain_modules[0].read_text()
+
     def test_a_command_with_one_outcome_renders_with_its_action_matching_that_one_outcome(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

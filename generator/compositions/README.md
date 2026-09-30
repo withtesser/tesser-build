@@ -477,7 +477,7 @@ Every rendered file says on its first line who owns it:
   (`<context>/adapters/gateways/<class>.py` and its test), and the root
   test skeletons in `tests/` (above). A stub answers
   placeholders and never raises: a str read answers what the spec holds, a
-  command its last outcome, an enum read its first value, a gateway
+  command its first outcome (the success outcome), an enum read its first value, a gateway
   `""`, `0`, or an empty list for each field it answers.
 
 `.tesser-root` carries no marker: its lines are declarations only.

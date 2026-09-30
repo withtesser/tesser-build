@@ -1906,7 +1906,7 @@ class Model(ts.Entity):
             targets = self._domain_targets[Command + "Spec"]
             commands.append({
                 "command": str(command), "Spec": Command + "Spec", "Outcome": Command + "Outcome",
-                "outcomes": [{"MEMBER": outcome.upper()} for outcome in outcomes], "answer": outcomes[-1].upper(),
+                "outcomes": [{"MEMBER": outcome.upper()} for outcome in outcomes], "answer": outcomes[0].upper(),
                 "command_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in targets),
             })
         self._binding["commands"] = commands
