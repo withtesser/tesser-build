@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -38,7 +36,7 @@ class FakeWidgetApplicationClient(client.WidgetApplicationClient):
 class TestRestateHttpWidgetOrchestratorRelay:
 
     async def test_an_approval_before_the_start_is_refused_and_the_registration_waits_until_approved_and_keeps_the_widget_once(
-        self,
+        self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int
     ) -> None:
         name = ".."
         suffix = uuid.uuid4().hex
@@ -51,11 +49,9 @@ class TestRestateHttpWidgetOrchestratorRelay:
         )
         restate_approve_widget = dispatchers.RestateApproveWidget(widget_orchestrator_workflow)
         restate_http_widget_orchestrator_relay = dispatchers.RestateHttpWidgetOrchestratorRelay(
-            os.environ["RESTATE_URL"], restate_register_widget, restate_approve_widget
+            engine_url, restate_register_widget, restate_approve_widget
         )
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -66,13 +62,13 @@ class TestRestateHttpWidgetOrchestratorRelay:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['MINIMAL_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -118,7 +114,7 @@ class TestRestateHttpWidgetOrchestratorRelay:
                 if fake_widget_application_client.kept:
                     break
                 await asyncio.sleep(0.05)
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
                         restate_approve_widget.handler, key="%2E%2E", arg=relays.ApproveWidgetRequest(name="other")

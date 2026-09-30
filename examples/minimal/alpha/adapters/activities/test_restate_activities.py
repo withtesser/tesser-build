@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -32,13 +30,11 @@ class FakeWidgetApplicationClient(client.WidgetApplicationClient):
 
 class TestRestateKeepWidget:
 
-    async def test_restate_serves_keep_widget_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_keep_widget_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         widget_actions_service = restate.Service(f"WidgetActions{uuid.uuid4().hex}")
         fake_widget_application_client = FakeWidgetApplicationClient()
         restate_keep_widget = activities.RestateKeepWidget(widget_actions_service, fake_widget_application_client)
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", 0))
-            port = probe.getsockname()[1]
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -49,20 +45,20 @@ class TestRestateKeepWidget:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['MINIMAL_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 keep_widget_response = await restate_client.Client(async_client).service_call(
                     restate_keep_widget.handler, relays.KeepWidgetRequest(name="a")
                 )

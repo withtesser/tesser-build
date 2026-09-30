@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -12,10 +11,8 @@ import urllib.request as urllib_request
 
 class TestRestateHost:
 
-    def test_the_served_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self) -> None:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
+    def test_the_served_endpoint_discovers_the_actions_service_and_the_orchestrator_workflow(self, free_port: int) -> None:
+        port = free_port
         env = dict(
             os.environ,
             ALPHA_STORAGE="postgres://nobody@nowhere/none",
