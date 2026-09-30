@@ -13,19 +13,21 @@ A developer works through a multi-step piece of work with an agent (design somet
 
 ## Words this system uses
 
-Use these words, and not the ones after "not". Where a word below gives a name in backticks, the HTTP API uses that name exactly, as a route, JSON field, or value.
+Use these words, and not the ones after "not".
 
-- **job to be done** (JTBD): what a developer needs done, written as "as / I want / so that", naming no solution. (Not: job, task, goal, story draft, draft, run.) Its fields are `role` (the "as" part), `i_want`, and `so_that`; its identity is `jtbd_id`.
-- **story**: one given / when / then that would fulfil a job to be done, with a story state. (Not: user story, scenario, requirement, story draft.) A job to be done's stories are `stories`; each has `given`, `when`, `then`, and `state`. Stories take the same given / when / then shape as the stories in "What a developer must be able to do" below.
-- **story state** (`state`): where a story stands: `drafted` (written, not yet decided), `accepted` (the developer keeps it), rejected (the developer does not). (Not: picked, approved, declined, pending.)
-- **story drafting**: writing the given / when / then of stories for a job to be done. (Not: drafting, composing, writing, generating.)
-- **status** (`status`): where a job to be done stands: `drafting_stories` (it has none yet) or `awaiting_story_acceptance` (its stories are drafted and undecided).
+- **job to be done** (JTBD): what a developer needs done, written as "as / I want / so that", naming no solution. (Not: job, task, goal, story draft, draft, run.)
+- **story**: one given / when / then that would fulfil a job to be done, with a story state. (Not: user story, scenario, requirement, story draft.)
+- **story state**: where a story stands: drafted (written, not yet decided), accepted (the developer keeps it), rejected (the developer does not). (Not: picked, approved, declined, pending.)
+- **story drafting**: writing the given / when / then of stories for a job to be done. (Not: drafting, composing, writing, generating; drafting alone does not say what is drafted.)
+- **status**: where a job to be done stands: drafting stories (it has none yet) or awaiting story acceptance (its stories are drafted and undecided).
 - **checkpoint**: a point where the developer weighs in, fixed in advance, that the agent cannot skip. (Not: gate, approval step.)
 - **submit**: hand a job to be done to the story-drafting skill, so that it begins its story drafting. (Not: start, begin, open, create.)
 - **story-drafting skill**: a procedure an agent follows with the developer, in fixed steps with checkpoints. (Not: harness, workflow, flow.)
 - **accept**: what the developer does at the checkpoint: one decision over the drafted stories — the stories named are accepted, the rest rejected. (Not: pick, approve, choose, select.)
 
 ## What a developer must be able to do
+
+Each "Over HTTP" line names routes, JSON fields, and values exactly, in backticks.
 
 1. **Given** a job to be done, **when** I submit it to the story-drafting skill, **then** I can come back to it, and I can see it is drafting its stories.
    - Over HTTP: **given** a job to be done's `role`, `i_want`, and `so_that`, **when** I POST them as JSON to `/jtbds`, **then** I get back 201 with its `jtbd_id` and `status` `"drafting_stories"`.
