@@ -94,10 +94,11 @@ composition's names:
 
 ## The harness
 
+- "The service has been restarted" means: its process is stopped and started again with the same command and environment, while the Restate server keeps running. No acceptance test here can restart the service; the runner does.
 - Render with
   `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.render {worktree}/story-drafting/specs {worktree}/story-drafting --print tests/test_submitting_jtbds.py --print tests/test_reading_jtbds_by_jtbd_id.py`.
   It prints the path of every file it wrote, then each skeleton verbatim. The
-  README and the specs already in `story-drafting/` stay. If the render
+  specs already in `story-drafting/` stay. If the render
   reports a problem, it writes nothing: fix the spec it names and render
   again.
 - Run `scripts/verify` once, keeping its whole output, like this:

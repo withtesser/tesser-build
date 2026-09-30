@@ -41,12 +41,16 @@ Decisions already made:
    - Over HTTP: **given** a job to be done's `role`, `i_want`, and `so_that`, **when** I POST them as JSON to `/jtbds`, **then** I get back 201 with its `jtbd_id` and `status` `"drafting_stories"`.
 2. **Given** a job to be done whose stories have been drafted, **when** I read the job to be done, **then** its stories are given to me, each one drafted and none accepted, and it is awaiting my acceptance of its stories.
    - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, and its stories have been drafted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and at least one story, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
+3. **Given** a job to be done I submitted, whose stories have been drafted, and the service has since been restarted, **when** I read the job to be done, **then** it is still there, with the same stories, each still drafted, and it is still awaiting my acceptance.
+   - Over HTTP: **given** I have created a job to be done with `POST /jtbds`, its stories have been drafted, and the service has been restarted, **when** I `GET /jtbds/{jtbd_id}`, **then** I get back 200 with `status` `"awaiting_story_acceptance"` and the same stories, each with a `given`, a `when`, and a `then`, and in `state` `"drafted"`.
 
 ## Out of scope
 
 Accepting stories (and so rejecting the rest); revising a job to be done's stories; story drafting with a language model; the agent-facing skill document (SKILL.md).
 
 ## Running it
+
+"The service has been restarted" means: its process is stopped and started again with the same command and environment, while the Restate server keeps running.
 
 To be checked, the service must listen on the port in the environment variable `PORT` (host 0.0.0.0) and be started from the project root with `.venv/bin/python main.py`. Create the virtualenv `.venv` in the project root and install what you use into it; third-party Python packages are allowed.
 

@@ -3,7 +3,7 @@
 
 Starts one arm's output as a served process, registers its Restate endpoint
 with the run's Restate server (arm B may have none; that is recorded, not
-fatal), and runs the two level-2 stories over HTTP, tolerant of everything
+fatal), and runs the three level-2 stories over HTTP (the third restarts the service between two reads), tolerant of everything
 the specs leave open: an id of any shape, extra keys, and how long drafting
 takes (it polls until the status reads awaiting_story_acceptance or the
 timeout passes). It asserts only what story.toml says, and prints one JSON
@@ -77,7 +77,7 @@ def story_1(base: str) -> tuple[dict[str, object], str | None]:
 
 def story_2(base: str, jtbd_id: str | None, seconds: float) -> dict[str, object]:
     if jtbd_id is None:
-        return {"passed": False, "problems": ["no jtbd_id to read (story 1 gave none)"]}
+        return {"passed": False, "problems": ["no jtbd_id to read (story 1 gave none)"], "stories_seen": None}
     started = time.monotonic()
     status, body, text = 0, None, ""
     while True:
@@ -106,7 +106,31 @@ def story_2(base: str, jtbd_id: str | None, seconds: float) -> dict[str, object]
                     problems.append(f"story {index} has no non-empty {key}")
             if story.get("state") != "drafted":
                 problems.append(f"story {index} state {story.get('state')!r}, wanted 'drafted'")
-    return {"passed": not problems, "problems": problems, "seconds_until_drafted": waited, "answered": text[:600]}
+    return {"passed": not problems, "problems": problems, "seconds_until_drafted": waited, "answered": text[:600],
+            "stories_seen": stories if isinstance(stories, list) else None}
+
+
+def story_3(base: str, jtbd_id: str | None, before: object, seconds: float) -> dict[str, object]:
+    """After a restart of the service, the same job to be done reads back the same."""
+    if jtbd_id is None or before is None:
+        return {"passed": False, "problems": ["nothing to compare (story 2 did not read stories)"]}
+    started = time.monotonic()
+    while True:
+        status, body, text = call("GET", f"{base}/jtbds/{jtbd_id}")
+        if status == 200 and isinstance(body, dict) and body.get("status") == "awaiting_story_acceptance":
+            break
+        if time.monotonic() - started > seconds:
+            break
+        time.sleep(0.25)
+    problems = []
+    if status != 200:
+        problems.append(f"status {status} after the restart, wanted 200")
+    if not isinstance(body, dict) or body.get("status") != "awaiting_story_acceptance":
+        problems.append(f"status field {body.get('status') if isinstance(body, dict) else None!r} after the restart, wanted 'awaiting_story_acceptance'")
+    after = body.get("stories") if isinstance(body, dict) else None
+    if after != before:
+        problems.append("the stories after the restart are not the stories before it")
+    return {"passed": not problems, "problems": problems, "answered": text[:600]}
 
 
 def probes(base: str) -> dict[str, object]:
@@ -114,6 +138,14 @@ def probes(base: str) -> dict[str, object]:
     unknown, _, _ = call("GET", f"{base}/jtbds/does-not-exist")
     missing, _, _ = call("POST", f"{base}/jtbds", {"role": ROLE})
     return {"get_unknown_id_status": unknown, "post_missing_fields_status": missing}
+
+
+def stop(host: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(host.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    host.wait()
 
 
 def main() -> None:
@@ -144,22 +176,34 @@ def main() -> None:
             result["seconds_to_listen"] = started
             if started is None:
                 result.update(served=False, story_1={"passed": False, "problems": ["never listened"]},
-                              story_2={"passed": False, "problems": ["never listened"]})
+                              story_2={"passed": False, "problems": ["never listened"]},
+                              story_3={"passed": False, "problems": ["never listened"]})
             else:
                 result["served"] = True
                 result["restate_registration"] = register(args.admin, args.callback_host, args.port)
                 story1, jtbd_id = story_1(base)
                 result["story_1"] = story1
-                result["story_2"] = story_2(base, jtbd_id, args.draft_seconds)
+                second = story_2(base, jtbd_id, args.draft_seconds)
+                before = second.pop("stories_seen", None)
+                result["story_2"] = second
                 result["probes"] = probes(base)
-            result["exited_early"] = host.poll() is not None
+                result["exited_early"] = host.poll() is not None
+                if second["passed"]:
+                    stop(host)
+                    host = subprocess.Popen(shlex.split(args.cmd), cwd=args.cwd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                            start_new_session=True)
+                    again = wait_for_port("127.0.0.1", args.port, args.start_seconds)
+                    result["seconds_to_listen_after_restart"] = again
+                    if again is None:
+                        result["story_3"] = {"passed": False, "problems": ["never listened after the restart"]}
+                    else:
+                        result["restart_registration"] = register(args.admin, args.callback_host, args.port)
+                        result["story_3"] = story_3(base, jtbd_id, before, args.draft_seconds)
+                else:
+                    result["story_3"] = {"passed": False, "problems": ["not attempted: story 2 did not pass"]}
         finally:
-            try:
-                os.killpg(host.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            host.wait()
-    result["passed"] = bool(result.get("story_1", {}).get("passed") and result.get("story_2", {}).get("passed"))  # type: ignore[union-attr]
+            stop(host)
+    result["passed"] = all(bool(result.get(key, {}).get("passed")) for key in ("story_1", "story_2", "story_3"))  # type: ignore[union-attr]
     json.dump(result, sys.stdout, indent=2)
     print()
     sys.exit(0 if result["passed"] else 1)

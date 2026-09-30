@@ -24,7 +24,7 @@ run_story_drafting() {
   fi
   step "pytest every tier but the root (no host served; Restate at $ingress)"
   RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
-    pytest -q --ignore=tests || return 1
+    pytest -q --ignore=tests . || return 1
   if [ ! -f srv/http/main.py ]; then
     step "pytest the root tier (no srv/http/main.py to serve)"
     pytest -q tests

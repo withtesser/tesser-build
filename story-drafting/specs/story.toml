@@ -70,6 +70,27 @@ then = "I get back 200 with status \"awaiting_story_acceptance\" and at least on
 route = "GET /jtbds/{jtbd_id}"
 status = 200
 
+# ---- s-3 ---------------------------------------------------------------------
+
+[[jtbds.stories]]
+id = "s-3"
+given = "a job to be done I submitted, whose stories have been drafted, and the service has since been restarted"
+when = "I read the job to be done"
+then = "it is still there, with the same stories, each still drafted, and it is still awaiting my acceptance"
+
+[[jtbds.stories.jtbds]]
+id = "j-3-a"
+level = 2
+as = "the story-drafting HTTP API"
+i_want = "to answer for a job to be done after the service that took it has restarted"
+so_that = "s-3 is fulfilled"
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-3-a-1"
+given = "I have created a job to be done with POST /jtbds, its stories have been drafted, and the service has been restarted"
+when = "I GET /jtbds/{jtbd_id}"
+then = "I get back 200 with status \"awaiting_story_acceptance\" and the same stories, each with a given, a when, and a then, and in state \"drafted\""
+
 [scope]
 out = [
   "accepting stories (and so rejecting the rest)",
