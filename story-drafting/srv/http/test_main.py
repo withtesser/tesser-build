@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -15,20 +14,9 @@ import app as app
 
 class TestHttpHost:
 
-    def test_the_mounted_restate_endpoint_discovers_what_the_context_declared(self) -> None:
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("127.0.0.1", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_URL="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_mounted_restate_endpoint_discovers_what_the_context_declared(self, free_port: int) -> None:
+        port = free_port
+        env = dict(os.environ, RESTATE_URL="http://localhost:8080", STORY_WRITER="canned", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         try:
             discover = urllib_request.Request(
@@ -50,7 +38,7 @@ class TestHttpHost:
             except subprocess.TimeoutExpired:
                 host.kill()
                 host.wait()
-        story_drafting_app = app.load()
+        story_drafting_app = app.AppLoader(app.EnvConfigRepository({"RESTATE_URL": "http://localhost:8080", "STORY_WRITER": "canned"})).load()
         try:
             declared = {
                 story_drafting_app.drafting.run_actions_service.name: sorted(
@@ -69,20 +57,9 @@ class TestHttpHost:
         assert isinstance(services, list)
         assert {s["name"]: sorted(h["name"] for h in s["handlers"]) for s in services} == declared
 
-    def test_the_runs_routes_answer_by_the_failure_they_meet(self) -> None:
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("127.0.0.1", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_URL="http://127.0.0.1:9", PYTHONPATH=os.pathsep.join(sys.path))
+    def test_the_runs_routes_answer_by_the_failure_they_meet(self, free_port: int) -> None:
+        port = free_port
+        env = dict(os.environ, RESTATE_URL="http://127.0.0.1:9", STORY_WRITER="canned", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
         try:

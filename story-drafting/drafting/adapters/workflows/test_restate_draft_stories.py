@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import socket
 import typing
 import uuid
 
@@ -47,7 +45,7 @@ class FakeStoryApplicationClient(client.StoryApplicationClient):
 
 class TestRestateDraftStories:
 
-    async def test_draft_stories_records_the_drafted_run_then_waits_on_the_promise_the_relays_name_and_refuses_a_foreign_key(self) -> None:
+    async def test_draft_stories_records_the_drafted_run_then_waits_on_the_promise_the_relays_name_and_refuses_a_foreign_key(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         run_id = str(uuid.uuid4())
         suffix = uuid.uuid4().hex
         run_actions_service = restate.Service(f"RunActions{suffix}")
@@ -60,18 +58,7 @@ class TestRestateDraftStories:
             activities.RestateRecordRun(run_actions_service, fake_run_application_client),
             activities.RestateWriteStories(story_actions_service, fake_story_application_client),
         )
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("0.0.0.0", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -82,13 +69,13 @@ class TestRestateDraftStories:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['STORY_DRAFTING_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -96,7 +83,7 @@ class TestRestateDraftStories:
             assert registered.is_success, registered.text
 
             run = domain.Run(domain.RunSpec(run_id=run_id, job="ship", stage="drafting", stories=(), accepted_stories=()))
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 sent = await restate_client.Client(async_client).workflow_send(
                     restate_draft_stories.handler, key=run_id, arg=relays.DraftStoriesRequest(run=run)
                 )

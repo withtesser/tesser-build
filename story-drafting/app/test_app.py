@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import tesser.testing as ts
 
 import app as app
@@ -26,12 +24,9 @@ class TestAppConfig:
 
 class TestEnvConfigRepository:
 
-    def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
-        app_config = app.EnvConfigRepository().get()
-        assert (app_config.drafting.engine_url, app_config.drafting.story_writer) == (
-            os.environ["RESTATE_URL"],
-            os.environ["STORY_WRITER"],
-        )
+    def test_the_environment_is_read_into_a_config(self) -> None:
+        app_config = app.EnvConfigRepository({"RESTATE_URL": "http://engine.invalid:8080", "STORY_WRITER": "canned"}).get()
+        assert (app_config.drafting.engine_url, app_config.drafting.story_writer) == ("http://engine.invalid:8080", "canned")
 
 
 class TestStoryDraftingApp:

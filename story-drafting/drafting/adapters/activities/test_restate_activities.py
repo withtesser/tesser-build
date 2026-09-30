@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -33,22 +31,11 @@ class FakeRunApplicationClient(client.RunApplicationClient):
 
 class TestRestateRecordRun:
 
-    async def test_restate_serves_record_run_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_record_run_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         run_actions_service = restate.Service(f"RunActions{uuid.uuid4().hex}")
         fake_run_application_client = FakeRunApplicationClient()
         restate_record_run = activities.RestateRecordRun(run_actions_service, fake_run_application_client)
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("0.0.0.0", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -59,13 +46,13 @@ class TestRestateRecordRun:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['STORY_DRAFTING_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
@@ -73,7 +60,7 @@ class TestRestateRecordRun:
             assert registered.is_success, registered.text
 
             run = domain.Run(domain.RunSpec(run_id="r1", job="ship", stage="drafting", stories=(), accepted_stories=()))
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 record_run_response = await restate_client.Client(async_client).service_call(
                     restate_record_run.handler, relays.RecordRunRequest(run=run)
                 )
@@ -103,22 +90,11 @@ class FakeStoryApplicationClient(client.StoryApplicationClient):
 
 class TestRestateWriteStories:
 
-    async def test_restate_serves_write_stories_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+    async def test_restate_serves_write_stories_and_a_call_made_with_its_handler_reaches_the_application_client(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         story_actions_service = restate.Service(f"StoryActions{uuid.uuid4().hex}")
         fake_story_application_client = FakeStoryApplicationClient()
         restate_write_stories = activities.RestateWriteStories(story_actions_service, fake_story_application_client)
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("0.0.0.0", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -129,20 +105,20 @@ class TestRestateWriteStories:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['STORY_DRAFTING_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=engine_url, timeout=30.0) as async_client:
                 write_stories_response = await restate_client.Client(async_client).service_call(
                     restate_write_stories.handler, relays.WriteStoriesRequest(job="ship")
                 )

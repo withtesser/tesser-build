@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -39,20 +37,9 @@ class TestDraftingContext:
             drafting.close()
         assert http_response.status_code == 422
 
-    async def test_an_opened_run_is_drafted_and_waits_for_the_pick_with_its_stories_and_none_accepted(self) -> None:
-        drafting = component.Drafting(component.Config(component.Spec(engine_url=os.environ["RESTATE_URL"], story_writer="canned", anthropic_api_key="")))
-        first = int(os.environ["STORY_DRAFTING_PORT"])
-        port = 0
-        for candidate in range(first + 1, first + 10):
-            with socket.socket() as probe:
-                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                try:
-                    probe.bind(("0.0.0.0", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, f"no free port in {first + 1}-{first + 9}"
+    async def test_an_opened_run_is_drafted_and_waits_for_the_pick_with_its_stories_and_none_accepted(self, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
+        drafting = component.Drafting(component.Config(component.Spec(engine_url=engine_url, story_writer="canned", anthropic_api_key="")))
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -68,13 +55,13 @@ class TestDraftingContext:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['STORY_DRAFTING_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break

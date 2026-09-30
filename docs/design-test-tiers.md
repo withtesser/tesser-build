@@ -25,31 +25,53 @@ import (TB070).
   the workflow's callbacks land in the process whose client reads the result.
   One process: nothing to share, so in-memory adapters are enough.
 
-## The runner's order
+## The tests own their infrastructure
 
-Container names are literals (TB085), so a context test and a served host
-would claim the same names on the tree's engine. The runner keeps them apart
-in time rather than renaming either:
+Ruled 2026-09-30, superseding "the runner's order". A run of plain `pytest`
+from the tree's root runs every tier, in any order, with nothing served
+beforehand and nothing read from the environment. The tree's root
+`conftest.py` owns what the tests need, as session fixtures a test asks for
+by name:
 
-1. every tier but the root runs first, with **no host served** — a context
-   test registers the component's containers from its own process, and an
-   adapter test registers its own objects under fresh names as before;
-2. the runner then serves the hosts (and registers the engine host, forcing
-   over whatever the context tier left);
-3. the root tier runs last, against the served hosts.
+- `engine_url`, `engine_admin_url`, `engine_callback_host` — a **private
+  Restate engine** for every tier but the root, started on first use
+  (`restate.harness`, a container per run) and removed at the end. A context
+  test serves the component's containers from its own process and registers
+  them **under the component's own names**, at `engine_callback_host`; an
+  adapter test registers its own objects under fresh names as before.
+- `free_port` — a port the OS just handed out, for a test that serves an
+  endpoint.
+- `host` — for the root tier: a **second private engine**, and the tree's
+  HTTP host served on a free port as a subprocess and registered with that
+  engine. The root tier's host is a process, as the rule above says; the
+  fixture is what starts it.
 
-A tree's verify arm is two pytest runs around the hosts:
-`pytest --ignore=tests`, serve, `pytest tests`. Such a tree leaves `tests` out
-of its `testpaths`: pytest treats every `testpaths` entry as a path named on
-the command line, and `--ignore` never removes one, so the first run would
-collect the root tier with no host served. The second run names `tests`
-itself. A tree whose root tier needs no served host (it runs a CLI host that
-does its work and exits) runs pytest once and may keep `tests` in
-`testpaths`. A second engine server per
-tree would also work, but it doubles the infrastructure to solve an ordering
-problem. Renaming a built container after the fact (reaching into the SDK's
-service tag) is refused: it is a test changing a production object's identity
-through an undocumented attribute.
+**Two engines, because the names clash.** Container names are literals
+(TB085), and Restate routes a service's new invocations to its latest
+registration. Measured on one engine: once a context test registered the
+component's names, the served host's new runs went to the test process, and
+the host could not read them back; when the test deleted its deployment,
+routing returned to the host. One engine per tier keeps the two apart without
+renaming either, and without ordering the tiers in time. Renaming a built
+container after the fact (reaching into the SDK's service tag) stays refused:
+it is a test changing a production object's identity through an undocumented
+attribute.
+
+**Nothing leaks when the run dies.** Each engine and the served host carry a
+watchdog: a child process that blocks reading a pipe from pytest and, when the
+pipe closes without being told to stand down (pytest killed), removes the
+container or kills the host's process group. testcontainers' own reaper is
+not relied on — on Docker Desktop its client connects before the reaper
+listens and the reaper never learns what to remove.
+
+**An infrastructure fixture is synchronous.** It yields plain values (URLs,
+ports), so a session-scoped resource never belongs to one test's event loop
+(`asyncio_default_fixture_loop_scope = "function"`); only per-test clients are
+async.
+
+The cost is Docker at test time and a container start per engine (about a
+second once the image is pulled). A tree without an engine has none of these
+fixtures.
 
 ## Reaching a host from a root test
 
@@ -60,16 +82,14 @@ env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)})`. The test's own
 could, and the answer is the `CompletedProcess` (`returncode`, `stdout`,
 `stderr`); there is no wrapper to learn.
 
-An HTTP host's address comes in the way the host's own configuration does:
-as an argument. The root `tests/conftest.py` registers a `--host` option with
-pytest and a session `host` fixture that answers it, failing loudly when the
-runner did not pass one; a root test takes `host: str` as a parameter and
-never reads the environment. The runner passes it —
-`pytest tests --host http://127.0.0.1:<port>` — whether the host is the one it
-just served, or a deployed one a smoke run points at. The address is the
-caller's configuration, as a base URL is for any client of an HTTP service,
-so it is one option named the same in every tree, and `tesser.testing` carries
-nothing for it.
+An HTTP host's address is the `host` fixture: a root test takes `host: str` as
+a parameter and never reads the environment. Without options the fixture
+serves the tree's own host, as above. `pytest --host <url>` points the root
+tier at a host that is already running — a deployed one a smoke run checks —
+and then the fixture serves nothing. The address is the caller's
+configuration, as a base URL is for any client of an HTTP service, so it is
+one option named the same in every tree, and `tesser.testing` carries nothing
+for it.
 
 Root tests share a served host for the whole run, so each uses its own data —
 a fresh identity or a random value — and asserts only on what it created.
@@ -105,6 +125,6 @@ add one for a test.
   read is missing.
 - **The root tier is slow and small**: one test per story. Behaviour
   scenarios belong to the context tier.
-- **The runner owns the hosts.** The verify arm serves long-running hosts and
-  puts their addresses in the environment, as it already serves the Restate
-  endpoint; a CLI host is a subprocess per command.
+- **The tests own the hosts.** The root `conftest.py` serves a long-running
+  host for the session and a CLI host is a subprocess per command; a verify
+  arm is plain `pytest`, and `tests` sits in `testpaths` like every tier.

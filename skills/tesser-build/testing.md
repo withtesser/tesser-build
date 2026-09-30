@@ -364,10 +364,13 @@ is ruled.
   a root test; its behaviour scenarios are context tests. A root test reaches
   a CLI host by running `python -m <module>` with `subprocess.run` (its
   `PYTHONPATH` is the test's `sys.path`), and an HTTP host at the `host`
-  fixture — the address the runner passes as pytest's `--host` option,
-  registered in the root `tests/conftest.py` — and uses its own data, because
-  every root test shares the served host. The runner runs every other tier first with no host served, then
-  serves the hosts, then runs the root tier (`docs/design-test-tiers.md`).
+  fixture — served by the tree's root `conftest.py` on a private engine, or
+  a running host named with pytest's `--host` option — and uses its own data,
+  because every root test shares the served host. The root `conftest.py`
+  owns the rest of the infrastructure too: a test asks for `engine_url`,
+  `engine_admin_url`, `engine_callback_host` or `free_port` by name and
+  never reads the environment, so a plain `pytest` runs every tier in any
+  order (`docs/design-test-tiers.md`).
 - **Test grouping / structure.** Partially ruled (2026-08-23): grouping
   scenarios under a `Test`-prefixed class is **allowed** — the analyzer
   admits test classes and requires that they hold only test methods
