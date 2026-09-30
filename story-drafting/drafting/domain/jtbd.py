@@ -21,21 +21,19 @@ class RecordStoriesOutcome(ts.Outcome):
     RECORDED = enum.auto()
 
 
-class StorySpec(ts.Spec):
-
-    def __init__(self, given: str, when: str, then: str, state: StoryState) -> None:
-        self.given = given
-        self.when = when
-        self.then = then
-        self.state = state
-
-
 class StoryTextSpec(ts.Spec):
 
     def __init__(self, given: str, when: str, then: str) -> None:
         self.given = given
         self.when = when
         self.then = then
+
+
+class StorySpec(StoryTextSpec):
+
+    def __init__(self, given: str, when: str, then: str, state: StoryState) -> None:
+        super().__init__(given=given, when=when, then=then)
+        self.state = state
 
 
 class RecordStoriesSpec(ts.Spec):
@@ -72,11 +70,11 @@ class Story(ts.ValueObject):
     _then: Text
     _state: Text
 
-    def __init__(self, spec: StorySpec) -> None:
+    def __init__(self, spec: StoryTextSpec) -> None:
         object.__setattr__(self, "_given", Text(spec.given))
         object.__setattr__(self, "_when", Text(spec.when))
         object.__setattr__(self, "_then", Text(spec.then))
-        object.__setattr__(self, "_state", Text(spec.state.value))
+        object.__setattr__(self, "_state", Text(StoryState.DRAFTED.value))
 
     @property
     def given(self) -> Text:
@@ -95,6 +93,18 @@ class Story(ts.ValueObject):
         return self._state
 
 
+class DraftedStories(ts.ValueObject):
+
+    _stories: tuple[Story, ...]
+
+    def __init__(self, spec: RecordStoriesSpec) -> None:
+        object.__setattr__(self, "_stories", tuple(Story(story_text) for story_text in spec.story_texts))
+
+    @property
+    def stories(self) -> tuple[Story, ...]:
+        return self._stories
+
+
 class Jtbd(ts.AggregateRoot):
 
     def __init__(self, spec: JtbdSpec) -> None:
@@ -109,6 +119,7 @@ class Jtbd(ts.AggregateRoot):
         return self._jtbd_id
 
     def record_stories(self, record_stories_spec: RecordStoriesSpec) -> RecordStoriesOutcome:
+        self._stories = DraftedStories(record_stories_spec).stories
         return RecordStoriesOutcome.RECORDED
 
     @property
@@ -129,7 +140,9 @@ class Jtbd(ts.AggregateRoot):
 
     @property
     def status(self) -> Text:
-        return Text(JtbdStatus.DRAFTING_STORIES.value)
+        if not self._stories:
+            return Text(JtbdStatus.DRAFTING_STORIES.value)
+        return Text(JtbdStatus.AWAITING_STORY_ACCEPTANCE.value)
 
     @property
     def stories(self) -> tuple[Story, ...]:

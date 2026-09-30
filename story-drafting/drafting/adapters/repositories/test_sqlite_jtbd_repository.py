@@ -38,3 +38,14 @@ class TestSqliteJtbdRepository:
         async with other_store.transaction() as jtbd_repository:
             with pytest.raises(KeyError):
                 await jtbd_repository.load_jtbd(ports.LoadJtbdRequest(jtbd_id="jtbd-1"))
+
+    async def test_a_saved_jtbd_is_loaded_by_a_store_built_again_on_the_same_location(self, tmp_path: pathlib.Path) -> None:
+        location = str(tmp_path / "sqlite_jtbd_repository")
+        jtbd = ports.Jtbd(jtbd_id="jtbd-1", role="a developer", i_want="stories drafted for my job to be done", so_that="I can decide which to keep", stories=(ports.Story(given="a job to be done", when="I submit it", then="it is drafting its stories", state="drafted"),))
+        async with repositories.SqliteJtbdRepository(location=location).transaction() as jtbd_repository:
+            await jtbd_repository.save_jtbd(ports.SaveJtbdRequest(jtbd=jtbd))
+
+        async with repositories.SqliteJtbdRepository(location=location).transaction() as restarted:
+            load_jtbd_response = await restarted.load_jtbd(ports.LoadJtbdRequest(jtbd_id="jtbd-1"))
+
+        assert load_jtbd_response.jtbd == jtbd
