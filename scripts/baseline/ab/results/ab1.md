@@ -54,3 +54,45 @@ alone.
 - One run per cell; nothing here separates skill from noise.
 - Red and arm B shared the machine while running.
 - The check is tolerant by design; it asserts only what the two stories say.
+
+## Cold codex reviews of the four trees
+
+`scripts/baseline/ab/codex-review`: each tree copied to a neutral directory,
+given the same requirements text (the prose prompt without its running
+instructions) and the same instructions, read-only sandbox, no context about
+how it was made. The labels were shuffled (review-1 = Sonnet B, review-2 =
+Opus A, review-3 = Sonnet A, review-4 = Opus B); the reviews are in
+`ab1-<cell>-codex.txt`. Only partly blind: arm A's files carry "generated"
+markers. Each review is codex's own claim; the ones checked by hand are marked.
+
+Arm A (both trees, same top findings):
+- The store is a process-local dictionary, so a returned job is lost on restart
+  and instances disagree. Red chose `memory` in `implementations.toml`; no spec
+  asks the user, and the level-1 story wants work to survive across sessions.
+  (checked: both trees' `implementations.toml` select `memory`)
+- Recording rebuilds the aggregate from the request instead of loading it (the
+  known load-before-save flaw), so a second recording replaces the first.
+- An unknown id reads as 500, and a generated host test asserts it.
+- The generated `pyproject.toml` omits `tests` from `testpaths`, so plain
+  `pytest` skips both acceptance tests. (checked: the template says
+  `["app", "{{context}}", "protocol", "srv"]`)
+- The scaffold's old README ships in the tree and describes a different
+  product ("the developer picks one"). (checked)
+- Save-then-dispatch is not atomic; unbounded request size; blank input accepted
+  or accepted and then undraftable; exhausted retries leave `drafting_stories`.
+
+Arm B (both trees):
+- Submission acknowledgement lost or retried produces duplicate jobs; no
+  idempotency.
+- A submitted job can read as 404 until the workflow starts (Sonnet B retries
+  for 5 s; Opus B reports the window).
+- Id interpolated into the upstream URL unescaped (`%3F`, `%2E%2E` change the
+  routing); transport errors escape as 500; unbounded and empty input accepted.
+- Opus B: a startup failure leaves the process alive; the SIGTERM workaround
+  can lose the signal; the workflow entry point trusts caller-supplied state.
+- No tests for the HTTP routes or the workflow (7 domain tests / none).
+
+Changeability (adding accept): both arms need stable story identifiers and a
+post-decision status. Arm A: the domain, application service, handler, and
+`specs/composition.toml`, then regenerate; arm B: a route plus a handler on the
+existing promise, with the read handler deriving status.
