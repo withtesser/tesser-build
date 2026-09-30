@@ -4,13 +4,10 @@ from __future__ import annotations
 import urllib.error as urllib_error
 import urllib.request as urllib_request
 
-import tesser.testing as ts
-
 
 class Test{{Words}}:
 
-    def test_{{story}}(self) -> None:
-        host = ts.served("{{host_variable}}")
+    def test_{{story}}(self, host: str) -> None:
 {{#path_values}}
         {{name}}: {{type}} | None = None
 {{/path_values}}

@@ -204,7 +204,9 @@ skeleton is named for its method and every path segment, a parameter as
 `by_<field>` (`GET /loans` is `test_reading_loans.py`, `GET /loans/{loan_id}` is
 `test_reading_loans_by_loan_id.py`), and holds two placeholders the agent
 writes: the story's given (how the host reaches it, and any path value the
-route needs) and its then. A story file with `reached_by` is a problem: the
+route needs) and its then. It takes the served host's address as the `host`
+fixture, which the generated `tests/conftest.py` answers from pytest's
+`--host` option (`pytest tests --host <url>`); a run without it fails loudly. A story file with `reached_by` is a problem: the
 key is no longer part of the format. A path parameter for an `int` field answers
 400 unless it is an integer (an optional `-` and at most 18 ASCII digits). A
 command with `takes = {}` renders a `<Command>Spec` whose constructor is `pass`.

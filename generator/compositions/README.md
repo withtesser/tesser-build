@@ -173,15 +173,14 @@ calls; the root test's author does. A story with a `reached_by` key is a
 problem, because the key is no longer part of the format.
 
 **Root test skeletons.** For each level-2 story with a route, the renderer
-writes an agent-owned `tests/test_<words>.py` (and `tests/__init__.py`), named
-for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
+writes an agent-owned `tests/test_<words>.py`, named for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
 replacing, `PATCH` updating, `DELETE` deleting), then each segment of the path
 in order, a literal segment as it is and a `{field}` segment as `by_<field>`,
 so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
 `GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds_by_jtbd_id.py` (so `GET
-/jtbds` and `GET /jtbds/{jtbd_id}` are two files). It reaches the host
-through `ts.served("<APP>_HOST")`, calls the story's route, and asserts its
-`status`, and holds two placeholders. The first is the given: an assertion whose
+/jtbds` and `GET /jtbds/{jtbd_id}` are two files). It takes the served host's
+address as the `host` fixture (`def test_<story>(self, host: str)`), calls the
+story's route on it, and asserts its `status`, and holds two placeholders. The first is the given: an assertion whose
 message is the story's `given`, verbatim, with a `<field>: <type> | None = None`
 line above it for each `{field}` the route's path carries; the author writes how
 the host reaches the given (which calls, any waiting) and binds those values in
@@ -190,6 +189,16 @@ is `assert False, ...`. The second is the then: an assertion whose message is
 the story's `then`, verbatim. So a freshly rendered tree is red at the first
 unwritten placeholder, then at the then, and rendering again keeps the edited
 test.
+
+Beside the skeletons the renderer writes two generated files, so a tree with
+root tests has a root tier that runs: `tests/conftest.py`, which registers
+pytest's `--host` option and the session `host` fixture that answers it,
+failing loudly when the runner passed none, and an empty `tests/__init__.py`,
+without which the root `conftest.py` and `tests/conftest.py` collide under
+mypy. The runner serves the host and passes its address:
+`pytest tests --host http://127.0.0.1:<port>` (`docs/design-test-tiers.md`).
+The address is an argument, not a variable, so `infra.toml` declares none for
+it.
 
 ## 3 `infra.toml`
 
@@ -548,7 +557,8 @@ snapshots, `client/` application clients, `orchestrators/`), `adapters`
 (Restate `activities/`, `workflows/`, `dispatchers/`, the `handlers/http.py`
 HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
 `protocol/`, `srv/http/main.py` (the HTTP host serving the routes with the
-Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons),
+Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
+generated `conftest.py` and `__init__.py`),
 `pyproject.toml`, `requirements-dev.txt`, `conftest.py`, and `.tesser-root`.
 Every module has its sibling test.
 

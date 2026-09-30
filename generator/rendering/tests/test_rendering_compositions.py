@@ -652,11 +652,13 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ()
         assert sorted(path for path in render_composition_response.written if path.startswith("tests/")) == [
-            "tests/__init__.py", "tests/test_reading_jtbds_by_jtbd_id.py", "tests/test_submitting_jtbds.py",
+            "tests/__init__.py", "tests/conftest.py", "tests/test_reading_jtbds_by_jtbd_id.py", "tests/test_submitting_jtbds.py",
         ]
         reading = (tmp_path / "out" / "tests" / "test_reading_jtbds_by_jtbd_id.py").read_text()
         assert reading.startswith("# pragma: tesser-agent-owned;")
-        assert 'host = ts.served("STORY_DRAFTING_HOST")' in reading
+        assert "    def test_s_2_a_1(self, host: str) -> None:\n" in reading
+        assert "tesser.testing" not in reading
+        assert "served" not in reading
         assert "jtbd_id: str | None = None" in reading
         assert (
             "assert jtbd_id is not None, 'write the given of s-2-a-1: I have created a job to be done with POST /jtbds, "
@@ -671,6 +673,35 @@ class TestRenderingCompositions:
             "each with a given, a when, and a then, and in state \"drafted\"' + f\" (answered {answered_body!r})\""
         )
         ast.parse(reading)
+
+    def test_a_tree_with_root_tests_renders_a_generated_conftest_that_takes_the_host_as_pytest_s_host_option(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        unhosted = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        hosted = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests", "--host", "http://127.0.0.1:9"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        conftest = (tmp_path / "out" / "tests" / "conftest.py").read_text()
+
+        assert render_composition_response.problems == ()
+        assert conftest.startswith("# pragma: tesser-generated;")
+        assert '    parser.addoption("--host", help="the base URL of the served host, named by the runner")\n' in conftest
+        assert '@pytest.fixture(scope="session")\ndef host(request: pytest.FixtureRequest) -> str:\n' in conftest
+        assert (tmp_path / "out" / "tests" / "__init__.py").read_text().startswith("# pragma: tesser-generated;")
+        assert "pass --host <url>: the runner serves the host and names its address" in unhosted.stdout
+        assert "write the given of" in hosted.stdout
+        assert "pass --host" not in hosted.stdout
 
     def test_a_route_with_no_path_value_fails_at_its_given_with_nothing_to_bind(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

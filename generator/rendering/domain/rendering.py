@@ -2384,7 +2384,7 @@ class Model(ts.Entity):
                 "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
             })
         self._binding["root_tests"] = root_tests
-        self._binding["host_variable"] = f"{self._app.upper()}_HOST"
+        self._binding["root_tier"] = [{}] if root_tests else []
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
         self._binding["route_probe_answers"] = ", ".join(answers)

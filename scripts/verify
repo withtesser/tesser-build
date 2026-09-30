@@ -601,8 +601,10 @@ run_layout() {
 # generator/compositions/ is rendered by the composition-driven renderer
 # (srv.cli.render) into a scratch directory and the rendered tree is gated:
 # tessercheck zero findings, mypy --strict, and pytest over every tier but the
-# root (a rendered tree has no root tier; its acceptance tests are written by
-# hand; each render is first checked against its composition with
+# root (a rendered tree's root tier is its skeletons, red at each placeholder
+# until their author writes them, so the arm does not run it; a runner that
+# does passes the served host as pytest tests --host <url>, which the rendered
+# tests/conftest.py answers; each render is first checked against its composition with
 # srv.cli.render --check), against the same Restate server, reached through the variables its
 # infra.toml names for the engine, with every storage location variable its
 # infra.toml declares set to a fresh temporary path.
