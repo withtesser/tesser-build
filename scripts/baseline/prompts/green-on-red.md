@@ -105,6 +105,7 @@ there, not in your files.
 
 ## The harness
 
+- "The service has been restarted" (story s-3) means: its process is stopped and started again with the same command and environment, while the Restate server keeps running. No acceptance test here restarts it; the runner does.
 - Run the gate like this, keeping its whole output:
 
   ```sh
