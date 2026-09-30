@@ -21,6 +21,7 @@ import signal
 import subprocess
 
 TREE = "story-drafting"
+GATE_TIMEOUT_S = 600  # a gate that has not finished by then is hung; it is killed and recorded as such
 FINDING = re.compile(r":\d+: (TB\d{3}) ")
 SUMMARY = re.compile(r"^(PASSED|FAILED|ERROR|SKIPPED|XFAIL|XPASS) (\S+)(?: - (.*))?$")
 TESSERCHECK_COMMAND = re.compile(r"scripts/verify\s+[\w-]|scripts/verify\s*($|[;&|])|-m srv\.cli\.main|tessercheck-check|tessercheck_tree")
@@ -302,7 +303,10 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
     with (out / "verify.log").open("w") as log_file:
         proc = subprocess.Popen(["scripts/verify", TREE], cwd=worktree, env=env, stdout=log_file,
                                 stderr=subprocess.STDOUT, start_new_session=True)
-        verify_exit = proc.wait()
+        try:
+            verify_exit = proc.wait(timeout=GATE_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            verify_exit = "timeout"
     try:
         os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
@@ -330,7 +334,7 @@ def gate_metrics(worktree: pathlib.Path, out: pathlib.Path) -> dict:
             total += data["summary"]["num_statements"]
     outcomes = collections.Counter(t["outcome"] for t in tests)
     return {
-        "verify_exit": proc.returncode,
+        "verify_exit": verify_exit,
         "verify_steps_reached": steps,
         "tessercheck_findings": tessercheck_findings,
         "tests": tests,

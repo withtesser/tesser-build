@@ -1,0 +1,82 @@
+{
+  "run": {
+    "phase": "bare",
+    "name": "ab1-opus-B",
+    "slot": 2,
+    "worktree": "<ab-runs>/ab1-opus-B/work",
+    "restate_ingress": "http://localhost:38280",
+    "restate_admin": "http://localhost:39270",
+    "host_port": 9320,
+    "prepared": "2026-09-30T14:25:35Z"
+  },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "tesser-red-trial-medium",
+      "task_kind": "subagent",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 275.9,
+    "api_requests": 29,
+    "tokens": {
+      "input": 58,
+      "cache_read": 1984041,
+      "cache_write": 85070
+    },
+    "tool_calls_total": 29,
+    "tool_calls": {
+      "Bash": 27,
+      "Read": 1,
+      "SubagentHandback": 1
+    },
+    "guidance": [],
+    "tessercheck_runs": [],
+    "tessercheck_runs_count": 0,
+    "final_message": "Works end to end. Adding a small domain test, a README, then committing."
+  },
+  "output": {
+    "files": 10,
+    "python_files": 7,
+    "python_lines": 320,
+    "commits": 1
+  },
+  "check": {
+    "cmd": ".venv/bin/python main.py",
+    "cwd": "<ab-runs>/ab1-opus-B/work",
+    "seconds_to_listen": 0.27,
+    "served": true,
+    "restate_registration": {
+      "ok": true,
+      "status": 200,
+      "detail": "{\"id\":\"dp_11vJjspQxVGt7lKG8gPVRQJ\",\"services\":[{\"name\":\"StoryDraftingSkill\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"read\",\"ty\":\"Shared\",\"public\":true,\"input_description\":\"none\",\"output_description\":\"JSON object\",\"output_json_schema\":{\"type\":\"object\"},\"retry_policy\":{\"max_attempts\":null}},{\"name\":\"run\","
+    },
+    "story_1": {
+      "passed": true,
+      "problems": [],
+      "answered": "{\"jtbd_id\":\"a281190c8be74e7f8a4b37abbd420dcb\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"drafting_stories\",\"stories\":[]}"
+    },
+    "story_2": {
+      "passed": true,
+      "problems": [],
+      "seconds_until_drafted": 0.29,
+      "answered": "{\"jtbd_id\":\"a281190c8be74e7f8a4b37abbd420dcb\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I get what I want\",\"then\":\"I can pick up where I left off\",\"state\":\"drafted\"}]}"
+    },
+    "probes": {
+      "get_unknown_id_status": 404,
+      "post_missing_fields_status": 400
+    },
+    "exited_early": false,
+    "passed": true
+  }
+}
