@@ -19,7 +19,7 @@ class TestHttpHost:
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        env = dict(os.environ, RESTATE_INGRESS="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
+        env = dict(os.environ, RESTATE_URL="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         try:
             discover = urllib_request.Request(
@@ -73,7 +73,7 @@ class TestHttpHost:
             unreachable = closed.getsockname()[1]
         env = dict(
             os.environ,
-            RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}",
+            RESTATE_URL=f"http://127.0.0.1:{unreachable}",
             PYTHONPATH=os.pathsep.join(sys.path),
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
@@ -117,7 +117,7 @@ class TestHttpHost:
             unreachable = closed.getsockname()[1]
         env = dict(
             os.environ,
-            RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}",
+            RESTATE_URL=f"http://127.0.0.1:{unreachable}",
             PYTHONPATH=os.pathsep.join(sys.path),
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
@@ -161,7 +161,7 @@ class TestHttpHost:
             unreachable = closed.getsockname()[1]
         env = dict(
             os.environ,
-            RESTATE_INGRESS=f"http://127.0.0.1:{unreachable}",
+            RESTATE_URL=f"http://127.0.0.1:{unreachable}",
             PYTHONPATH=os.pathsep.join(sys.path),
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)

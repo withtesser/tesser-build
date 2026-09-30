@@ -222,7 +222,7 @@ version = "3.12"
 [engine.restate]                          # required, and the only engine
 body = "supported"                        # informational
 engine_path = "/restate"                  # required: where the Restate endpoint is mounted
-ingress_variable = "RESTATE_INGRESS"      # required: the variable the app reads the ingress from
+engine_url_variable = "RESTATE_URL"       # required: the variable the app reads the engine's URL from
 admin_variable = "RESTATE_ADMIN"          # required: read by the tests that register an endpoint
 callback_host_variable = "RESTATE_CALLBACK_HOST"   # required: likewise
 
@@ -244,7 +244,7 @@ one, or it is a problem. A store port in `implementations.toml` is implemented
 by a key that names a declared storage (below); a declared storage no port
 uses is allowed. When a store port's storage has a `location_variable`, the app
 reads that variable when it loads (refusing with `missing_env` when it is
-unset, as it does the ingress), the component config carries it as
+unset, as it does the engine's URL), the component config carries it as
 `<storage>_location`, and the component builds the store with
 `location=config.<storage>_location`.
 

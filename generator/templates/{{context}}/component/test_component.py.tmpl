@@ -10,22 +10,22 @@ class TestConfig:
 {{#storage_postgres}}
 
     def test_a_postgres_coordinate_requests_that_database(self) -> None:
-        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}ingress="http://localhost:8080", identity_seed=7)
+        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}engine_url="http://localhost:8080", identity_seed=7)
 
         config = component.Config(spec)
 
         assert config.database == pgdatabase_database.DatabaseRequest(spec.storage)
 {{/storage_postgres}}
 
-    def test_a_config_carries_the_engine_ingress(self) -> None:
-        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}ingress="http://localhost:8080", identity_seed=7)
+    def test_a_config_carries_the_engine_url(self) -> None:
+        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}engine_url="http://localhost:8080", identity_seed=7)
 
         config = component.Config(spec)
 
-        assert config.ingress == spec.ingress
+        assert config.engine_url == spec.engine_url
 
     def test_a_config_carries_the_seed_its_identity_repository_is_built_with(self) -> None:
-        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}ingress="http://localhost:8080", identity_seed=7)
+        spec = component.Spec({{#storage_postgres}}storage="postgres://a@b/c", {{/storage_postgres}}engine_url="http://localhost:8080", identity_seed=7)
 
         config = component.Config(spec)
 
@@ -36,7 +36,7 @@ class Test{{Context}}:
 
     async def test_the_component_publishes_the_engine_containers_it_registered_into(self) -> None:
         config = component.Config(
-            component.Spec({{#storage_postgres}}storage="postgres://nobody@nowhere/none", {{/storage_postgres}}ingress="http://localhost:8080", identity_seed=7)
+            component.Spec({{#storage_postgres}}storage="postgres://nobody@nowhere/none", {{/storage_postgres}}engine_url="http://localhost:8080", identity_seed=7)
         )
 
         {{context}} = component.{{Context}}(config{{#storage_postgres}}, pgdatabase_database.Database(config.database){{/storage_postgres}})
@@ -50,9 +50,9 @@ class Test{{Context}}:
 
         assert registered == {"{{Aggregate}}Actions": ["{{record}}"], "{{Aggregate}}Orchestrator": ["{{conduct}}"]}
 
-    async def test_every_container_bounds_its_retries_and_only_the_workflow_faces_the_ingress(self) -> None:
+    async def test_every_container_bounds_its_retries_and_only_the_workflow_is_reachable_at_the_engine_url(self) -> None:
         config = component.Config(
-            component.Spec({{#storage_postgres}}storage="postgres://nobody@nowhere/none", {{/storage_postgres}}ingress="http://localhost:8080", identity_seed=7)
+            component.Spec({{#storage_postgres}}storage="postgres://nobody@nowhere/none", {{/storage_postgres}}engine_url="http://localhost:8080", identity_seed=7)
         )
 
         {{context}} = component.{{Context}}(config{{#storage_postgres}}, pgdatabase_database.Database(config.database){{/storage_postgres}})

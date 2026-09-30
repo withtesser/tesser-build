@@ -28,7 +28,7 @@ class TestHttpHost:
                 port = candidate
                 break
         assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_INGRESS="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
+        env = dict(os.environ, RESTATE_URL="http://localhost:8080", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         try:
             discover = urllib_request.Request(
@@ -82,7 +82,7 @@ class TestHttpHost:
                 port = candidate
                 break
         assert port, f"no free port in {first + 1}-{first + 9}"
-        env = dict(os.environ, RESTATE_INGRESS="http://127.0.0.1:9", PYTHONPATH=os.pathsep.join(sys.path))
+        env = dict(os.environ, RESTATE_URL="http://127.0.0.1:9", PYTHONPATH=os.pathsep.join(sys.path))
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
         try:

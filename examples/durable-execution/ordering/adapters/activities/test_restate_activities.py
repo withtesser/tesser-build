@@ -98,7 +98,7 @@ class TestRestatePriceProduct:
             assert registered.is_success, registered.text
 
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 price_product_response = await restate_client.Client(async_client).service_call(
                     restate_price_product.handler, relays.PriceProductRequest(sku="gadget")
@@ -161,7 +161,7 @@ class TestRestateTakePayment:
             assert registered.is_success, registered.text
 
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 take_payment_response = await restate_client.Client(async_client).service_call(
                     restate_take_payment.handler,
@@ -216,7 +216,7 @@ class TestRestateEngineRefusals:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).generic_call(
                         order_actions_service.name, restate_price_product.handler.__name__,
@@ -235,7 +235,7 @@ class TestRestateEngineRefusals:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service(self) -> None:
+    async def test_the_engine_url_refuses_a_call_to_a_private_actions_service(self) -> None:
         order_actions_service = restate.Service(f"OrderActions{uuid.uuid4().hex}", ingress_private=True)
         restate_price_product = activities.RestatePriceProduct(order_actions_service, FakeOrderingApplicationClient())
         with socket.socket() as probe:
@@ -264,7 +264,7 @@ class TestRestateEngineRefusals:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as refused:
                     await restate_client.Client(async_client).service_call(restate_price_product.handler, relays.PriceProductRequest(sku="gadget"))
 

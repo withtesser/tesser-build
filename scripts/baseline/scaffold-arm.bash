@@ -1,6 +1,6 @@
 run_story_drafting() {
   cd "$ROOT/story-drafting" || return 1
-  local ingress="${RESTATE_INGRESS:-http://localhost:38080}"
+  local engine_url="${RESTATE_URL:-http://localhost:38080}"
   local admin="${RESTATE_ADMIN:-http://localhost:39070}"
   local port="${STORY_DRAFTING_PORT:-9300}"
   local callback_host="${STORY_DRAFTING_CALLBACK_HOST:-host.docker.internal}"
@@ -36,8 +36,8 @@ PY
     step "mypy --strict"
     MYPYPATH=.:../tesser-py mypy --strict "${targets[@]}" || return 1
   fi
-  step "pytest every tier but the root (no host served; Restate at $ingress)"
-  RESTATE_INGRESS="$ingress" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
+  step "pytest every tier but the root (no host served; Restate at $engine_url)"
+  RESTATE_URL="$engine_url" RESTATE_ADMIN="$admin" RESTATE_CALLBACK_HOST="$callback_host" \
     pytest -q --ignore=tests . || return 1
   if [ ! -f srv/http/main.py ]; then
     step "pytest the root tier (no srv/http/main.py to serve)"
@@ -45,7 +45,7 @@ PY
     return
   fi
   step "serve srv.http.main on :$port and register its Restate endpoint at $admin"
-  (exec env RESTATE_INGRESS="$ingress" PYTHONPATH=.:../tesser-py \
+  (exec env RESTATE_URL="$engine_url" PYTHONPATH=.:../tesser-py \
     python3 -m srv.http.main "0.0.0.0:$port") &
   local host=$!
   local host_started

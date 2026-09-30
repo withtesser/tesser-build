@@ -29,16 +29,16 @@ class TestAppConfig:
 class TestEnvConfigRepository:
 
     def test_the_environment_is_read_into_a_config(self) -> None:
-        ambient = {name: os.environ.get(name, "") for name in ("ALPHA_STORAGE", "BETA_KEY", "RESTATE_INGRESS")}
-        os.environ.update(ALPHA_STORAGE="postgres://a@b/c", BETA_KEY="k", RESTATE_INGRESS="http://ingress.invalid:8080")
+        ambient = {name: os.environ.get(name, "") for name in ("ALPHA_STORAGE", "BETA_KEY", "RESTATE_URL")}
+        os.environ.update(ALPHA_STORAGE="postgres://a@b/c", BETA_KEY="k", RESTATE_URL="http://engine.invalid:8080")
         try:
             app_config = app.EnvConfigRepository().get()
         finally:
             os.environ.update(ambient)
-        assert (app_config.alpha.storage, app_config.beta.key, app_config.alpha.ingress) == (
+        assert (app_config.alpha.storage, app_config.beta.key, app_config.alpha.engine_url) == (
             "postgres://a@b/c",
             "k",
-            "http://ingress.invalid:8080",
+            "http://engine.invalid:8080",
         )
 
 

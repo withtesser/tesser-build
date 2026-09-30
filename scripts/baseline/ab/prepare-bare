@@ -8,7 +8,7 @@
 #
 # The work directory is $AB_WORK_ROOT/<run-name>/work (default /private/tmp/claude-501/ab-runs); the prompt lands in
 # .baseline-runs/<run-name>/prompt.md. The slot (0-9) gives the run its own
-# Restate container (ingress 38080+100*slot, admin 39070+100*slot) and host
+# Restate container (engine URL on port 38080+100*slot, admin 39070+100*slot) and host
 # port 9300+10*slot, the same as scripts/baseline/prepare.
 #
 set -euo pipefail
@@ -25,12 +25,12 @@ out="$MAIN/.baseline-runs/$name"
 work="${AB_WORK_ROOT:-/private/tmp/claude-501/ab-runs}/$name/work"
 [ ! -e "$out" ] || { echo "baseline: $out already exists" >&2; exit 1; }
 
-ingress_port=$((38080 + 100 * slot))
+engine_port=$((38080 + 100 * slot))
 admin_port=$((39070 + 100 * slot))
 host_port=$((9300 + 10 * slot))
 container="tesser-story-drafting-restate-$slot"
 docker rm -f "$container" >/dev/null 2>&1 || true
-docker run -d --name "$container" -p "$ingress_port:8080" -p "$admin_port:9070" \
+docker run -d --name "$container" -p "$engine_port:8080" -p "$admin_port:9070" \
   --add-host=host.docker.internal:host-gateway restatedev/restate:1.7 >/dev/null
 for _ in $(seq 1 50); do
   if curl -sf "http://localhost:$admin_port/health" >/dev/null; then break; fi
@@ -40,13 +40,13 @@ done
 mkdir -p "$out" "$work"
 git -C "$work" init -q
 cat >"$out/run.json" <<JSON
-{"phase": "bare", "name": "$name", "slot": $slot, "worktree": "$work", "restate_ingress": "http://localhost:$ingress_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"phase": "bare", "name": "$name", "slot": $slot, "worktree": "$work", "engine_url": "http://localhost:$engine_port", "restate_admin": "http://localhost:$admin_port", "host_port": $host_port, "prepared": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 
-python3 - "$HERE/prompts/bare.md" "$out/prompt.md" "$work" "$host_port" "http://localhost:$ingress_port" "http://localhost:$admin_port" "$work/jtbd.db" <<'PY'
+python3 - "$HERE/prompts/bare.md" "$out/prompt.md" "$work" "$host_port" "http://localhost:$engine_port" "http://localhost:$admin_port" "$work/jtbd.db" <<'PY'
 import sys
 text = open(sys.argv[1]).read()
-for token, value in zip(("{workdir}", "{port}", "{ingress}", "{admin}", "{dbpath}"), sys.argv[3:8]):
+for token, value in zip(("{workdir}", "{port}", "{engine_url}", "{admin}", "{dbpath}"), sys.argv[3:8]):
     text = text.replace(token, value)
 open(sys.argv[2], "w").write(text)
 PY

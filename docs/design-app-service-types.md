@@ -107,7 +107,7 @@ Notes on the lines, from the code and the Restate Python SDK (1.0.4):
   ...)` in voice's `conduct_call`, `shared.get(CONDUCT_CALL_STATE)` in both
   `person_joined` and `person_turn_completed`; `REGISTER_WIDGET_STATE` in
   minimal) and raises `TerminalError(..., status_code=412)` when it is
-  absent; the ingress answers 412 to the caller. A signal checks the key
+  absent; the engine answers 412 to the caller at its URL. A signal checks the key
   against the body first (400), then the state (412), then resolves and
   swallows the 409 of a promise already resolved. A `main` that checks its
   key against its body does so before it sets the state, so a refused body

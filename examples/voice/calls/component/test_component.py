@@ -196,7 +196,7 @@ class TestCalls:
             (5, "pause")
         ] * 4
 
-    async def test_only_the_workflow_is_reachable_from_ingress(self) -> None:
+    async def test_only_the_workflow_is_reachable_at_the_engine_url(self) -> None:
         config = component.Config(_spec(storage="postgres://nobody@nowhere/none"))
 
         calls = component.Calls(config, pgdatabase_database.Database(config.database))

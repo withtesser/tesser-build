@@ -87,18 +87,18 @@ class RestateHttpWidgetOrchestratorRelay(ts.Dispatcher):
 
     def __init__(
         self,
-        ingress: str,
+        engine_url: str,
         restate_register_widget: workflows.RestateRegisterWidget,
         restate_approve_widget: RestateApproveWidget,
     ) -> None:
-        self._ingress = ingress
+        self._engine_url = engine_url
         self._restate_register_widget = restate_register_widget
         self._restate_approve_widget = restate_approve_widget
 
     async def start_register_widget(
         self, register_widget_request: relays.RegisterWidgetRequest
     ) -> relays.StartRegisterWidgetResponse:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_TIMEOUT) as async_client:
             await restate_client.Client(async_client).workflow_send(
                 self._restate_register_widget.handler,
                 key=urllib_parse.quote(str(register_widget_request.name), safe="").replace(".", "%2E"),
@@ -107,7 +107,7 @@ class RestateHttpWidgetOrchestratorRelay(ts.Dispatcher):
         return relays.StartRegisterWidgetResponse(name=str(register_widget_request.name))
 
     async def run_approve_widget(self, approve_widget_request: relays.ApproveWidgetRequest) -> relays.ApproveWidgetResponse:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._restate_approve_widget.handler,
                 key=urllib_parse.quote(approve_widget_request.name, safe="").replace(".", "%2E"),

@@ -20,9 +20,9 @@ _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationR
 class Spec(ts.Spec):
 
     def __init__(
-        self, ingress: str{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}{{#locations}}, {{location_attr}}: str{{/locations}}
+        self, engine_url: str{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}{{#locations}}, {{location_attr}}: str{{/locations}}
     ) -> None:
-        self.ingress = ingress
+        self.engine_url = engine_url
 {{#identity_seeded}}
         self.identity_seed = identity_seed
 {{/identity_seeded}}
@@ -34,7 +34,7 @@ class Spec(ts.Spec):
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
-        self.ingress = spec.ingress
+        self.engine_url = spec.engine_url
 {{#identity_seeded}}
         self.identity_seed = spec.identity_seed
 {{/identity_seeded}}
@@ -51,7 +51,7 @@ class {{Context}}(ts.Component):
 {{/shared_stores}}
 {{#containers}}
         self.{{container_attr}}: restate.{{container_kind}} = restate.{{container_kind}}(
-            "{{container}}", {{#ingress_private}}ingress_private=True, {{/ingress_private}}invocation_retry_policy=_RETRY_POLICY
+            "{{container}}", {{#private_container}}ingress_private=True, {{/private_container}}invocation_retry_policy=_RETRY_POLICY
         )
 {{/containers}}
 {{#workflows}}

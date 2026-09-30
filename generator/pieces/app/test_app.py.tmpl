@@ -13,10 +13,10 @@ import {{context}}.component as {{context}}_component
 class FakeConfigRepository(app.AppConfigRepository):
 
     def get(self) -> app.AppConfig:
-        ingress = os.environ["{{ingress_variable}}"]
+        engine_url = os.environ["{{engine_url_variable}}"]
         return app.AppConfig(
             app.Spec({{context}}_component.Config({{context}}_component.Spec(
-                ingress{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
+                engine_url{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
             )))
         )
 
@@ -42,7 +42,7 @@ class TestEnvConfigRepository:
     def test_the_environment_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
 
-        assert app_config.{{context}}.ingress == os.environ["{{ingress_variable}}"]
+        assert app_config.{{context}}.engine_url == os.environ["{{engine_url_variable}}"]
 {{#locations}}
         assert app_config.{{context}}.{{location_attr}} == os.environ["{{location_variable}}"]
 {{/locations}}

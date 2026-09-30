@@ -121,7 +121,7 @@ class TestRestateHttpOrderOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             restate_http_order_orchestrator_relay = dispatchers.RestateHttpOrderOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_confirm_order
+                os.environ["RESTATE_URL"], restate_confirm_order
             )
             first = await restate_http_order_orchestrator_relay.start_confirm_order(
                 relays.ConfirmOrderRequest(order=domain.Order(order_spec(order_id=order_id)))
@@ -218,7 +218,7 @@ class TestRestateHttpOrderOrchestratorRelay:
 
             order_id = "../admin?x=1#f-" + str(uuid.uuid4())
             start_confirm_order_response = await dispatchers.RestateHttpOrderOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_confirm_order
+                os.environ["RESTATE_URL"], restate_confirm_order
             ).start_confirm_order(relays.ConfirmOrderRequest(order=domain.Order(order_spec(order_id=order_id))))
             invoked = httpx.Response(503)
             for _ in range(100):
@@ -305,7 +305,7 @@ class TestRestateHttpOrderOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             confirm_order_response = await dispatchers.RestateHttpOrderOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_confirm_order
+                os.environ["RESTATE_URL"], restate_confirm_order
             ).run_confirm_order(relays.ConfirmOrderRequest(order=domain.Order(order_spec(order_id=order_id, quantity=2))))
             invoked = await admin.post(
                 "/query",
@@ -390,7 +390,7 @@ class TestRestateHttpOrderOrchestratorRelay:
 
             order_id = str(uuid.uuid4())
             restate_http_order_orchestrator_relay = dispatchers.RestateHttpOrderOrchestratorRelay(
-                os.environ["RESTATE_INGRESS"], restate_confirm_order
+                os.environ["RESTATE_URL"], restate_confirm_order
             )
             first = await restate_http_order_orchestrator_relay.run_confirm_order(
                 relays.ConfirmOrderRequest(order=domain.Order(order_spec(order_id=order_id)))
@@ -417,7 +417,7 @@ class TestRestateHttpOrderOrchestratorRelay:
             serving.cancel()
             await asyncio.gather(serving, return_exceptions=True)
 
-    async def test_an_unreachable_ingress_is_a_fault_when_starting(self) -> None:
+    async def test_an_unreachable_engine_url_is_a_fault_when_starting(self) -> None:
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = f"http://127.0.0.1:{closed.getsockname()[1]}"
@@ -430,7 +430,7 @@ class TestRestateHttpOrderOrchestratorRelay:
                 unreachable, restate_confirm_order
             ).start_confirm_order(relays.ConfirmOrderRequest(order=domain.Order(order_spec())))
 
-    async def test_an_unreachable_ingress_is_a_fault_when_running(self) -> None:
+    async def test_an_unreachable_engine_url_is_a_fault_when_running(self) -> None:
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = f"http://127.0.0.1:{closed.getsockname()[1]}"

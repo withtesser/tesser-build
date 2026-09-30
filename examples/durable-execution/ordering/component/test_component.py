@@ -93,7 +93,7 @@ class TestClient:
 class TestOrdering:
 
     def test_the_component_publishes_the_engine_containers_it_registered_into(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://localhost:8080")))
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://localhost:8080")))
         try:
             declared = {
                 ordering.order_actions_service.name: sorted(
@@ -119,8 +119,8 @@ class TestOrdering:
         }
 
 
-    def test_every_container_bounds_its_retries_and_only_the_workflows_face_the_ingress(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://localhost:8080")))
+    def test_every_container_bounds_its_retries_and_only_the_workflows_are_reachable_at_the_engine_url(self) -> None:
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://localhost:8080")))
         try:
             declared = {
                 registered.name: (
@@ -152,6 +152,6 @@ class TestOrdering:
 class TestConfig:
 
     def test_a_config_carries_its_spec(self) -> None:
-        spec = component.Spec(ingress="http://localhost:8080")
+        spec = component.Spec(engine_url="http://localhost:8080")
         config = component.Config(spec)
-        assert config.ingress == spec.ingress
+        assert config.engine_url == spec.engine_url

@@ -63,7 +63,7 @@ no verb, a response is named for what it is) is assumed throughout.
    `<FarSide>SignalRelay` and carries only `await_` operations; no other relay
    carries one. Nothing outside an invocation can read a durable promise, so a
    signal relay has an invocation runner only while a plain relay has an
-   ingress runner, and a Protocol cannot be partially implemented.
+   HTTP runner, and a Protocol cannot be partially implemented.
 
 4. **The calling-mode verb lives on the relay protocol and its runners.**
    `start_<operation>` accepts and returns; `run_<operation>` waits;
@@ -214,7 +214,7 @@ situations.
 12. **The ubiquitous language holds in the domain and the application; the
     client is its published form; an adapter translates.** An adapter speaks
     its backend's language (a dict answering `None`, Restate's
-    `TerminalError` with a status, an ingress 409, HTTP's 404) and converts
+    `TerminalError` with a status, a 409 from the engine's URL, HTTP's 404) and converts
     it into the application's at the port or relay the application declared,
     in both directions. No backend word crosses inward: nothing named for an
     engine, a status, or a transport category exists inward of an adapter.

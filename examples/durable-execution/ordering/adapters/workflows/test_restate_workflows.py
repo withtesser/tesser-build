@@ -149,7 +149,7 @@ class TestRestateConfirmOrder:
 
             order_id = str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
@@ -246,7 +246,7 @@ class TestRestateConfirmOrder:
 
             order_id = str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 confirm_order_response = await restate_client.Client(async_client).workflow_call(
                     restate_confirm_order.handler,
@@ -327,7 +327,7 @@ class TestRestatePayForOrder:
 
             order_id = "../admin?x=1#f-" + str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 pay_for_order_response = await restate_client.Client(async_client).workflow_call(
                     restate_pay_for_order.handler,
@@ -439,7 +439,7 @@ class TestRestatePayForOrder:
 
             order_id = str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 confirm_order_response = await restate_client.Client(async_client).workflow_call(
                     restate_confirm_order.handler,
@@ -527,7 +527,7 @@ class TestRestatePayForOrder:
 
             order_id = str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 pay_for_order_response = await restate_client.Client(async_client).workflow_call(
                     restate_pay_for_order.handler,
@@ -608,7 +608,7 @@ class TestRestatePayForOrder:
 
             order_id = str(uuid.uuid4())
             async with httpx.AsyncClient(
-                base_url=os.environ["RESTATE_INGRESS"], timeout=30.0
+                base_url=os.environ["RESTATE_URL"], timeout=30.0
             ) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(

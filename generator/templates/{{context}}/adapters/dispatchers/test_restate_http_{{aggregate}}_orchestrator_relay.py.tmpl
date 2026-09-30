@@ -75,7 +75,7 @@ class TestRestateHttp{{Aggregate}}OrchestratorRelay:
 
 {{#calling_run}}
             {{conduct}}_response = await dispatchers.RestateHttp{{Aggregate}}OrchestratorRelay(
-                os.environ["{{ingress_env}}"], restate_{{conduct}}
+                os.environ["{{engine_url_env}}"], restate_{{conduct}}
             ).run_{{conduct}}(relays.{{Conduct}}Request({{#record_fields}}{{field}}={{#is_identity}}workflow_key{{/is_identity}}{{^is_identity}}{{sample}}{{/is_identity}}{{comma}}{{/record_fields}}))
             invoked = await admin.post(
                 "/query",
@@ -90,7 +90,7 @@ class TestRestateHttp{{Aggregate}}OrchestratorRelay:
 {{/calling_run}}
 {{#calling_start}}
             start_{{conduct}}_response = await dispatchers.RestateHttp{{Aggregate}}OrchestratorRelay(
-                os.environ["{{ingress_env}}"], restate_{{conduct}}
+                os.environ["{{engine_url_env}}"], restate_{{conduct}}
             ).start_{{conduct}}(relays.{{Conduct}}Request({{#record_fields}}{{field}}={{#is_identity}}workflow_key{{/is_identity}}{{^is_identity}}{{sample}}{{/is_identity}}{{comma}}{{/record_fields}}))
             invoked = httpx.Response(503)
             for _ in range(100):

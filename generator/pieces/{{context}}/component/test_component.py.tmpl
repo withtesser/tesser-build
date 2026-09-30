@@ -10,19 +10,19 @@ import {{context}}.component as component
 
 class TestConfig:
 
-    def test_a_config_carries_the_engine_ingress(self) -> None:
+    def test_a_config_carries_the_engine_url(self) -> None:
         spec = component.Spec(
-            ingress="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
+            engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
         )
 
         config = component.Config(spec)
 
-        assert config.ingress == spec.ingress
+        assert config.engine_url == spec.engine_url
 {{#locations}}
 
     def test_a_config_carries_the_{{location_attr}}_its_store_is_built_with(self) -> None:
         spec = component.Spec(
-            ingress="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}, {{location_attr}}="{{location_attr}}"
+            engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}, {{location_attr}}="{{location_attr}}"
         )
 
         config = component.Config(spec)
@@ -33,7 +33,7 @@ class TestConfig:
 
     def test_a_config_carries_the_seed_its_identity_repository_is_built_with(self) -> None:
         spec = component.Spec(
-            ingress="http://localhost:8080", identity_seed=7{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
+            engine_url="http://localhost:8080", identity_seed=7{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
         )
 
         config = component.Config(spec)
@@ -47,7 +47,7 @@ class Test{{Context}}:
     async def test_the_component_publishes_the_engine_containers_it_registered_into(self) -> None:
         config = component.Config(
             component.Spec(
-                ingress="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
+                engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
                 {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
             )
         )
@@ -66,10 +66,10 @@ class Test{{Context}}:
 {{/containers}}
         }
 
-    async def test_every_container_bounds_its_retries_and_only_the_workflow_faces_the_ingress(self) -> None:
+    async def test_every_container_bounds_its_retries_and_only_the_workflow_is_reachable_at_the_engine_url(self) -> None:
         config = component.Config(
             component.Spec(
-                ingress="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
+                engine_url="http://localhost:8080"{{#identity_seeded}}, identity_seed=7{{/identity_seeded}}{{#locations}},
                 {{location_attr}}=os.environ["{{location_variable}}"]{{/locations}}
             )
         )
@@ -92,6 +92,6 @@ class Test{{Context}}:
 
         assert declared == [
 {{#containers}}
-            ("{{container}}", {{#ingress_private}}True{{/ingress_private}}{{^ingress_private}}None{{/ingress_private}}, 5, "pause"),
+            ("{{container}}", {{#private_container}}True{{/private_container}}{{^private_container}}None{{/private_container}}, 5, "pause"),
 {{/containers}}
         ]

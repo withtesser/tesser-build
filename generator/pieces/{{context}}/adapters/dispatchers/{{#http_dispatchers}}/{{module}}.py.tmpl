@@ -17,13 +17,13 @@ _START_TIMEOUT: typing.Final[httpx.Timeout] = httpx.Timeout(5.0, read=_READ_TIME
 
 class {{Dispatcher}}(ts.Dispatcher):
 
-    def __init__(self, ingress: str, {{workflow_param}}: workflows.{{Workflow}}) -> None:
-        self._ingress = ingress
+    def __init__(self, engine_url: str, {{workflow_param}}: workflows.{{Workflow}}) -> None:
+        self._engine_url = engine_url
         self._{{workflow_param}} = {{workflow_param}}
 {{#start_methods}}
 
     async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_START_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_START_TIMEOUT) as async_client:
             await restate_client.Client(async_client).workflow_send(
                 self._{{workflow_param}}.handler,
                 key=urllib_parse.quote({{param}}.{{identity}}, safe=""),
@@ -34,7 +34,7 @@ class {{Dispatcher}}(ts.Dispatcher):
 {{#run_methods}}
 
     async def {{method}}(self, {{param}}: relays.{{Request}}) -> relays.{{Returns}}:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_START_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_START_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._{{workflow_param}}.handler,
                 key=urllib_parse.quote({{param}}.{{identity}}, safe=""),

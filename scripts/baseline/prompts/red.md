@@ -61,8 +61,8 @@ The `library` spec above generates this handler behind its routes,
 
 ## The harness
 
-- The spec's `[environment_variables]` is `restate_ingress_url =
-  "RESTATE_INGRESS"`; use `host = "http"` and `storage = "memory"`.
+- The spec's `[environment_variables]` is `engine_url =
+  "RESTATE_URL"`; use `host = "http"` and `storage = "memory"`.
 - Generate with
   `cd {worktree}/generator && PYTHONPATH=.:../tesser-py python3 -m srv.cli.generate {spec} {worktree}/story-drafting --print tests/test_acceptance.py`.
   It prints the path of every file it wrote, then the generated root test
@@ -72,7 +72,7 @@ The `library` spec above generates this handler behind its routes,
 - Run `scripts/verify` once, keeping its whole output, like this:
 
   ```sh
-  cd {worktree} && RESTATE_INGRESS={ingress} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
+  cd {worktree} && RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
     scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
@@ -84,7 +84,7 @@ The `library` spec above generates this handler behind its routes,
   pytest's `--host` option (the root tests take it as the `host` fixture). Every step before the last `  →` line passed. The
   full output stays in `{log}` to grep; don't run it again to see more. Do
   not edit `scripts/verify`.
-- Your Restate server is at ingress {ingress} and admin {admin}; generated
+- Your Restate server's URL is {engine_url} and its admin API {admin}; generated
   tests that serve their own endpoints pick free ports themselves. Other
   agents work side by side on other ports: don't touch processes you didn't
   start. Work only inside the worktree.

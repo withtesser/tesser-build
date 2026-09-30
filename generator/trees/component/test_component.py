@@ -40,7 +40,7 @@ class TestTrees:
             '[acceptance_test]\ntest_class_name = "TestPlacingCalls"\n'
             'test_method_name = "test_a_call_is_successfully_made"\nasserted_field = "person_name"\n'
             'random_values = ["Ada", "Grace"]\n'
-            '[environment_variables]\nstorage_url = "CALLS_STORAGE"\nrestate_ingress_url = "RESTATE_INGRESS"\n'
+            '[environment_variables]\nstorage_url = "CALLS_STORAGE"\nengine_url = "RESTATE_URL"\n'
         )
         trees = component.Trees(component.Config(component.Spec(templates_root=str(tmp_path / "templates"))))
 

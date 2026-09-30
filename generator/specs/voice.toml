@@ -39,4 +39,4 @@ random_values = ["Ada", "Grace", "Alan", "Barbara"]
 
 [environment_variables]
 storage_url = "CALLS_STORAGE"
-restate_ingress_url = "RESTATE_INGRESS"
+engine_url = "RESTATE_URL"

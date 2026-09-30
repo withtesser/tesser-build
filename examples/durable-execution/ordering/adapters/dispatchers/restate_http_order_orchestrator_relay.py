@@ -19,15 +19,15 @@ _ALREADY_INVOKED: typing.Final[str] = "the workflow method was already invoked"
 
 class RestateHttpOrderOrchestratorRelay(ts.Dispatcher):
 
-    def __init__(self, ingress: str, restate_confirm_order: workflows.RestateConfirmOrder) -> None:
-        self._ingress = ingress
+    def __init__(self, engine_url: str, restate_confirm_order: workflows.RestateConfirmOrder) -> None:
+        self._engine_url = engine_url
         self._restate_confirm_order = restate_confirm_order
 
     async def start_confirm_order(
         self, confirm_order_request: relays.ConfirmOrderRequest
     ) -> relays.StartConfirmOrderResponse:
         key = str(confirm_order_request.order.identity)
-        async with httpx.AsyncClient(base_url=self._ingress) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url) as async_client:
             await restate_client.Client(async_client).workflow_send(
                 self._restate_confirm_order.handler,
                 key=urllib_parse.quote(key, safe=""),
@@ -43,7 +43,7 @@ class RestateHttpOrderOrchestratorRelay(ts.Dispatcher):
         key = str(confirm_order_request.order.identity)
         try:
             async with httpx.AsyncClient(
-                base_url=self._ingress, timeout=_RUN_TIMEOUT
+                base_url=self._engine_url, timeout=_RUN_TIMEOUT
             ) as async_client:
                 return await restate_client.Client(async_client).workflow_call(
                     self._restate_confirm_order.handler,

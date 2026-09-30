@@ -41,4 +41,4 @@ random_values = ["Printer jam", "Lost badge", "No network"]
 
 [environment_variables]
 storage_url = "TICKETS_STORAGE"
-restate_ingress_url = "RESTATE_INGRESS"
+engine_url = "RESTATE_URL"

@@ -18,7 +18,7 @@ out="$MAIN/.baseline-runs/$name"
 field() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$out/run.json" "$1"; }
 wt=$(field worktree)
 port=$(field host_port)
-ingress=$(field restate_ingress)
+engine_url=$(field engine_url)
 admin=$(field restate_admin)
 source "$MAIN/.venv/bin/activate"
 # A fresh database file for this check, named by the variable the infra spec (arm A)
@@ -41,10 +41,10 @@ PY
 esac
 case "$arm" in
   A) python3 "$HERE/check.py" --cwd "$wt/story-drafting" --cmd "python3 -m srv.http.main 0.0.0.0:$port" \
-       --port "$port" --admin "$admin" --env "PYTHONPATH=.:../tesser-py" --env "RESTATE_INGRESS=$ingress" \
+       --port "$port" --admin "$admin" --env "PYTHONPATH=.:../tesser-py" --env "RESTATE_URL=$engine_url" \
        --env "RESTATE_ADMIN=$admin" "${storage_env[@]}" --log "$out/ab-host.log" | tee "$out/ab-check.json" ;;
   B) python3 "$HERE/check.py" --cwd "$wt" --cmd ".venv/bin/python main.py" \
-       --port "$port" --admin "$admin" --env "RESTATE_INGRESS=$ingress" --env "RESTATE_ADMIN=$admin" \
+       --port "$port" --admin "$admin" --env "RESTATE_URL=$engine_url" --env "RESTATE_ADMIN=$admin" \
        "${storage_env[@]}" --log "$out/ab-host.log" | tee "$out/ab-check.json" ;;
   *) echo "arm is A or B" >&2; exit 2 ;;
 esac

@@ -52,7 +52,7 @@ version = "3.12"
 [engine.restate]
 body = "supported"
 engine_path = "/restate"
-ingress_variable = "RESTATE_INGRESS"
+engine_url_variable = "RESTATE_URL"
 admin_variable = "RESTATE_ADMIN"
 callback_host_variable = "RESTATE_CALLBACK_HOST"
 

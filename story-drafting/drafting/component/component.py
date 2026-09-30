@@ -24,8 +24,8 @@ _ANTHROPIC: typing.Final[str] = "anthropic"
 
 class Spec(ts.Spec):
 
-    def __init__(self, ingress: str, story_writer: str, anthropic_api_key: str) -> None:
-        self.ingress = ingress
+    def __init__(self, engine_url: str, story_writer: str, anthropic_api_key: str) -> None:
+        self.engine_url = engine_url
         self.story_writer = story_writer
         self.anthropic_api_key = anthropic_api_key
 
@@ -33,7 +33,7 @@ class Spec(ts.Spec):
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
-        self.ingress = spec.ingress
+        self.engine_url = spec.engine_url
         self.story_writer = spec.story_writer
         self.anthropic_api_key = spec.anthropic_api_key
 
@@ -70,7 +70,7 @@ class Drafting(ts.Component):
         )
         self.client: client.DraftingClient = application.DraftingService(
             self._memory_run_store,
-            dispatchers.RestateHttpRunOrchestratorRelay(config.ingress, restate_draft_stories),
+            dispatchers.RestateHttpRunOrchestratorRelay(config.engine_url, restate_draft_stories),
         )
 
     def close(self) -> None:

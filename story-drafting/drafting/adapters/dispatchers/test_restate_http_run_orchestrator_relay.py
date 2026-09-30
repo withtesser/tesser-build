@@ -49,7 +49,7 @@ class TestRestateHttpRunOrchestratorRelay:
         run_orchestrator_workflow = restate.Workflow(f"RunOrchestrator{suffix}")
         fake_run_application_client = FakeRunApplicationClient()
         restate_http_run_orchestrator_relay = dispatchers.RestateHttpRunOrchestratorRelay(
-            os.environ["RESTATE_INGRESS"],
+            os.environ["RESTATE_URL"],
             workflows.RestateDraftStories(
                 run_orchestrator_workflow,
                 activities.RestateRecordRun(run_actions_service, fake_run_application_client),

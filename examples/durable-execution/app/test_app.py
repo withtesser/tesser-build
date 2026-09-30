@@ -29,7 +29,7 @@ class TestEnvConfigRepository:
     def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
         assert isinstance(app_config, app.AppConfig)
-        assert app_config.ordering.ingress == os.environ["RESTATE_INGRESS"]
+        assert app_config.ordering.engine_url == os.environ["RESTATE_URL"]
 
     def test_each_read_returns_its_own_config(self) -> None:
         env_config_repository = app.EnvConfigRepository()

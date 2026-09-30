@@ -55,7 +55,7 @@ PATTERNS: typing.Final[dict[str, tuple[re.Pattern[str], str]]] = {
     "snake": (SNAKE, "snake_case name, like loan_id"),
     "operation": (OPERATION, "snake_case operation of at least two words, like lend_book"),
     "pascal": (PASCAL, "PascalCase name, like LoanRepository"),
-    "variable": (VARIABLE, "UPPER_CASE variable, like RESTATE_INGRESS"),
+    "variable": (VARIABLE, "UPPER_CASE variable, like RESTATE_URL"),
     "path": (ENGINE_PATH, "URL path of lowercase segments, like /restate"),
 }
 
@@ -1108,7 +1108,7 @@ class Model(ts.Entity):
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
         engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
-                     for key in ("ingress_variable", "admin_variable", "callback_host_variable") if key in engine)
+                     for key in ("engine_url_variable", "admin_variable", "callback_host_variable") if key in engine)
         if "engine_path" in engine:
             named.append(("path", "[engine.restate] engine_path", str(engine["engine_path"])))
         for storage_name, storage in self._infra.get("storage", {}).items():
@@ -2017,7 +2017,7 @@ class Model(ts.Entity):
         if list(engines) != ["restate"]:
             raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
         engine = engines["restate"]
-        for key in ("ingress_variable", "admin_variable", "callback_host_variable", "engine_path"):
+        for key in ("engine_url_variable", "admin_variable", "callback_host_variable", "engine_path"):
             if key not in engine:
                 raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
@@ -2187,11 +2187,11 @@ class Model(ts.Entity):
             Actions = str(Word(key).pascal()) + "Actions"
             names = sorted(str(a["operation"]) for a in activities if a["actions_key"] == key)
             containers.append({"container_attr": str(Word(Actions).snake()) + "_service", "container": Actions,
-                               "container_kind": "Service", "ingress_private": [{}],
+                               "container_kind": "Service", "private_container": [{}],
                                "handler_names": ", ".join(f'"{name}"' for name in names)})
         workflow_attr = str(Word(Orchestrator).snake()) + "_workflow"
         containers.append({"container_attr": workflow_attr, "container": Orchestrator, "container_kind": "Workflow",
-                           "ingress_private": [], "handler_names": f'"{operation_name}"'})
+                           "private_container": [], "handler_names": f'"{operation_name}"'})
         self._binding["containers"] = containers
         dispatchers: list[dict[str, object]] = []
         awaited: list[dict[str, object]] = []
@@ -2241,7 +2241,7 @@ class Model(ts.Entity):
                         "result": str(Word(returns).snake())}
                        for method, param, request_name, returns, _ in self._relay_ops[Orchestrator + "Relay"]
                        if method.startswith("run_")]
-        self._binding["ingress_dispatchers"] = [dict(
+        self._binding["http_dispatchers"] = [dict(
             workflow, module="restate_http_" + str(Word(Orchestrator).snake()) + "_relay",
             Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods, run_methods=run_methods,
         )] if start_methods or run_methods else []
@@ -2250,7 +2250,7 @@ class Model(ts.Entity):
         for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
             type_name = str(dependency["dependency_type"]).split(".", 1)[1]
             if type_name == Orchestrator + "Relay":
-                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.ingress, {workflow['workflow_local']})"})
+                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.engine_url, {workflow['workflow_local']})"})
             elif type_name in port_exprs:
                 service_args.append({"expr": port_exprs[type_name]})
             else:

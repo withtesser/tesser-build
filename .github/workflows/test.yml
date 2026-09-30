@@ -63,7 +63,7 @@ jobs:
       - name: generator — tessercheck + mypy --strict + pytest, then every generated tree
         env:
           GENERATED_STORAGE: postgres://tesser@localhost:5432/tesser
-          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_URL: http://localhost:8080
           RESTATE_ADMIN: http://localhost:9070
         run: scripts/verify generator
 
@@ -168,7 +168,7 @@ jobs:
       - name: examples/minimal — tessercheck + mypy --strict + pytest against Postgres and Restate
         env:
           ALPHA_STORAGE: postgres://tesser@localhost:5432/tesser
-          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_URL: http://localhost:8080
           RESTATE_ADMIN: http://localhost:9070
         run: scripts/verify minimal
 
@@ -180,7 +180,7 @@ jobs:
     # that host on the runner and registers it with the service container
     # through host.docker.internal for the root-tier tests; each activities,
     # workflows, and dispatchers test serves its own registrations there under
-    # fresh names, calls through the ingress, and reads what the engine
+    # fresh names, calls the engine at its URL, and reads what the engine
     # recorded in sys_invocation.
     name: durable-execution example (tessercheck + mypy --strict + pytest against Restate)
     runs-on: ubuntu-latest
@@ -201,7 +201,7 @@ jobs:
         run: pip install -r examples/durable-execution/requirements-dev.txt
       - name: examples/durable-execution — tessercheck + mypy --strict + pytest against Restate
         env:
-          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_URL: http://localhost:8080
           RESTATE_ADMIN: http://localhost:9070
         run: scripts/verify durable-execution
 
@@ -402,7 +402,7 @@ jobs:
         run: pip install -r story-drafting/requirements-dev.txt
       - name: story-drafting — tessercheck + mypy --strict + pytest against Restate
         env:
-          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_URL: http://localhost:8080
           RESTATE_ADMIN: http://localhost:9070
         run: scripts/verify story-drafting
 

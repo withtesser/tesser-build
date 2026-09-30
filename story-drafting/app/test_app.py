@@ -28,8 +28,8 @@ class TestEnvConfigRepository:
 
     def test_the_environment_the_runner_supplied_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository().get()
-        assert (app_config.drafting.ingress, app_config.drafting.story_writer) == (
-            os.environ["RESTATE_INGRESS"],
+        assert (app_config.drafting.engine_url, app_config.drafting.story_writer) == (
+            os.environ["RESTATE_URL"],
             os.environ["STORY_WRITER"],
         )
 

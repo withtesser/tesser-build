@@ -20,14 +20,14 @@ _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationR
 
 class Spec(ts.Spec):
 
-    def __init__(self, ingress: str) -> None:
-        self.ingress = ingress
+    def __init__(self, engine_url: str) -> None:
+        self.engine_url = engine_url
 
 
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
-        self.ingress = spec.ingress
+        self.engine_url = spec.engine_url
 
 
 class Ordering(ts.Component):
@@ -88,10 +88,10 @@ class Ordering(ts.Component):
         )
         self.client: client.OrderingClient = Ordering.Client(
             application.OrderService(
-                dispatchers.RestateHttpOrderOrchestratorRelay(config.ingress, restate_confirm_order)
+                dispatchers.RestateHttpOrderOrchestratorRelay(config.engine_url, restate_confirm_order)
             ),
             application.PurchaseService(
-                dispatchers.RestateHttpPurchaseOrchestratorRelay(config.ingress, restate_pay_for_order)
+                dispatchers.RestateHttpPurchaseOrchestratorRelay(config.engine_url, restate_pay_for_order)
             ),
         )
 

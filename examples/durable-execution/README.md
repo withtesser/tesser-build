@@ -39,8 +39,8 @@ with either thing.
 
 | | a workflow (`OrderOrchestrator/confirm_order`) | an action (`OrderActions/price_product`) |
 |---|---|---|
-| `start_` — the engine accepts, the caller carries on | `start_confirm_order`, ingress `workflow_send`, behind `POST /submissions` | not yet |
-| `run_` — the caller waits for the result | `run_confirm_order`, ingress `workflow_call`, behind `POST /orders` | `run_price_product`, `ctx.service_call`, inside the workflow |
+| `start_` — the engine accepts, the caller carries on | `start_confirm_order`, `workflow_send` at the engine's URL, behind `POST /submissions` | not yet |
+| `run_` — the caller waits for the result | `run_confirm_order`, `workflow_call` at the engine's URL, behind `POST /orders` | `run_price_product`, `ctx.service_call`, inside the workflow |
 
 `POST /purchases` is the third use case and the first scenario on top of the
 grid: a **purchase** is an order paid for. `PurchaseService.make_order_payment` builds the
@@ -96,7 +96,7 @@ class OrderActionsRelay(ts.Relay, typing.Protocol):
 
 `OrderOrchestratorRelay` is held by `OrderService`, lives as long as the
 component, and its Restate implementation
-`RestateHttpOrderOrchestratorRelay(ingress, restate_confirm_order)` is built
+`RestateHttpOrderOrchestratorRelay(engine_url, restate_confirm_order)` is built
 once at wiring. It holds the `RestateConfirmOrder` workflow the component
 built and passes its `.handler` to the SDK's typed call, so the service and
 handler names it sends to are read off the registered object, never written
@@ -115,7 +115,7 @@ lifetime: `RestateInvocationOrderOrchestratorRelay(restate_workflow_context,
 restate_confirm_order)`, built by `RestatePayForOrder`'s `main` handler for
 the *purchase* workflow, answers the same protocol with `ctx.workflow_call`
 and `ctx.workflow_send` on the same `restate_confirm_order.handler` instead of
-the ingress client. One relay, two dispatchers: the door holds the one that
+the HTTP client at the engine's URL. One relay, two dispatchers: the door holds the one that
 lives with the component, a parent workflow holds the one that lives with its
 invocation, and `OrderService` and `PurchaseOrchestrator` cannot tell which
 they were handed. Both hold the one `RestateConfirmOrder` instance, so both
@@ -242,7 +242,7 @@ as holes the purchase widens. `Quantity` is at most 1,000,000 units and
 raised on the way out, which the SDK does not wrap as terminal, so the engine
 retried it forever while the caller's connection stayed open. And `OrderId`
 refuses `.` and `..`: percent-encoding leaves a dot alone and httpx
-normalizes dot segments on the way to the ingress, so an id of `..` would
+normalizes dot segments on the way to the engine's URL, so an id of `..` would
 have turned `POST /PurchaseOrchestrator/../pay_for_order` into `POST /pay_for_order`.
 
 The child is run, not inlined, because it is already a workflow of its own:
@@ -277,10 +277,10 @@ its own key, its own journal, and its own stored result. Measured on
   them apart. So an order that was placed cannot then be paid for, and a
   payment cannot be repeated, for the same reason a placed order cannot be
   placed again.
-- The same holds at the ingress (measured on `restate-server` 1.7.9): a
+- The same holds at the engine's URL (measured on `restate-server` 1.7.9): a
   repeat call on a completed key is `409 {"code":409,"message":"the
   workflow method was already invoked","source":"invocation"}`, and so is one
-  on a key whose invocation is still running — the ingress never attaches a
+  on a key whose invocation is still running — the engine never attaches a
   second caller. A cancel requested through the admin API while the endpoint
   is unreachable is accepted but stays undelivered (`backing-off`) until the
   handler next runs; a kill completes the invocation as `[409] killed` and the
@@ -324,8 +324,8 @@ line applied to a boundary that faces inward.
 | `RestateConfirmOrder`, `RestatePayForOrder` (`adapters/workflows/restate_workflows.py`) | `ts.Workflow` | Restate → us: each registers one workflow's `main` (`confirm_order`, `pay_for_order`) on the `restate.Workflow` it is handed, keeps it as `self.handler`, and builds its orchestrator over that invocation's dispatchers | process (each `main` call lasts one invocation) |
 | `RestateInvocationOrderActionsRelay`, `RestateInvocationPurchaseActionsRelay` (`adapters/workflows/restate_workflows.py`, not exported) | `ts.Dispatcher` | us → Restate, from inside an invocation (`ctx.service_call(activity.handler, ...)`) | one invocation |
 | `RestateInvocationOrderOrchestratorRelay` (`adapters/workflows/restate_workflows.py`, not exported) | `ts.Dispatcher` | us → Restate, from inside an invocation, to a child workflow (`ctx.workflow_call` to run, `ctx.workflow_send` to start, on `RestateConfirmOrder.handler`) | one invocation |
-| `RestateHttpOrderOrchestratorRelay` (`adapters/dispatchers/`) | `ts.Dispatcher` | us → Restate, from outside any invocation (ingress HTTP: `workflow_send` to start, `workflow_call` to run, on `RestateConfirmOrder.handler`) | process |
-| `RestateHttpPurchaseOrchestratorRelay` (`adapters/dispatchers/`) | `ts.Dispatcher` | us → Restate, from outside any invocation (ingress HTTP: `workflow_call` on `RestatePayForOrder.handler`) | process |
+| `RestateHttpOrderOrchestratorRelay` (`adapters/dispatchers/`) | `ts.Dispatcher` | us → Restate, from outside any invocation (HTTP at the engine's URL: `workflow_send` to start, `workflow_call` to run, on `RestateConfirmOrder.handler`) | process |
+| `RestateHttpPurchaseOrchestratorRelay` (`adapters/dispatchers/`) | `ts.Dispatcher` | us → Restate, from outside any invocation (HTTP at the engine's URL: `workflow_call` on `RestatePayForOrder.handler`) | process |
 
 The activities and workflows are the inbound side, the same role the HTTP
 handler plays for `POST /submissions`: the engine's server receives a request,
@@ -367,15 +367,15 @@ so this endpoint needs `restate-server >= 1.5`, and `srv/http/test_main.py`
 asks for `application/vnd.restate.endpointmanifest.v4+json`.
 
 The two actions services are built with `ingress_private=True`. An action is
-only ever called from inside a workflow, so nothing that reaches Restate's
-ingress should be able to price a product or take a payment around the
+only ever called from inside a workflow, so nothing that calls the engine's
+URL should be able to price a product or take a payment around the
 services that decide when to. The two workflow containers stay public: the
-HTTP dispatchers reach them through the ingress.
+HTTP dispatchers reach them at the engine's URL.
 
 **An engine adapter never reads or names the payload.** The order's
 fields — `sku`, `cents`, `quantity`, `total_cents` — cross only through the
 snapshot, and no activities, workflows, or dispatchers module names one. Three
-dispatchers do *construct* a relay response: when the ingress or the SDK
+dispatchers do *construct* a relay response: when the engine or the SDK
 refuses with the engine's already-invoked 409, the dispatcher answers
 `ConfirmOrderOutcome.ALREADY_STARTED` (or `PayForOrderOutcome.ALREADY_STARTED`)
 directly. That is the adapter fulfilling its protocol, the same as
@@ -398,14 +398,14 @@ that key into the request path unencoded (`restate/client.py`,
 `endpoint += f"/{key}"`), and the id comes from the public body, so the HTTP
 dispatchers percent-encode it
 (`urllib.parse.quote(key, safe="")`); an `order_id` of `../admin` reaches the
-ingress as `/OrderOrchestrator/..%2Fadmin/confirm_order/send`, not as a different route.
+engine's URL as `/OrderOrchestrator/..%2Fadmin/confirm_order/send`, not as a different route.
 `OrderId` refuses `.` and `..`, the two ids percent-encoding leaves alone.
 
 The two workflow mains read the same identity once more, to refuse a body
 whose order is not the workflow's key: `confirm_order` and `pay_for_order`
 compare `str(<request>.order.identity)` with `restate_workflow_context.key()`
 and raise a terminal `400` on a mismatch. Without it, a request sent to the
-ingress under key A ran the workflow for another order under A's key.
+engine's URL under key A ran the workflow for another order under A's key.
 
 An `OrderSnapshot` on the way in checks the shape of what it reads before
 the constructor sees it: `order_id` and `sku` must be strings and `quantity`
@@ -499,10 +499,10 @@ class Ordering(ts.Component):
         )
         self.client: client.OrderingClient = Ordering.Client(
             application.OrderService(
-                dispatchers.RestateHttpOrderOrchestratorRelay(config.ingress, restate_confirm_order)
+                dispatchers.RestateHttpOrderOrchestratorRelay(config.engine_url, restate_confirm_order)
             ),
             application.PurchaseService(
-                dispatchers.RestateHttpPurchaseOrchestratorRelay(config.ingress, restate_pay_for_order)
+                dispatchers.RestateHttpPurchaseOrchestratorRelay(config.engine_url, restate_pay_for_order)
             ),
         )
 ```
@@ -625,7 +625,7 @@ side of one message are not independent boundaries.
   `StartConfirmOrderResponse`, and `ConfirmOrderResponse` — the
   orchestrator's input, the start ack, and the orchestrator's result.
   `run_confirm_order` answers with the result; after a start, the engine
-  stores it and the ingress hands it back on request.
+  stores it and hands it back on request at its URL.
 - `order_actions_relay.py` holds `PriceProductRequest` and
   `PriceProductResponse` — the action's two shapes.
   `application/client/order_actions.py` and `OrderActions` speak the same two.
@@ -806,15 +806,15 @@ has no status-code `match`. Concretely:
   `409` — a cancelled invocation, which the SDK surfaces in the same shape
   and which only the message text tells apart — and every other status is
   re-raised.
-- A `restate.HttpError` or an `httpx.TransportError` from the ingress
-  propagates. A workflow the ingress cannot reach is not a business fact
+- A `restate.HttpError` or an `httpx.TransportError` from the engine's URL
+  propagates. A workflow the engine's URL cannot reach is not a business fact
   about an order, and calling it `Unavailable` said only that this tree once
   had a 503 to return.
 - A success body the response snapshot cannot read is the SDK's decode
   raising, and it propagates too.
 
 The host is where a fault stops. `srv/http/main.py` keeps `protocol.BadRequest
-→ 400` and `except Exception → 500`, unchanged, and the ingress being down is
+→ 400` and `except Exception → 500`, unchanged, and the engine being down is
 now a `500` where it used to be a `503` — the honest answer, since nothing in
 the application claimed to know.
 
@@ -847,7 +847,7 @@ engine's own policy with no end. It is now
 adapter's number with no input from the use case — recorded as a choice, not
 read as a design. A workflow slower than that raises a
 `httpx.ReadTimeout` at the door, which is a fault and a `500`; the real bound
-belongs at the ingress or in the workflow, where a timed-out caller can still
+belongs at the engine or in the workflow, where a timed-out caller can still
 attach to the result, and this tree still makes neither rule.
 
 ## Tests, and what the engine is asked to show
@@ -858,20 +858,20 @@ response that carries no price and a `PRICE_NOT_FOUND` that carries one are
 both refused. `ordering/component/test_component.py` and
 `srv/http/test_main.py` assert the four containers, their names, their
 handlers, that each declares the bounded retry policy, and that only the two
-workflows face the ingress.
+workflows are reachable at the engine's URL.
 
 The activities, workflows, and dispatchers are tested against the real engine
 (`testing.md` rule 10: an adapter's dependency is exercised, not doubled).
 Each test builds the objects it tests over containers named with a fresh
 `uuid4` suffix, serves them on a port of its own with hypercorn, registers
 that endpoint with the Restate admin API at `DURABLE_CALLBACK_HOST`, calls
-through the ingress with the objects' `.handler`s or the dispatcher under
+the engine's URL with the objects' `.handler`s or the dispatcher under
 test, reads what the engine recorded in `sys_invocation`, and removes the
 deployment. The fresh names keep a test's rows apart from every earlier run on
 a shared server, and from the context test's registration of the component's
 own names. The test-side containers are not
 ingress-private, which is what lets the activities test call an action
-through the ingress at all. What each test asks the engine to show is the one
+at the engine's URL at all. What each test asks the engine to show is the one
 thing the tests around it cannot see: that Restate is really in the path
 doing the durable work. A workflow that called the application client
 in-process would answer the same bytes and pass the acceptance test
@@ -883,7 +883,7 @@ protocols; nothing stands in for Restate.
   back through the serdes. Two more lock in what the engine refuses: a
   non-empty body the snapshot cannot read comes back as a terminal `500
   Unable to parse an input argument` (the SDK wraps the input serde's error),
-  and a call through the ingress to an `ingress_private=True` actions service
+  and a call at the engine's URL to an `ingress_private=True` actions service
   is refused with `400 the invoked service is not public`.
 - The workflows test runs whole invocations. `confirm_order` records one
   `OrderActions…/price_product` row invoked by the order workflow;
@@ -931,7 +931,7 @@ and only while its endpoint is unreachable, which the arm's own host cannot
 arrange mid-suite; it was measured instead (below). And a body no Restate
 server sends — a `409` that is not JSON, a `200` that is not the workflow's
 result — is a conversation this adapter does not have, so no test provokes
-one through a stand-in. The unreachable-ingress tests remain: a closed socket
+one through a stand-in. The unreachable-engine-URL tests remain: a closed socket
 is an absence, not a double.
 
 ## Async everywhere the SDK is
@@ -951,7 +951,7 @@ and serves it under one hypercorn: an `APIRouter` carrying `POST /submissions`,
 the Restate endpoint mounted at `/restate`, the one Restate's server calls
 back into.
 
-**Restate's own recommendation is that the ingress IS the API** — you register
+**Restate's own recommendation is that the engine's URL IS the API** — you register
 the deployment and clients `POST :8080/OrderOrchestrator/o1/confirm_order` directly,
 with no service of yours in front. A front door of our own exists here for
 exactly one reason: to own the public contract. `POST /submissions`,
@@ -973,7 +973,7 @@ Mounting under a prefix works because the SDK parses the tail: `parse_path`
 pip install -r requirements-dev.txt
 docker run -d --name restate -p 18080:8080 -p 19070:9070 \
   --add-host=host.docker.internal:host-gateway docker.io/restatedev/restate:latest
-PYTHONPATH=.:../../tesser-py RESTATE_INGRESS=http://localhost:18080 \
+PYTHONPATH=.:../../tesser-py RESTATE_URL=http://localhost:18080 \
   python -m srv.http.main 0.0.0.0:8000 &            # the API and the Restate endpoint
 curl -X POST localhost:19070/deployments --json '{"uri":"http://host.docker.internal:8000/restate"}'
 curl -X POST localhost:8000/submissions --json '{"order_id":"o1","sku":"gadget","quantity":2}'
@@ -1002,7 +1002,7 @@ curl -X POST localhost:8000/orders --json '{"order_id":"o3"}'
    # 400 {"detail": "sku must be a string"}                        protocol.BadRequest
 curl -X POST localhost:8000/orders --json '{"order_id":"o3","sku":"gadget","quantity":0}'
    # 422 {"detail": "an order is for at least one unit"}           client.OrderRejected
-   #     with the ingress down, a well-formed order is 500: the engine being
+   #     with the engine down, a well-formed order is 500: the engine being
    #     unreachable is a fault, and nothing in the application has a word for it
 curl -X POST localhost:8000/orders --json '{"order_id":"o4","sku":"nope","quantity":1}'
    # 422 {"detail": "no price for sku 'nope'"}                     client.ProductPriceNotFound
@@ -1059,14 +1059,14 @@ sends SIGINT.
   the stored result would need the SDK's attach, which this tree does not
   use.
 - `start_confirm_order` fires and forgets; `POST /submissions` never waits on
-  the workflow. A submitted order's total is read back through Restate's
-  ingress, because the API has no read route of its own; `POST /orders` is the
+  the workflow. A submitted order's total is read back at the engine's
+  URL, because the API has no read route of its own; `POST /orders` is the
   route for a caller who wants the total in the response.
 - `POST /orders` holds the caller's connection for up to the dispatcher's
   thirty-second read timeout, and has no deadline of its own and no cap on how
   many may wait at once; a burst of slow workflows holds that many connections
   open in this process, and a workflow that outruns the bound answers `500`
-  while it keeps running. The real bound belongs at the ingress or in the
+  while it keeps running. The real bound belongs at the engine or in the
   workflow, where a caller who gave up can still attach to the result; this
   tree makes neither rule.
 - A handler's registered name is part of the deployment, and this change
@@ -1094,7 +1094,7 @@ sends SIGINT.
   to `restate.app(...)` or serves the endpoint on a bind only the Restate
   server reaches.
 - An invalid snapshot that reaches the deployment endpoint directly (a
-  `quantity` of `0` posted to the ingress rather than to `POST /submissions`) is
+  `quantity` of `0` posted to the engine's URL rather than to `POST /submissions`) is
   refused inside the SDK's input deserialization, which wraps every exception
   as a `TerminalError` with status 500 (`restate/handler.py`); the same body
   at `POST /submissions` is a 422. Restate does not retry it, but the status is

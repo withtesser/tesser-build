@@ -73,7 +73,7 @@ class TestRestateRecordRun:
             assert registered.is_success, registered.text
 
             run = domain.Run(domain.RunSpec(run_id="r1", job="ship", stage="drafting", stories=(), accepted_stories=()))
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 record_run_response = await restate_client.Client(async_client).service_call(
                     restate_record_run.handler, relays.RecordRunRequest(run=run)
                 )
@@ -142,7 +142,7 @@ class TestRestateWriteStories:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["RESTATE_INGRESS"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["RESTATE_URL"], timeout=30.0) as async_client:
                 write_stories_response = await restate_client.Client(async_client).service_call(
                     restate_write_stories.handler, relays.WriteStoriesRequest(job="ship")
                 )

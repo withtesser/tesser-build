@@ -21,13 +21,13 @@ _SEND_TIMEOUT: typing.Final[httpx.Timeout] = httpx.Timeout(5.0, read=_READ_TIMEO
 
 class RestateHttp{{Aggregate}}OrchestratorRelay(ts.Dispatcher):
 
-    def __init__(self, ingress: str, restate_{{conduct}}: workflows.Restate{{Conduct}}) -> None:
-        self._ingress = ingress
+    def __init__(self, engine_url: str, restate_{{conduct}}: workflows.Restate{{Conduct}}) -> None:
+        self._engine_url = engine_url
         self._restate_{{conduct}} = restate_{{conduct}}
 {{#calling_run}}
 
     async def run_{{conduct}}(self, {{conduct}}_request: relays.{{Conduct}}Request) -> relays.{{Conduct}}Response:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_RUN_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_RUN_TIMEOUT) as async_client:
             return await restate_client.Client(async_client).workflow_call(
                 self._restate_{{conduct}}.handler,
                 key=urllib_parse.quote({{conduct}}_request.{{identity}}, safe=""),
@@ -37,7 +37,7 @@ class RestateHttp{{Aggregate}}OrchestratorRelay(ts.Dispatcher):
 {{#calling_start}}
 
     async def start_{{conduct}}(self, {{conduct}}_request: relays.{{Conduct}}Request) -> relays.Start{{Conduct}}Response:
-        async with httpx.AsyncClient(base_url=self._ingress, timeout=_SEND_TIMEOUT) as async_client:
+        async with httpx.AsyncClient(base_url=self._engine_url, timeout=_SEND_TIMEOUT) as async_client:
             await restate_client.Client(async_client).workflow_send(
                 self._restate_{{conduct}}.handler,
                 key=urllib_parse.quote({{conduct}}_request.{{identity}}, safe=""),

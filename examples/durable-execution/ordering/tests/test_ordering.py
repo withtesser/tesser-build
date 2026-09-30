@@ -19,8 +19,8 @@ import ordering.component as component
 
 class TestOrderingContext:
 
-    def test_submitting_an_order_with_no_ingress_is_a_fault(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+    def test_submitting_an_order_with_no_engine_is_a_fault(self) -> None:
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://127.0.0.1:9")))
         try:
             with pytest.raises(Exception) as excinfo:
                 asyncio.run(
@@ -32,8 +32,8 @@ class TestOrderingContext:
         finally:
             ordering.close()
 
-    def test_placing_an_order_with_no_ingress_is_a_fault(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+    def test_placing_an_order_with_no_engine_is_a_fault(self) -> None:
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://127.0.0.1:9")))
         try:
             with pytest.raises(Exception) as excinfo:
                 asyncio.run(
@@ -45,8 +45,8 @@ class TestOrderingContext:
         finally:
             ordering.close()
 
-    def test_paying_for_an_order_with_no_ingress_is_a_fault(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+    def test_paying_for_an_order_with_no_engine_is_a_fault(self) -> None:
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://127.0.0.1:9")))
         try:
             with pytest.raises(Exception) as excinfo:
                 asyncio.run(
@@ -61,7 +61,7 @@ class TestOrderingContext:
             ordering.close()
 
     def test_an_order_the_domain_refuses_is_the_situation_of_that_name(self) -> None:
-        ordering = component.Ordering(component.Config(component.Spec(ingress="http://127.0.0.1:9")))
+        ordering = component.Ordering(component.Config(component.Spec(engine_url="http://127.0.0.1:9")))
         try:
             with pytest.raises(client.OrderRejected):
                 asyncio.run(
@@ -77,7 +77,7 @@ class TestOrderingThroughTheEngine:
 
     async def test_each_declared_situation_reaches_the_caller_as_its_own_error(self) -> None:
         ordering = component.Ordering(
-            component.Config(component.Spec(ingress=os.environ["RESTATE_INGRESS"]))
+            component.Config(component.Spec(engine_url=os.environ["RESTATE_URL"]))
         )
         containers: list[restate.Service | restate.Workflow] = [
             ordering.order_actions_service,

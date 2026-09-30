@@ -71,7 +71,7 @@ class TestRestate{{Conduct}}:
                 await asyncio.sleep(0.1)
             assert registered.is_success, registered.text
 
-            async with httpx.AsyncClient(base_url=os.environ["{{ingress_env}}"], timeout=30.0) as async_client:
+            async with httpx.AsyncClient(base_url=os.environ["{{engine_url_env}}"], timeout=30.0) as async_client:
                 with pytest.raises(restate.HttpError) as foreign:
                     await restate_client.Client(async_client).workflow_call(
                         restate_{{conduct}}.handler, key="other-" + workflow_key, arg=relays.{{Conduct}}Request({{#record_fields}}{{field}}={{#is_identity}}workflow_key{{/is_identity}}{{^is_identity}}{{sample}}{{/is_identity}}{{comma}}{{/record_fields}})
