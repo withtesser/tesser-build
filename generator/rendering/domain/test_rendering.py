@@ -182,6 +182,19 @@ class TestRenderedTree:
             ".tesser-rendered": "compositions/lending\n",
         }
 
+    def test_a_command_that_takes_nothing_binds_a_spec_with_no_fields(self) -> None:
+        documents = tuple(
+            (name, state, text.replace("[interfaces.http]", '[aggregate.commands.close_loan]\ntakes = {}\noutcomes = ["closed"]\n\n[interfaces.http]'))
+            for name, state, text in rendered_tree_spec().documents
+        )
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(
+            documents=documents,
+            pieces=(("specs.txt.tmpl", "{{#domain_specs}}\n{{Spec}}:{{#fields}} {{field}}{{/fields}}{{#no_fields}} nothing{{/no_fields}}\n{{/domain_specs}}"),),
+        ))
+
+        assert [str(rendered_file.content()) for rendered_file in rendered_tree.files()
+                if str(rendered_file.path()) == "specs.txt"] == ["CloseLoanSpec: nothing\nLoanSpec: loan_id borrower\n"]
+
     def test_a_render_names_its_composition_in_tesser_rendered_so_the_tree_is_checked_against_it(self) -> None:
         rendered_tree = domain.RenderedTree(rendered_tree_spec(composition="generator/compositions/lending"))
 
