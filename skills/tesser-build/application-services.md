@@ -1,0 +1,284 @@
+# Application service
+
+<!-- tb-status: full -->
+
+An application service is the **coordination layer** between a request and the
+domain. It orchestrates a single use case — convert the request, drive the
+domain, persist the result, shape the response — and holds **no business logic
+of its own** (Vernon, *IDDD*, ch. 14). Every rule, every invariant, every
+calculation lives in the domain objects it calls; the service only sequences
+them. It is the thin waist a handler calls into and the only place a repository
+is invoked.
+
+## Is this what I'm building?
+
+**Test:** *Am I coordinating one use case — taking a request, driving domain
+objects, persisting, returning a result — without deciding any domain rule
+myself?* Yes → application service.
+
+**Near-misses that are NOT application services:**
+- A **domain service** (`domain-services.md`) — domain logic that belongs to no
+  single object. That *is* business logic; it lives in the domain layer and an
+  application service *calls* it. If you're about to put a calculation in the
+  service, stop — see the leakage checks below.
+- A **transport handler** (HTTP/gRPC/CLI entry point) — parses the request,
+  authenticates, calls the application service, writes the response. It holds no
+  domain logic and no persistence either. One-line rule: **a handler
+  parses/authenticates and calls the application service — through the
+  component's public `Client` interface where one exists (`public-interface.md`),
+  never a concrete it built itself; it never does domain math or touches a
+  repository.** (Full guidance: `handlers.md` — the handler is where the leak
+  starts.)
+- A **DTO / request class** — data crossing the boundary. It has no behavior.
+- An **orchestrator** — the body of a workflow on a durable-execution engine.
+  Same four-step shape, but built per invocation by a workflow adapter
+  (`ts.Workflow`), depending on relays and action ports only, storing
+  nothing, and never on the public `Client`. Not an application service; a kind of its own (`ts.Orchestrator`,
+  `python.md#orchestrators-actions-relays`).
+- A **class of actions** — application-service-shaped, but with exactly one
+  port and exactly one call on it per method (the engine's retry unit), and
+  reachable only through an application client an activity holds — never on the
+  public `Client`, and never holding a relay of its own (`ts.Actions`,
+  `python.md#orchestrators-actions-relays`).
+
+## Rules
+
+1. **No business logic in the service.** No domain calculation, no invariant
+   decision, no computing a decision from domain state. If it's a rule, it
+   belongs on a domain object (a type, an aggregate transition, or a domain
+   service). The service may *ask* — a `match` on the `ts.Outcome` a
+   transition returned (`domain-return.md` rule 6) — and that is its only
+   branch: no `if`, no conditional `while` (`while True:` ended by a match
+   arm is the loop), no comparison, no conditional expression (`x if c else
+   y`), no `and`/`or`, and no `if` clause in a comprehension, because a truth
+   test on a domain object is a bool the domain never handed out, and it never
+   spells an operator or a domain constant of its own. The leakage
+   checks below are how you catch yourself breaking this.
+2. **One `match` per method, on what a domain object answered.** A service
+   method decides **once**. The `match` subject is a call on a domain object —
+   a local bound to a construction (`added = Widget(spec)` … `match
+   added.take(other)`) or the construction inline (`match
+   Widget(spec).take(other)`) — never a port call, never a `str(...)`, never a
+   bare attribute, and its arms are outcome members closed by `case _ as
+   never: assert_never(never)`. A second `match` in the same method is a
+   second rule, about the order of two decisions, that no domain object owns.
+
+   **A second decision that would need a second port call** has three
+   shapes, and the choice is a design decision, not a rule: **call the port
+   every time** and let the one `match` sort the answer; **fold the second
+   question into the first request** so one answer covers both; or, when the
+   steps are genuinely a sequence with their own retries and failures, it is
+   a **workflow** — an orchestrator on a durable-execution engine
+   (`python.md#orchestrators-actions-relays`), not a service method.
+
+   What the *arms* do afterwards is not a decision. An arm may drive a
+   `-> None` transition that records what it learned as state, and the method
+   then persists unconditionally — the exemplars in `examples/minimal` and
+   `examples/asyncpg` are written that way.
+3. **The four-step shape.** Every method reads as a short sequence of named
+   steps, each one call:
+   1. **Convert** — request DTO → domain input (a spec or value objects). Pure
+      mapping, no rules.
+   2. **Delegate** — the domain work. Exactly one of: *construct* a new
+      aggregate from the spec; or *load* an existing aggregate and call its
+      guarded method/transition; or call a *domain service*. Validation and
+      invariants happen here, inside the domain, never in the service.
+   3. **Persist** — hand the **whole aggregate** to the repository
+      (`repositories.md`); the repo decomposes it. The service never extracts
+      children.
+   4. **Respond** — map the resulting domain object → a **response DTO**. A
+      domain object never leaves the service; returning one is a boundary leak
+      (the service-layer twin of a value object leaking its representation).
+   Not every method uses all four (a pure command may skip Respond beyond an
+   ack), but the order never changes and no step hides domain logic.
+4. **Dependencies come in through the constructor.** The repository (and any
+   domain service) is injected, never constructed inside. The service owns
+   coordination, not wiring.
+5. **One transaction boundary per use case.** The service decides *where* the
+   unit of work begins and ends; it does not decide *what* is valid inside it.
+   (The boundary is a `ts.Store` the service opens once per method;
+   see `repositories.md#rules` rule 6 and `python.md#ports`.)
+
+## Shape
+
+```
+CreditService                       (holds an injected repository)
+  - repo  JournalRepository          (dependency — a port, injected;
+                                      declared in application/ports/,
+                                      not here)
+
+  record_payment(RecordPaymentRequest) → RecordPaymentResponse
+    1. spec    = MapToPaymentSpec(request)         # Convert
+    2. payment = domain.Payment(spec)              # Delegate (construct) …
+       #  or:  account = repo.load(id); account.apply(x)   … or (load + transition)
+    3. repo.save(MapToSavePaymentRequest(payment)) # Persist (whole aggregate)
+    4. return MapToRecordPaymentResponse(payment)  # Respond (domain → DTO)
+```
+
+Construction mechanics: `python.md#application-services`.
+
+## Decisions you must make
+
+1. **Construct or load?** A create use case *constructs* a new aggregate from
+   the spec. A change use case *loads* the existing aggregate and calls its
+   guarded transition (`order.add_line_item(...)`), then saves. Both are the
+   Delegate step — the difference is which one, never whether the service
+   reaches inside the aggregate to mutate it. Poking an aggregate's fields from
+   the service is the modify-time version of skipping the constructor.
+2. **What does the response carry?** Map to a DTO that exposes only what the
+   caller needs. Never return the domain object (leak) and never return a raw
+   collection the caller must post-process (that's a missing domain type — see
+   the leakage checks).
+3. **Where's the transaction boundary?** One use case, one unit of work. If a
+   method spans several aggregates, the boundary wraps them, but the
+   consistency *rules* still live in each aggregate — the service does not
+   reconcile them by hand.
+
+## Where the response mapping lives — and the alternatives {#where-the-response-mapping-lives}
+
+Respond is the *service's* job for a reason. The tempting shortcut is to put it on
+the domain object — `def to_response(self) -> ManeuverResponse` on `Maneuver` — so any caller
+can get the DTO straight off the aggregate. **Don't.** A domain object that emits its
+own outward representation drags the wire shape into the domain: every read-side
+dependent that reaches `m.to_response().some_field` is bound to the wire format, so an
+outward-format change (a renamed or retyped response field) fans out to *N* of them
+instead of the one Respond site.
+
+There is more than one *correct* way to get a value to a caller; pick by where the
+caller starts:
+
+- **Already holding the aggregate** (domain-side code, another domain method): read
+  its **value objects** — `m.burn()`, never a DTO. Right when you have the object and
+  want domain behavior; routing through the service would be needless ceremony.
+- **Starting from an id / a read endpoint** (wants a scalar or a projection, not the
+  whole aggregate): a **query method on the application service** — or a thin
+  projection over its `Client` — that returns just what the read needs. Lower ceremony
+  than making the caller load the aggregate and walk its value-object graph; this is
+  the CQRS read side (`repositories.md`), and it keeps mapping inside the service.
+
+What does **not** work is the domain emitting the DTO to save one of the above: it
+reads as a convenience and buys the N-way coupling. Both good patterns are the same
+sanctioned mapper (Respond) reached from the two directions a caller actually arrives
+from — the domain object's representation still never lives on the domain object.
+The translation itself has a checked shape: a mapper *is* its target
+(`class MapToSaveCampaignRequest(ts.Mapper, SaveCampaignRequest)`), built in one
+`super().__init__` call from whole objects, so the service reads
+`self._repo.save(MapToSaveCampaignRequest(c))` and the field-by-field mapping
+lives in one place it never has to spell out (`python.md`, TB080).
+
+## How the machine sees it
+
+**The analyzer backs the shape, not the judgement.** A
+`ts.ApplicationService` subclass is the structural signal `tessercheck` keys on:
+`TB081` requires every constructor dependency to be a `ts.Port` and every public
+method to take exactly one `ts.Request` and return one `ts.Response` — and a
+public `__call__` is a public method, not a private one; `TB082`
+rejects a delegation chain, any `if` or `while` (a service branches only by
+`match`, on the outcome a transition returned), a **second** `match` in the same
+method, a `match` subject that is not a call on a domain
+object, a comparison, a call on a comparison dunder or into the `operator`
+module, a `not`, a conditional expression, a boolean operator, a
+comprehension's `if` clause, a value computed in an argument position, and a
+raw request field crossing into a port. One decision is one finding: a
+comparison inside an `if` test or a comprehension filter is reported once, as
+the branch it sits in. The subject's method must be *annotated* to return a
+`ts.Outcome` — an unannotated, `typing.Any`, or plainly non-outcome return is
+read as "not a call on a domain object" rather than trusted. `TB084` requires
+a `match` on an outcome to close on `assert_never`, and reads the *subject* as
+well as the arms, so a match on a domain call whose arms are strings — or whose
+arms mix a string in beside a member — is a finding rather than a hiding place.
+
+Four decision forms are **named gaps**, not exemptions: `try`/`except`, dict
+dispatch (`table[key]`), a dict `.get(key, default)` carrying the fallback,
+and a `sorted(..., key=...)` whose key function ranks. `try`/`except` has
+exactly one legal shape in a service, and it is a translation, not a
+decision: `except errors.DomainError as domain_error:` whose only statement
+raises one of the context's own errors from it — `raise
+client.Rejected(domain_error.code, domain_error.message) from domain_error`.
+That is how a domain rejection becomes the context's error before it crosses
+the `Client` (`handlers.md` rule 7); a transition refusal never needs it,
+because its `match` arm raises the context's error directly. A port's
+error takes the same shape: the port declares it (`class StoreUnavailable(ts.Error)`
+in the port module), the adapter raises it, and the service catches it
+around the port call — `except ports.StoreUnavailable as store_error:`
+whose only statement raises `client.Unavailable(...)` from it. A service
+only ever raises errors its own `client/` declares; nothing declared in
+`ports/` leaves the service, and nothing from a peer context does either
+(a gateway translates a peer's `client.Unavailable` into the port error
+its own context declares, and a peer's `Rejected` is the caller's bug,
+left for the host's backstop).
+Each puts a rule in the service that a domain object should own; none is
+mechanically distinguishable today from a legitimate lookup, so a reviewer
+reads them rather than a checker. What no check judges is whether the body *coordinates* or *decides*
+— that stays review, not the compiler. The leakage checks
+below are a *future*-analyzer seed, not a live check — and even then only two of
+the four grep cleanly. A `for`-loop over domain objects is not by itself a
+violation: a repository legitimately loops to decompose an aggregate, and a
+DTO→spec mapper legitimately loops over input. A real analyzer must know the
+file's layer and the loop's intent before it flags. Treat the checks as a review
+discipline a human applies, not a definition.
+
+## Tests you must write
+
+- **The service holds no logic:** a use-case test drives the happy path and
+  asserts the domain object it produced is correct — but the *rules* are tested
+  on the domain objects, not here. If you find yourself asserting a domain
+  calculation against the service, the calculation is in the wrong place.
+- **Rejection crosses as the context's own error:** an invalid request makes
+  the domain constructor raise, and the service raises `client.Rejected` from
+  it — the test asserts `pytest.raises(client.Rejected)` with the domain's
+  `code` on it, and that nothing was saved. No tesser type and no domain
+  type crosses the `Client`.
+- **Response is a DTO, not a domain object:** assert the returned type is the
+  response DTO; a domain object escaping the service is a failure.
+- **Change use cases load-then-transition:** the modify path loads, calls the
+  aggregate's guarded transition, and saves — the service never sets a field.
+
+## Common mistakes
+
+### Domain-logic leakage checks {#domain-logic-leakage-checks}
+
+**This is the canonical list of the leakage signals; other files reference this
+anchor rather than restating it.** After writing a service method, scan for
+these — each means domain logic has leaked into the coordination layer and
+belongs on a domain type instead (route it via `domain-services.md` or a method
+on the owning type — see "Recognizing a missing domain type"):
+
+1. **A `for`-loop over domain objects** that computes a result (sum, filter,
+   group). The iteration is domain behavior; it belongs on a domain collection
+   type's method, not the service. (A loop mapping DTOs→specs is pure
+   conversion — fine.)
+2. **String manipulation on a domain identifier** (concatenating, parsing,
+   slicing an ID). The identity type should own its formatting.
+3. **Arithmetic on domain quantities** outside a conversion function
+   (`total += line.amount`). Money/measure math lives on the value object.
+4. **A conditional that computes domain state** (`if order.status == ...`,
+   `if a.total() > b.limit()`, `while run.status() != Status.DONE`). The
+   service has written the rule down — `==`, `PAID`, `>` — and it can now
+   drift from the aggregate's own. The decision belongs behind a guarded
+   method on the aggregate: the service calls `order.ship()` and the method
+   refuses if the state does not allow it. Where the service must act on what
+   the transition did, the transition returns a `ts.Outcome` and the service
+   matches it, each arm one port call and/or one transition, closed by
+   `assert_never` (`domain-return.md` rule 6). Asking is coordination;
+   computing the answer is the leak.
+
+Signals 1–2 are grep-visible; 3–4 need to know what's a domain quantity/state,
+so they are review-only. None is a bare grep — layer and intent matter (see
+"How the machine sees it").
+
+### Other named mistakes
+
+- **The fat service.** Business logic accretes in the service until the domain
+  is anemic. The leakage checks exist to catch this before it sets.
+- **Extracting children before persisting.** `txn.transfers()` then
+  `repo.save_transfers(...)` — the service now knows the aggregate's internals.
+  Pass the whole aggregate; the repo decomposes (`repositories.md`).
+- **Returning the domain object.** Skipping the Respond step leaks the domain
+  past its boundary; the caller can now depend on internals. Map to a DTO.
+- **Reaching into the aggregate to modify it.** `order.status = closed` from the
+  service instead of `order.close()`. Load and call the guarded transition.
+
+## Now build it
+
+- Python: `python.md#application-services`, then `python.md#the-spec-pattern`

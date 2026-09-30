@@ -1,0 +1,440 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  layout:
+    # The layout app (layout/) says whether the directories on disk,
+    # manifest.json, the .tesser-root files, and the CI jobs agree — and it is
+    # itself a full tesser app, gated at the same bar as every other tree.
+    # Every scripts/verify run everywhere also runs its check as step 0.
+    name: layout app (repo-layout check + tessercheck + mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r layout/requirements-dev.txt
+      - name: layout — repo check + tessercheck + mypy --strict + pytest
+        run: scripts/verify layout
+
+  generator:
+    # The generator app (generator/) writes a tesser app tree from a TOML spec.
+    # Its own gates run, then every spec in generator/specs/ is generated and
+    # the generated tree is gated like an example: tessercheck zero findings,
+    # mypy --strict, and pytest against the Postgres and Restate service
+    # containers, with the generated Restate endpoint served on the runner and
+    # registered through host.docker.internal.
+    name: generator app (tessercheck + mypy --strict + pytest, then every spec generated and gated against Postgres and Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tesser
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: tesser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tesser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r generator/requirements-dev.txt
+      - name: generator — tessercheck + mypy --strict + pytest, then every generated tree
+        env:
+          GENERATED_STORAGE: postgres://tesser@localhost:5432/tesser
+          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+        run: scripts/verify generator
+
+  llmport:
+    # Gates the LLM tool-call port example at the shared example bar: tessercheck
+    # zero findings over the whole tree (the srv-vocabulary + wire-module
+    # rules resolved the two findings the ratchet used to carry), then
+    # mypy --strict + pytest on the pure modules, including the srv router
+    # (it imports no livekit). srv/voice/agent.py is in tessercheck's walk
+    # (pure AST) but outside the mypy crawl — livekit-agents is not
+    # installed in CI; the tree's README records that boundary.
+    name: llmport (tessercheck + mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/llmport/requirements-dev.txt
+      - name: examples/llmport — tessercheck + mypy --strict + pytest
+        run: scripts/verify llmport
+
+  python-app-example:
+    # Gates the composition-root / wiring worked example (Python) at the same bar:
+    # mypy --strict + pytest, now with the two linters that own its architecture
+    # rules. Proves the bounded-context anatomy + srv/config/bootstrap model in
+    # running, type-checked code before it is taught. The rules split by who can
+    # decide them: ruff owns the env edge and the exit edge, import-linter owns
+    # the import direction, and the example's own AST tests keep what no tool
+    # covers (import-time side effects, host-routes-never-translates, context
+    # discovery).
+    name: python-app example (ruff + import-linter + mypy --strict + pytest + tessercheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/python-app/requirements-dev.txt
+      - name: examples/python-app — ruff + import-linter + mypy --strict + pytest + tessercheck
+        # Zero findings, no ratchet: the conformance wave burned the accepted
+        # debt to fixes plus site-level debt markers (the only opt-out mechanism).
+        run: scripts/verify python-app
+
+  ports-example:
+    # Gates the application-ports worked example (Python) at the same bar:
+    # tessercheck zero findings + mypy --strict + pytest. This is the canonical
+    # shape an adapter sees — one context, two ports, an enum outcome read with
+    # match + assert_never, and a collection answer carried as a tuple. The six
+    # encodings it was chosen over live on the spike/application-ports branch;
+    # docs/design-application-ports.md carries the measurements.
+    name: ports example (tessercheck + mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/ports/requirements-dev.txt
+      - name: examples/ports — tessercheck + mypy --strict + pytest
+        run: scripts/verify ports
+
+  minimal-example:
+    # Gates the minimal tree at the same bar: tessercheck zero findings +
+    # mypy --strict + pytest against Restate. Every tesser role and object,
+    # conformant, with the least business logic that shows how things work;
+    # alpha's durable kinds run on the Restate service container, which dials
+    # the endpoint the arm serves on the runner through host.docker.internal.
+    name: minimal example (tessercheck + mypy --strict + pytest against Postgres and Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tesser
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: tesser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tesser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/minimal/requirements-dev.txt
+      - name: examples/minimal — tessercheck + mypy --strict + pytest against Postgres and Restate
+        env:
+          ALPHA_STORAGE: postgres://tesser@localhost:5432/tesser
+          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+        run: scripts/verify minimal
+
+  durable-execution-example:
+    # Gates the durable-execution example at the same bar: tessercheck zero
+    # findings + mypy --strict + pytest against Restate. One context whose
+    # workflows run on Restate: one FastAPI host serves POST /submissions,
+    # /orders and /purchases and mounts the Restate endpoint. The arm serves
+    # that host on the runner and registers it with the service container
+    # through host.docker.internal for the root-tier tests; each activities,
+    # workflows, and dispatchers test serves its own registrations there under
+    # fresh names, calls through the ingress, and reads what the engine
+    # recorded in sys_invocation.
+    name: durable-execution example (tessercheck + mypy --strict + pytest against Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/durable-execution/requirements-dev.txt
+      - name: examples/durable-execution — tessercheck + mypy --strict + pytest against Restate
+        env:
+          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+        run: scripts/verify durable-execution
+
+  voice-example:
+    # Gates the voice example at the same bar: tessercheck zero findings +
+    # mypy --strict + pytest. One context, calls, whose root-tier test places
+    # a call for a person through the client and reads the person's name back
+    # by the call id. place_call runs a Restate workflow whose action writes the
+    # call to Postgres; the service containers are the database CALLS_STORAGE
+    # points at and the Restate server, which dials the endpoint the verify
+    # arm serves on the runner through host.docker.internal.
+    name: voice example (tessercheck + mypy --strict + pytest against Postgres and Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tesser
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: tesser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tesser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/voice/requirements-dev.txt
+      - name: examples/voice — tessercheck + mypy --strict + pytest
+        env:
+          CALLS_STORAGE: postgres://tesser@localhost:5432/tesser
+          RESTATE_URL: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+          LIVEKIT_URL: ws://livekit.invalid
+          LIVEKIT_API_KEY: unused
+          LIVEKIT_API_SECRET: unused
+          LIVEKIT_AGENT_NAME: caller
+          LIVEKIT_SIP_TRUNK_ID: unused
+        run: scripts/verify voice
+
+  asyncpg-example:
+    # Gates the minimal tree with a real database behind it: asyncpg
+    # repositories in both contexts, each behind a store that owns the
+    # transaction — Postgres-only, with no memory backend to fall back to — and
+    # an e2e that bootstraps through the app loader alone. The runner supplies
+    # the app's environment, as a deploy would; the service container is the
+    # database it points at.
+    name: asyncpg example (tessercheck + mypy --strict + pytest against Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tesser
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: tesser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tesser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/asyncpg/requirements-dev.txt
+      - name: examples/asyncpg — tessercheck + mypy --strict + pytest
+        env:
+          ALPHA_STORAGE: postgres://tesser@localhost:5432/tesser
+          BETA_STORAGE: postgres://tesser@localhost:5432/tesser
+        run: scripts/verify asyncpg
+
+  serdepy-example:
+    # Gates the serialization-norm worked example (Python) at the same bar:
+    # tessercheck zero findings + mypy --strict + pytest. Shows every
+    # canonical-exit case in running code (all four conversion dunders, the
+    # Decimal and datetime text policies, zero-dunder compound, parts with a
+    # derived field diverging from the spec, an edge golden) — the all-cases
+    # companion to python-app's production-shaped parts impl.
+    name: serdepy example (tessercheck + mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/serdepy/requirements-dev.txt
+      - name: examples/serdepy — tessercheck + mypy --strict + pytest
+        run: scripts/verify serdepy
+
+  errorspy-example:
+    # Gates the error-norms worked example (Python) at the same bar:
+    # tessercheck zero findings + mypy --strict + pytest. Proves the
+    # error-handling conventions in running, type-checked code before they are
+    # taught.
+    name: errorspy example (tessercheck + mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r examples/errorspy/requirements-dev.txt
+      - name: examples/errorspy — tessercheck + mypy --strict + pytest
+        run: scripts/verify errorspy
+
+  tesser-py:
+    # The only job with a Python matrix, and the reason is the runtime library
+    # itself: tesser-py is the one tree consumers *import*, so it runs on
+    # whatever interpreter they have, not on the one this repo pins. Issue #149
+    # was a ts.Outcome gate that read a namespace CPython 3.13 writes to during
+    # class creation and 3.12 does not — every outcome raised at import on a
+    # current 3.13 while a 3.12-only matrix stayed green. The 3.14 arm caught
+    # the same shape one base over: PEP 649 leaves __annotate_func__ where a
+    # class body used to leave __annotations__, so ts.Record's class-level
+    # default gate read an empty mapping and stopped rejecting. Each version
+    # resolves to the newest patch the runner has, which is the point: this
+    # arm is here to see an interpreter change before a consumer does.
+    name: tesser-py runtime library on ${{ matrix.python-version }} (mypy --strict + pytest)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dev tooling
+        run: pip install -r tesser-py/requirements-dev.txt
+      - name: tesser-py — tessercheck (shells rows) + mypy --strict (tree + mutmut fixtures) + pytest (incl. the mutmut ecosystem gate) + the built wheel ships every subpackage
+        # The wheel check is not redundant with the type/test gates: the
+        # enumerated packages list once silently dropped tesser.testing and
+        # tesser.srv, and every other job reaches the source via PYTHONPATH, so
+        # only building the distribution can catch that omission class.
+        run: scripts/verify tesser-py
+
+  specs-app:
+    # Gates the specs app at the same bar: tessercheck zero findings + mypy
+    # --strict + pytest. Its root tests include a Playwright test that drives
+    # the product specification page against the HTTP host the verify arm
+    # serves as a process, so the job installs Chromium before it runs.
+    name: specs-app (tessercheck + mypy --strict + pytest + playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r specs-app/requirements-dev.txt
+      - name: Install the browser the page test drives
+        run: python -m playwright install --with-deps chromium
+      - name: specs-app — tessercheck + mypy --strict + pytest
+        run: scripts/verify specs-app
+
+  story-drafting:
+    # Gates the story-drafting app at the same bar: tessercheck zero findings
+    # + mypy --strict + pytest against Restate. A two-step agent skill backed
+    # by a durable workflow, and the baseline for measuring how agents build a
+    # tesser app from one user story.
+    name: story-drafting app (tessercheck + mypy --strict + pytest against Restate)
+    runs-on: ubuntu-latest
+    services:
+      restate:
+        image: restatedev/restate:1.7
+        ports:
+          - 8080:8080
+          - 9070:9070
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r story-drafting/requirements-dev.txt
+      - name: story-drafting — tessercheck + mypy --strict + pytest against Restate
+        env:
+          RESTATE_INGRESS: http://localhost:8080
+          RESTATE_ADMIN: http://localhost:9070
+        run: scripts/verify story-drafting
+
+  tessercheck-py:
+    # The merged analyzer (the sigcheck engine, graduated): self-check over its
+    # own tree, the RULES.md drift gate, mypy --strict, pytest, and the import
+    # contracts — the same bar every example tree is held to.
+    name: tessercheck-py (self-check + RULES.md drift + mypy --strict + pytest + import-linter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dev tooling
+        run: pip install -r tessercheck-py/requirements-dev.txt
+      - name: tessercheck-py — self-check + RULES.md drift + mypy --strict + pytest + import contracts
+        run: scripts/verify tessercheck-py
+
+  packaging:
+    # What `pip install` gets you, which no other job covers: every other gate
+    # runs from a checkout with PYTHONPATH pointed at the source, so a module
+    # missing from a wheel's package list — or one importing a package the
+    # wheel cannot ship — stays invisible. Installs the three distributions
+    # into a clean virtualenv with no source tree on the path, imports
+    # everything shipped, and runs the console script for real.
+    name: packaging (clean-venv install + tessercheck-check smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: pip install the distributions and run tessercheck-check
+        run: scripts/verify-packaging

@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import typing
+
+import tesser.context as ts
+
+
+class CreateCampaignRequest(ts.Request):
+
+    def __init__(self, budget_amount: str, budget_currency: str) -> None:
+        self.budget_amount = budget_amount
+        self.budget_currency = budget_currency
+
+
+class AddLinkRequest(ts.Request):
+
+    def __init__(self, campaign_id: str, slug: str, target_url: str) -> None:
+        self.campaign_id = campaign_id
+        self.slug = slug
+        self.target_url = target_url
+
+
+class DeactivateLinkRequest(ts.Request):
+
+    def __init__(self, campaign_id: str, slug: str) -> None:
+        self.campaign_id = campaign_id
+        self.slug = slug
+
+
+class GetCampaignRequest(ts.Request):
+
+    def __init__(self, campaign_id: str) -> None:
+        self.campaign_id = campaign_id
+
+
+class ResolveSlugRequest(ts.Request):
+
+    def __init__(self, slug: str) -> None:
+        self.slug = slug
+
+
+class ResolveSlugResponse(ts.Response):
+
+    def __init__(self, target_url: str) -> None:
+        self.target_url = target_url
+
+
+class ListLinksRequest(ts.Request):
+
+    def __init__(self) -> None:
+        return None
+
+
+class Link(ts.Response):
+
+    def __init__(self, slug: str, target_url: str, status: str) -> None:
+        self.slug = slug
+        self.target_url = target_url
+        self.status = status
+
+
+class ListLinksResponse(ts.Response):
+
+    def __init__(self, links: tuple[Link, ...]) -> None:
+        self.links = links
+
+
+class Campaign(ts.Response):
+
+    def __init__(
+        self,
+        campaign_id: str,
+        budget_amount: str,
+        budget_currency: str,
+        links: tuple[Link, ...],
+    ) -> None:
+        self.campaign_id = campaign_id
+        self.budget_amount = budget_amount
+        self.budget_currency = budget_currency
+        self.links = links
+
+
+class CampaignRejected(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class CampaignNotFound(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class LinkNotFound(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class SlugTaken(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class TargetBlocked(ts.Error):
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+ERRORS: typing.Final[
+    tuple[
+        type[CampaignRejected],
+        type[CampaignNotFound],
+        type[LinkNotFound],
+        type[SlugTaken],
+        type[TargetBlocked],
+    ]
+] = (CampaignRejected, CampaignNotFound, LinkNotFound, SlugTaken, TargetBlocked)
+
+
+class CreateCampaignResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class AddLinkResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class DeactivateLinkResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class GetCampaignResponse(ts.Response):
+
+    def __init__(self, campaign: Campaign) -> None:
+        self.campaign = campaign
+
+
+class CampaignClient(ts.Client, typing.Protocol):
+
+    def create_campaign(
+        self, create_campaign_request: CreateCampaignRequest
+    ) -> CreateCampaignResponse: ...
+
+    def add_link(self, add_link_request: AddLinkRequest) -> AddLinkResponse: ...
+
+    def deactivate_link(
+        self, deactivate_link_request: DeactivateLinkRequest
+    ) -> DeactivateLinkResponse: ...
+
+    def get_campaign(
+        self, get_campaign_request: GetCampaignRequest
+    ) -> GetCampaignResponse: ...
+
+    def resolve_slug(self, resolve_slug_request: ResolveSlugRequest) -> ResolveSlugResponse: ...
+
+    def list_links(self, list_links_request: ListLinksRequest) -> ListLinksResponse: ...

@@ -1,0 +1,187 @@
+# pragma: tesser-generated; regenerate from the composition, never edit by hand
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import socket
+import typing
+import uuid
+
+import tesser.testing as ts
+import httpx
+import hypercorn.asyncio as hypercorn_asyncio
+import hypercorn.config as hypercorn_config
+import hypercorn.typing as hypercorn_typing
+import pytest
+import restate
+import restate.client as restate_client
+
+import {{context}}.adapters.activities as activities
+import {{context}}.application.client as client
+import {{context}}.application.relays as relays
+{{#application_clients}}
+
+
+@ts.fake
+class Fake{{ApplicationClient}}(client.{{ApplicationClient}}):
+
+    def __init__(self) -> None:
+        self.received: list[{{received_type}}] = []
+{{#calls}}
+
+    async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
+        self.received.append({{operation}}_request)
+        return relays.{{Operation}}Response({{echo}})
+{{/calls}}
+{{/application_clients}}
+{{#activities}}
+
+
+class Test{{Activity}}:
+
+    async def test_restate_serves_{{operation}}_and_a_call_made_with_its_handler_reaches_the_application_client(self) -> None:
+        {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}")
+        fake_{{application_client}} = Fake{{ApplicationClient}}()
+        {{activity_param}} = activities.{{Activity}}({{container_attr}}, fake_{{application_client}})
+        with socket.socket() as probe:
+            probe.bind(("0.0.0.0", 0))
+            port = probe.getsockname()[1]
+        hypercorn_config_config = hypercorn_config.Config()
+        hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
+        shutdown = asyncio.Event()
+        serving = asyncio.create_task(
+            hypercorn_asyncio.serve(
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([{{container_attr}}])),
+                hypercorn_config_config,
+                shutdown_trigger=shutdown.wait,
+            )
+        )
+        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        registered = httpx.Response(503)
+        try:
+            for _ in range(50):
+                registered = await admin.post(
+                    "/deployments",
+                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                )
+                if registered.is_success:
+                    break
+                await asyncio.sleep(0.1)
+            assert registered.is_success, registered.text
+
+            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+                {{operation}}_response = await restate_client.Client(async_client).service_call(
+                    {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})
+                )
+
+            assert {{operation}}_response == relays.{{Operation}}Response({{response_expected}})
+            assert fake_{{application_client}}.received == [relays.{{Operation}}Request({{request_sample}})]
+        finally:
+            if registered.is_success:
+                await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
+            await admin.aclose()
+            shutdown.set()
+            await asyncio.wait([serving], timeout=1.0)
+            serving.cancel()
+            await asyncio.gather(serving, return_exceptions=True)
+{{/activities}}
+{{#first_activity}}
+
+
+class TestRestateEngineRefusals:
+
+    async def test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried(self) -> None:
+        {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}")
+        {{activity_param}} = activities.{{Activity}}({{container_attr}}, Fake{{ApplicationClient}}())
+        with socket.socket() as probe:
+            probe.bind(("0.0.0.0", 0))
+            port = probe.getsockname()[1]
+        hypercorn_config_config = hypercorn_config.Config()
+        hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
+        shutdown = asyncio.Event()
+        serving = asyncio.create_task(
+            hypercorn_asyncio.serve(
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([{{container_attr}}])),
+                hypercorn_config_config,
+                shutdown_trigger=shutdown.wait,
+            )
+        )
+        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        registered = httpx.Response(503)
+        try:
+            for _ in range(50):
+                registered = await admin.post(
+                    "/deployments",
+                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                )
+                if registered.is_success:
+                    break
+                await asyncio.sleep(0.1)
+            assert registered.is_success, registered.text
+
+            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+                with pytest.raises(restate.HttpError) as refused:
+                    await restate_client.Client(async_client).generic_call(
+                        {{container_attr}}.name, {{activity_param}}.handler.__name__,
+                        b"[1, 2]",
+                        headers={"content-type": "application/json"},
+                    )
+
+            assert refused.value.status_code == 500
+            assert json.loads(refused.value.body or "")["message"].startswith("Unable to parse an input argument.")
+        finally:
+            if registered.is_success:
+                await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
+            await admin.aclose()
+            shutdown.set()
+            await asyncio.wait([serving], timeout=1.0)
+            serving.cancel()
+            await asyncio.gather(serving, return_exceptions=True)
+
+    async def test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service(self) -> None:
+        {{container_attr}} = restate.Service(f"{{container}}{uuid.uuid4().hex}", ingress_private=True)
+        {{activity_param}} = activities.{{Activity}}({{container_attr}}, Fake{{ApplicationClient}}())
+        with socket.socket() as probe:
+            probe.bind(("0.0.0.0", 0))
+            port = probe.getsockname()[1]
+        hypercorn_config_config = hypercorn_config.Config()
+        hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
+        shutdown = asyncio.Event()
+        serving = asyncio.create_task(
+            hypercorn_asyncio.serve(
+                typing.cast(hypercorn_typing.ASGIFramework, restate.app([{{container_attr}}])),
+                hypercorn_config_config,
+                shutdown_trigger=shutdown.wait,
+            )
+        )
+        admin = httpx.AsyncClient(base_url=os.environ["{{admin_variable}}"], timeout=10.0)
+        registered = httpx.Response(503)
+        try:
+            for _ in range(50):
+                registered = await admin.post(
+                    "/deployments",
+                    json={"uri": f"http://{os.environ['{{callback_host_variable}}']}:{port}", "force": True},
+                )
+                if registered.is_success:
+                    break
+                await asyncio.sleep(0.1)
+            assert registered.is_success, registered.text
+
+            async with httpx.AsyncClient(base_url=os.environ["{{ingress_variable}}"], timeout=30.0) as async_client:
+                with pytest.raises(restate.HttpError) as refused:
+                    await restate_client.Client(async_client).service_call(
+                        {{activity_param}}.handler, relays.{{Operation}}Request({{request_sample}})
+                    )
+
+            assert refused.value.status_code == 400
+            assert json.loads(refused.value.body or "")["message"] == "the invoked service is not public"
+        finally:
+            if registered.is_success:
+                await admin.delete(f"/deployments/{registered.json()['id']}", params={"force": "true"})
+            await admin.aclose()
+            shutdown.set()
+            await asyncio.wait([serving], timeout=1.0)
+            serving.cancel()
+            await asyncio.gather(serving, return_exceptions=True)
+{{/first_activity}}

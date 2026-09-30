@@ -1,0 +1,293 @@
+# Handler
+
+<!-- tb-status: full -->
+
+An **inbound adapter**: it translates one delivery mechanism's wire format
+(HTTP, CLI, an event) to and from one context's public `Client`, and nothing
+else. Handlers are one of the two adapter types in the anatomy — inbound
+receives, outbound reaches out (`map.md#adapters`); the app-level host that
+mounts handlers and runs the server is a separate layer (`srv.md`).
+
+## Is this what I'm building?
+
+**Test:** *Am I receiving a request from outside (HTTP/CLI/event), translating
+it for exactly one context's `Client`, and translating the answer back?*
+Yes → handler.
+
+**Near-misses that are NOT a handler:**
+- The **host** (`srv.md`) — mounts *all* contexts' handlers for one delivery
+  mechanism, applies cross-cutting middleware, owns the server and process
+  lifecycle. A handler is per-context; a host is app-wide.
+- A **gateway** — the outbound direction: it *initiates* a call to persistence
+  or a peer (`repositories.md`, `gateway-cross-context.md`). Inbound needs a
+  server (something calls *in*); outbound doesn't.
+- An **application service** (`application-services.md`) — the use-case
+  coordinator the handler calls *through the `Client`*; it never parses wire
+  formats.
+- An **activity, workflow, or signal** (`adapters/activities/`,
+  `adapters/workflows/`, `adapters/dispatchers/`) — where a durable-execution
+  engine hands work back to the context. It looks like a handler (something
+  calls in), but what sits behind it is internal: an activity calls an
+  application client (a class of actions), a workflow builds an orchestrator,
+  and a signal resolves the workflow's promise — none of them calls the
+  context `Client`. The package is chosen by what the code reaches,
+  not by who calls it — a LiveKit tool call that reaches the `Client` is a
+  handler (`python.md#orchestrators-actions-relays`).
+
+## Rules
+
+1. **The one handler rule.** A handler parses and authenticates the request,
+   then calls the application service **through the component's public `Client`
+   interface** (`public-interface.md`) — depending on that contract, never a
+   concrete service or repository it constructed itself. It does **no domain
+   math and touches no repository** — a `for`-loop over domain objects or a DB
+   call in a handler belongs in the application service or the domain
+   (`application-services.md#domain-logic-leakage-checks`). **Every public
+   method of a handler calls the context client** (TB082): a handler decodes
+   a message, calls the client, and encodes the answer, so a public method
+   that makes no call on the client it holds is doing application work, or
+   routing that belongs to the host (`srv.md`), inside an adapter. The
+   analyzer finds the client by the `__init__` parameter annotated with the
+   context's `Client` and the `self` attribute it is kept on; a call inside
+   a nested function or lambda does not count; private (`_`-prefixed)
+   helpers are not read, and `__call__` is.
+   When a framework calls a subclass hook, the handler may inherit its base
+   from outside the tree (TB052), while still declaring `ts.Handler` and
+   calling its injected client from the hook. Override only hooks the
+   framework actually calls; an unrelated method is an ordinary handler
+   method, not a reason to inherit the framework base. TB052 can recognize
+   the handler and the external base, but cannot inspect an external SDK to
+   prove that a method is a hook; TB082 still checks public methods for the
+   client call.
+2. **A handler is a total transform: request DTO in, response DTO out.** Every
+   endpoint method has the same signature — `(HttpRequest) -> Response` — and
+   the handler touches nothing else: no socket, no framework request object, no
+   `self.path` parsing, no status line. It cannot reach transport state, so
+   every case it must answer is in its argument, and it is unit-testable by
+   constructing one value. **The corollary is the split with the host**: the
+   host owns the *transport* — raw bytes on the socket, framing (Content-Length,
+   the size cap, refusing a streaming body), routing (which endpoint, which path
+   parameters), and writing back the status + headers the handler produced. The
+   handler owns the *content* — `req.body` arrives as **raw `bytes`** and the
+   handler decodes it (`decode_body` for JSON, or reads it as an image), calls
+   the `Client`, and serializes the answer, choosing the representation and its
+   `Content-Type` (`json_response`, `redirect`, …). The host never parses or
+   serializes a body and never names a field; the handler never parses a URL.
+   That is why a `.png` upload or a redirect is expressible without touching the
+   host: the body is opaque bytes to it, and the content type is the handler's
+   call.
+3. **The `Client` is injected.** The handler is constructed with the `Client`
+   (`app.md` wires it, via the host); it never builds or fetches one.
+4. **Cross-cutting concerns belong to the host, not the handler.** Auth
+   *policy*, logging, recovery, rate limits are middleware at the host layer
+   (`srv.md`); a handler that imports another context to do auth has leaked a
+   host concern into a context adapter.
+5. **The wire shape is not the contract.** The JSON/flag/event shape is
+   translated to and from `Client` DTOs *inside the handler*, field by field —
+   never deserialized straight into a DTO or domain type. That translation is
+   the point of the layer: a wire rename touches the handler; the `Client`
+   and everything below it never hear about it.
+6. **A context a host exposes owns a handler.** `adapters` is optional only
+   while a context has no edge; the moment a host serves it, the wire
+   translation is that context's handler, not the host's inline code. A
+   context that composes peers through their `Client`s (a cross-context read
+   model) still gets a handler the moment it is routed — reaching peers
+   through injected `Client`s is an *outbound* property and says nothing about
+   the inbound edge.
+7. **The handler maps the context's own errors to the wire, exhaustively, and
+   the host knows none of them.** A context declares the errors that cross its
+   `Client` beside its DTOs in `client/` — each a subclass of `ts.Error`, the
+   set named once in a `ERRORS` tuple — and the service raises only those
+   (`application-services.md`). The handler catches the tuple and `match`es it,
+   one arm per error, closing on `assert_never`, so an error the context adds
+   fails to type-check in every handler until it has a status. A status is the
+   handler's choice, exactly as it already chooses 202 or 201 on success.
+   The host catches two things and nothing else: its own protocol rejections
+   (`ts.Rejection` — an unmatched route, an oversized body, a missing CLI
+   argument) and `Exception`, which it renders as a generic body with no
+   internals leaked. A host that names `tesser.errors`, or a context's error
+   type, is a TB050 finding. What a failed request *says* is therefore the
+   context's wording, the status is the handler's, and the bytes are the
+   protocol's — three owners, none of them the host.
+
+## Shape
+
+```
+<context>/adapters/handlers/
+  http.py          ← Handler(client), one method per endpoint, one error match per method
+
+class Handler:
+    def __init__(self, client: Client) -> None: ...     # injected, held as the contract
+    def add_link(self, req: HttpRequest) -> Response:   # request DTO → Client → response DTO
+        body = decode_body(req.body)                     # raw bytes → JSON; the handler's call
+        view = self._client.add_link(AddLinkRequest(
+            campaign_id=string_field(body.get("campaign_id")),   # shape guard → 400
+            slug=string_field(body.get("slug")),
+            target_url=string_field(body.get("target_url"))))
+        return json_response(200, _campaign_body(view))  # DTO → wire; sets Content-Type
+```
+
+One `Client` call per endpoint; the same `(HttpRequest) -> Response` signature
+on every one, so the host can hold them as one `Endpoint` type and route by
+table. The request DTO carries `method`, `path`, `path_params`, `query_params`,
+`headers`, and the **raw `bytes` body**; the response DTO carries `status_code`,
+the **raw `bytes` body**, and `headers`. **The names deliberately mirror
+FastAPI/Starlette** (`path_params`, `query_params`, `status_code`), stripped to
+what a hand-written host needs, so the shape is recognizable and a later move
+onto a framework is mechanical. The body is bytes on both sides precisely so the
+edge is content-type-agnostic — the handler decodes/encodes and owns the type.
+**Keep these DTOs faithful to HTTP's own request/response shape** — method /
+path / params / headers + an opaque byte body in, status + headers + an opaque
+byte body out. That fidelity is what lets a reader *derive* the cases this
+example doesn't ship (streaming via a `stream()` body, auth via a header,
+content negotiation via `Accept`) instead of being boxed in; collapsing the body
+back to a decoded `dict` for convenience is the regression that forecloses them.
+The shape is locked against that drift by
+`examples/python-app/tests/test_http_protocol.py` (the request/response fidelity
+tests). Construction mechanics: `python.md#inbound-handlers-and-hosts`; verified impl:
+`examples/python-app/campaign/adapters/handlers/http.py` (full case) and
+`examples/python-app/reports/adapters/handlers/http.py` (minimal case: one
+read endpoint over a cross-context read model).
+
+## Decisions you must make
+
+1. **One handler per mechanism, per context.** The HTTP handler and an event
+   consumer's handler are siblings under `adapters/handlers/` — same `Client`,
+   different wire. Don't fuse mechanisms into one class; their failure
+   vocabularies differ.
+2. **Does a CLI need a handler class?** A genuinely *single-command* CLI can
+   translate inline in the host's dispatch — the handler *role* is still played
+   (translate, call, render), just not extracted. But the split is
+   mechanism-independent, and **multiple commands earn it**: the verified impl's
+   CLI is the same shape as its HTTP one — a per-command transform
+   `(CliRequest) -> CliResponse` in `campaign/adapters/handlers/cli.py`, a
+   `srv/cli` host that routes a command name to it, prints, and exits. The
+   `CliRequest` (positional `args`, and stdin/options if ever needed) and
+   `CliResponse` (`exit_code`, `stdout`, `stderr`) are the CLI's request/response
+   DTOs; `protocol/cli.py` is their shared vocabulary, the analog of `protocol/http.py`.
+   The one CLI-specific piece is the error match: the context's `ERRORS`
+   tuple maps to an **exit code** exactly as the HTTP handler maps it to a
+   status — one declared set, one exhaustive match per mechanism. It obeys
+   the same rules: no domain math, no repository, no transport in the signature.
+3. **What is the problem-shape on the wire?** The handler renders the
+   context's error into the protocol's problem shape (`protocol/http.py`'s
+   `HttpResponse.problem`, RFC 9457-shaped, with the error's `code` as the
+   type and its `message` as the detail). The shape is the protocol's, the
+   words are the context's, and the status is the handler's.
+4. **Where does the shared protocol vocabulary live?** The request/response
+   DTOs, the problem renderer, and the rejection words describe the
+   *mechanism*, not any one context — so once a second context serves the same
+   mechanism they belong in one app-level protocol module (verified impl:
+   `examples/python-app/protocol/http.py`). Leaving them in the first context's
+   handler forces its peers to import a sibling's adapter internals, which is
+   a public-interface violation dressed up as reuse. That module is the
+   **protocol the app owns**: the handlers define its content, the hosts
+   conform to it, and both sides import it — which is also what keeps the
+   dependency straight: a
+   handler must never import from `srv/`, because a context has to be
+   constructible and testable with no host in the process.
+5. **Does the route table belong to the host or the context?** The host. A
+   context knowing its own URLs means the app can't mount it twice, can't
+   version it, and can't move it behind a prefix without editing the context.
+   The host declares `(method, pattern, endpoint)` and passes the extracted
+   parameters in the request DTO; the handler never sees a URL
+   (verified impl: `examples/python-app/srv/http/main.py`, where `HttpHost.__init__`
+   builds the route table).
+6. **Buffered body, or streamed?** The verified impl **buffers**: the host reads
+   a declared, finite, under-cap body into `bytes`, and refuses the rest — an
+   oversized body is a 413, a `Transfer-Encoding: chunked` body is a 411, both
+   decided from the framing headers before a handler runs. That covers JSON, a
+   form post, and a single bounded file. It does **not** cover a large upload or
+   a live audio feed: a streamed body isn't a value, so it can't ride in a
+   frozen request DTO — it needs a different shape (the request exposing a
+   pull-source, `stream()`, and the host de-chunking the wire), which is a
+   **documented boundary here, not built** — the same discipline as the deferred
+   worker host and SQL backend. The 411 is the honest in-code marker of that
+   line: the host says "I buffer; declare a length" rather than silently
+   mis-reading a stream. Reach for a framework (`srv.md`) when you actually need
+   streaming, multipart, or content negotiation — that is the point where the
+   hand-rolled host has earned its replacement.
+
+## How the machine sees it
+
+No shipped analyzer targets handlers in this cut. What is machine-checked is
+the host↔handler boundary, in the verified impl only. Two halves:
+`examples/python-app/tests/test_enforcement.py` (AST) checks that every context
+a host reaches owns a handler role, and that the HTTP host never *calls* a
+context `Client` — proven on injected violations, including the aliased form
+`reports = app.reports` that a naive attribute check would miss. That one is
+reach-but-never-call, not an import rule, so no linter covers it. The import
+half is a `forbidden` contract in `examples/python-app/.importlinter`: the host
+imports nothing from a context except its `adapters.handlers`, so a `client`,
+`application`, or `domain` import in the host is the router reaching past the
+transform. Everything else is review plus the domain-logic leakage signal list
+(`application-services.md#domain-logic-leakage-checks`). Review-side tells:
+- an import of a **repository or concrete service** in a handler module;
+- **domain arithmetic or a domain `for`-loop** between parse and `Client`
+  call;
+- a **DTO or domain type deserialized directly from the wire**
+  (`Model.parse_raw`, `json → dataclass(**body)`) — the translation layer
+  skipped;
+- **status codes chosen per-endpoint** instead of through the one mapper.
+
+## Tests you must write
+
+- **Wire → DTO translation:** a well-formed request produces exactly the
+  `Client` call's DTO (assert on a recording fake `Client`).
+- **One test per error in the context's `ERRORS` tuple:** a fake `Client`
+  that raises each declared error, and the status and body the handler
+  answers with. The tuple itself is pinned by the client's sibling test (every
+  `ts.Error` subclass the module declares is in it), and `assert_never` proves
+  the match covers the tuple — so the handler test only has to show what each
+  arm renders.
+- **No leak on the unexpected path:** a host test drives an unexpected
+  exception through and asserts the generic body carries no exception
+  text/stack. That test lives with the host, because the host owns that arm.
+- **The handler is testable with no transport:** every endpoint test builds a
+  request DTO by hand and asserts on the returned response DTO — no server, no
+  socket, no client library. If a handler test needs one, the handler is
+  reaching past its argument.
+
+## Common mistakes
+
+- **The fat handler.** Validation-beyond-parsing, pricing math, a repository
+  call — domain logic living at the edge, invisible to the domain's tests.
+  Move it through the `Client`.
+- **Wire-as-contract.** Handing the parsed JSON dict (or the deserialized
+  request DTO) down into the service — now the wire format *is* the API
+  and every wire change ripples inward.
+- **Catching a tesser type.** `except errors.DomainError` in a handler or a
+  host — the edge now knows how the domain fails, and a context that changes
+  what it surfaces edits every edge. An adapters or srv module importing
+  `tesser.errors` is a TB050 finding. Catch the context's `ERRORS` tuple.
+- **A chain of `except` arms instead of a match.** `except client.Rejected:
+  ... except client.Missing: ...` type-checks with an arm missing. Catch the
+  tuple once and `match` it, closing on `assert_never`.
+- **Handler builds its dependencies.** Constructing the service or fetching
+  the `Client` from a registry — construction belongs to component/bootstrap;
+  the handler receives.
+- **The transport leaking into the signature.** A handler method taking the
+  framework's request object, or a loose `campaign_id: str` and `raw: bytes`
+  passed alongside the request instead of *through* it. The whole request rides
+  in one `HttpRequest`; splitting a piece out (the body, a path param) makes the
+  endpoint set non-uniform, so the host can no longer route by table — it grows
+  a branch per endpoint instead.
+- **The host parsing the body.** `json.loads` in the host, or handing the
+  handler a decoded `dict` instead of raw `bytes`. Now the host is committed to
+  one content type — a `.png` or a plain-text body breaks it — and the decode
+  lives outside the layer whose job is translation. The host reads bytes; the
+  handler decodes.
+- **The host translates.** One context gets a proper handler and the next one
+  is answered by a few lines of body-building in the host, usually because it
+  looked too small to deserve a class. The rule it broke is rule 6, and the
+  cost is that the wire shape of that context now lives outside it: its DTO
+  rename is a host edit, and the two endpoints drift on error mapping because
+  only one of them matches the context's `ERRORS`.
+
+## Now build it
+
+- Python: `python.md#inbound-handlers-and-hosts` — the `Handler` class, the
+  transport guard, and the error match over the context's `ERRORS`, backed by
+  `examples/minimal/alpha/adapters/handlers/cli.py` (the migrated shape) and
+  `examples/python-app/campaign/adapters/handlers/http.py` (HTTP, still on
+  the host-owned table under `# tesser:debt TB050` markers until it migrates).

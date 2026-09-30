@@ -1,0 +1,23 @@
+{
+  ".github": "ungated",
+  "docs": "ungated",
+  "examples": "ungated",
+  "examples/asyncpg": "app",
+  "examples/durable-execution": "app",
+  "examples/errorspy": "app",
+  "examples/llmport": "app",
+  "examples/minimal": "app",
+  "examples/ports": "app",
+  "examples/python-app": "app",
+  "examples/serdepy": "app",
+  "examples/voice": "app",
+  "generator": "app",
+  "layout": "app",
+  "scripts": "ungated",
+  "skills": "ungated",
+  "specs-app": "app",
+  "story-drafting": "app",
+  "tesser-py": "app",
+  "tessercheck-cli": "ungated",
+  "tessercheck-py": "app"
+}
