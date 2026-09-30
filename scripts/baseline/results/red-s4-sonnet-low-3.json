@@ -1,0 +1,459 @@
+{
+  "run": {
+    "phase": "red-specs",
+    "name": "red-s4-sonnet-low-3",
+    "slot": 9,
+    "base_ref": "story-drafting-scaffold-s4",
+    "base_sha": "71ac24c13808f7fae64c2e43d19ad4df1289a625",
+    "branch": "baseline/runs/red-s4-sonnet-low-3",
+    "restate_ingress": "http://localhost:38980",
+    "restate_admin": "http://localhost:39970",
+    "host_port": 9390,
+    "prepared": "2026-09-30T13:24:06Z"
+  },
+  "conditions": {
+    "effort": [
+      "low"
+    ],
+    "spawn": {
+      "agent_type": "tesser-red-trial-low",
+      "task_kind": "subagent",
+      "model_requested": "sonnet"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-sonnet-5-5"
+    ],
+    "duration_s": 129.3,
+    "api_requests": 7,
+    "tokens": {
+      "input": 14,
+      "cache_read": 438976,
+      "cache_write": 82067
+    },
+    "tool_calls_total": 7,
+    "tool_calls": {
+      "Bash": 5,
+      "Read": 1,
+      "SubagentHandback": 1
+    },
+    "guidance": [],
+    "tessercheck_runs": [
+      {
+        "command": "cd <repo>/story-drafting/tests && python3 - <<'EOF'\np='test_submitting_jtbds.py'\ns=open(p).read()\ns=s.replace(\"import ",
+        "findings": 1,
+        "by_code": {
+          "TB020": 1
+        }
+      },
+      {
+        "command": "cd <repo> && sed -i '/# the stories are drafted by/d' story-drafting/tests/test_reading_jtbds_by_jtbd_id.py && source ",
+        "findings": 1,
+        "by_code": {
+          "TB020": 1
+        }
+      },
+      {
+        "command": "cd <repo> && sed -i '' '/# the stories are drafted by/d' story-drafting/tests/test_reading_jtbds_by_jtbd_id.py && sour",
+        "findings": 0,
+        "by_code": {}
+      }
+    ],
+    "tessercheck_runs_count": 3,
+    "final_message": "Remove the comment and rerun."
+  },
+  "hook": {
+    "analyzed_writes": 0,
+    "writes_with_findings": 0,
+    "findings_total": 0,
+    "findings_by_code": {},
+    "findings_per_write": []
+  },
+  "diff": {
+    "head": "832b1d85b73a5f9a18fea1f5081f1fc49adffc51",
+    "commits": 1,
+    "uncommitted": [],
+    "files_changed": 76,
+    "lines_added": 3221,
+    "lines_removed": 0,
+    "py_impl_files": 46,
+    "py_impl_lines": 1617,
+    "py_test_files": 23,
+    "py_test_lines": 1442,
+    "files_outside_tree": []
+  },
+  "integrity": {
+    "checked": false
+  },
+  "gate": {
+    "verify_exit": 1,
+    "verify_steps_reached": [
+      "the tree matches story-drafting/specs (srv.cli.render --check)",
+      "tessercheck (zero findings over the whole tree)",
+      "mypy --strict",
+      "pytest every tier but the root (no host served; Restate at http://localhost:38980)",
+      "serve srv.http.main on :9390 and register its Restate endpoint at http://localhost:39970",
+      "pytest the root tier (against the host on :9390, in STORY_DRAFTING_HOST)"
+    ],
+    "tessercheck_findings": 0,
+    "tests": [
+      {
+        "id": "app/test_app.py::TestAppConfig::test_a_config_carries_the_drafting_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_the_environment_is_read_into_a_config",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestEnvConfigRepository::test_each_read_draws_a_new_identity_seed",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "app/test_app.py::TestAppLoader::test_the_loader_builds_an_app_that_publishes_the_drafting_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/activities/test_restate_activities.py::TestRestateDraftStories::test_restate_serves_draft_stories_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/activities/test_restate_activities.py::TestRestateRecordStories::test_restate_serves_record_stories_and_a_call_made_with_its_handler_reaches_the_application_client",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/activities/test_restate_activities.py::TestRestateEngineRefusals::test_a_body_the_snapshot_cannot_read_is_a_terminal_500_that_is_not_retried",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/activities/test_restate_activities.py::TestRestateEngineRefusals::test_the_ingress_refuses_a_call_to_an_ingress_private_actions_service",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/dispatchers/test_restate_http_jtbd_orchestrator_relay.py::TestRestateHttpJtbdOrchestratorRelay::test_start_conduct_story_drafting_starts_the_workflow_the_engine_keys_by_the_jtbd_id_and_does_not_wait",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/gateways/test_template_story_drafter.py::TestTemplateStoryDrafter::test_draft_stories_answers_a_draft_stories_response",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHttpHandler::test_submit_jtbd_passes_what_it_reads_and_answers_201_with_the_response_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHttpHandler::test_submit_jtbd_missing_what_it_reads_is_a_bad_request_that_calls_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHttpHandler::test_get_jtbd_passes_what_it_reads_and_answers_200_with_the_response_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/handlers/test_http.py::TestHttpHandler::test_get_jtbd_missing_what_it_reads_is_a_bad_request_that_calls_nothing",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_jtbd_repository.py::TestMemoryJtbdStore::test_a_saved_jtbd_is_loaded_in_a_later_transaction",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_jtbd_repository.py::TestMemoryJtbdStore::test_a_jtbd_never_saved_is_not_loaded",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_memory_jtbd_repository.py::TestMemoryJtbdStore::test_two_stores_hold_two_separate_sets_of_jtbds",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_uuid_jtbd_identity_repository.py::TestUuidJtbdIdentityRepository::test_the_same_seed_issues_the_same_jtbd_id",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/repositories/test_uuid_jtbd_identity_repository.py::TestUuidJtbdIdentityRepository::test_each_jtbd_id_issued_is_a_different_version_4_uuid",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/adapters/workflows/test_restate_conduct_story_drafting.py::TestRestateConductStoryDrafting::test_conduct_story_drafting_runs_its_steps_in_order",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/orchestrators/test_jtbd_orchestrator.py::TestJtbdOrchestrator::test_conduct_story_drafting_runs_its_steps_in_order_and_answers_from_the_last",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesRequestSnapshot::test_a_record_stories_request_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesRequestSnapshot::test_a_record_stories_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesRequestSnapshot::test_a_record_stories_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesResponseSnapshot::test_a_record_stories_response_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesResponseSnapshot::test_a_record_stories_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_actions_relay.py::TestRecordStoriesResponseSnapshot::test_a_record_stories_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingRequestSnapshot::test_a_conduct_story_drafting_request_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingRequestSnapshot::test_a_conduct_story_drafting_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingRequestSnapshot::test_a_conduct_story_drafting_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingResponseSnapshot::test_a_conduct_story_drafting_response_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingResponseSnapshot::test_a_conduct_story_drafting_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_jtbd_orchestrator_relay.py::TestConductStoryDraftingResponseSnapshot::test_a_conduct_story_drafting_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesRequestSnapshot::test_a_draft_stories_request_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesRequestSnapshot::test_a_draft_stories_request_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesRequestSnapshot::test_a_draft_stories_request_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesResponseSnapshot::test_a_draft_stories_response_is_its_fields",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesResponseSnapshot::test_a_draft_stories_response_comes_back_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/relays/test_story_actions_relay.py::TestDraftStoriesResponseSnapshot::test_a_draft_stories_response_of_the_wrong_shape_is_refused_before_the_constructor",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_jtbd_actions.py::TestJtbdActions::test_record_stories_answers_for_the_jtbd_it_builds",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_jtbd_service.py::TestJtbdService::test_submit_jtbd_start_conduct_story_drafting_with_the_jtbd_it_built",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_jtbd_service.py::TestJtbdService::test_get_jtbd_answers_the_jtbd_it_loads",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/application/test_story_actions.py::TestStoryActions::test_draft_stories_asks_its_port_and_answers_what_it_said",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestConfig::test_a_config_carries_the_engine_ingress",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestConfig::test_a_config_carries_the_seed_its_identity_repository_is_built_with",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestDrafting::test_the_component_publishes_the_engine_containers_it_registered_into",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/component/test_component.py::TestDrafting::test_every_container_bounds_its_retries_and_only_the_workflow_faces_the_ingress",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_jtbd.py::TestJtbd::test_a_jtbd_constructs_from_its_spec",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_jtbd.py::TestJtbd::test_a_jtbd_answers_record_stories_with_one_of_its_outcomes",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "drafting/domain/test_jtbd.py::TestJtbd::test_a_jtbd_reads_its_status_as_one_of_its_values",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_string_field_is_read_from_the_body",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_an_integer_field_is_read_from_the_body",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_field_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_field_of_the_wrong_type_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_boolean_is_not_an_integer",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_malformed_json_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_body_that_is_not_an_object_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_path_parameter_is_read_by_its_name",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_path_parameter_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_an_integer_path_parameter_is_read_as_an_integer",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_an_integer_path_parameter_that_is_not_digits_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_a_missing_integer_path_parameter_is_a_bad_request",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpRequest::test_two_requests_with_the_same_fields_are_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpResponse::test_a_problem_carries_its_status_and_a_json_detail",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "protocol/test_http.py::TestHttpResponse::test_two_responses_with_the_same_fields_are_equal",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_mounted_restate_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "srv/http/test_main.py::TestHttpHost::test_the_routes_answer_by_the_failure_they_meet",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests/test_submitting_jtbds.py::TestSubmittingJtbds::test_s_1_a_1",
+        "outcome": "passed",
+        "message": ""
+      },
+      {
+        "id": "tests/test_reading_jtbds_by_jtbd_id.py::TestReadingJtbdsByJtbdId::test_s_2_a_1",
+        "outcome": "failed",
+        "message": ""
+      }
+    ],
+    "test_outcomes": {
+      "passed": 68,
+      "failed": 1
+    },
+    "impl_coverage_pct": 89.6,
+    "impl_statements": 833
+  },
+  "decisions_uncommitted": []
+}
