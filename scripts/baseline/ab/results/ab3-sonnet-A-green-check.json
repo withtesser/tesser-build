@@ -1,0 +1,39 @@
+{
+  "cmd": "python3 -m srv.http.main 0.0.0.0:9330",
+  "cwd": "<repo>/.claude/worktrees/run-ab3-sonnet-A-green/story-drafting",
+  "seconds_to_listen": 0.53,
+  "served": true,
+  "restate_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_12n3EnFHczG7dNbdHi1qwKt\",\"services\":[{\"name\":\"StoryActions\",\"ty\":\"Service\",\"handlers\":[{\"name\":\"draft_stories\",\"public\":false,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy\":{\"max_attempts\":nul"
+  },
+  "story_1": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"jtbd_id\": \"1315fe1d-5cba-48b9-bf7d-c84be448f01c\", \"status\": \"drafting_stories\"}"
+  },
+  "story_2": {
+    "passed": true,
+    "problems": [],
+    "seconds_until_drafted": 0.26,
+    "answered": "{\"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"a developer has a job to be done\", \"when\": \"they submit it wanting my work to survive across sessions\", \"then\": \"it is fulfilled so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "probes": {
+    "get_unknown_id_status": 500,
+    "post_missing_fields_status": 400
+  },
+  "exited_early": false,
+  "seconds_to_listen_after_restart": 0.51,
+  "restart_registration": {
+    "ok": true,
+    "status": 200,
+    "detail": "{\"id\":\"dp_12n3EnFHczG7dNbdHi1qwKt\",\"services\":[{\"name\":\"JtbdActions\",\"ty\":\"Service\",\"handlers\":[{\"name\":\"record_stories\",\"public\":false,\"input_description\":\"application/json\",\"output_description\":\"application/json\",\"input_json_schema\":true,\"output_json_schema\":true,\"retry_policy\":{\"max_attempts\":nul"
+  },
+  "story_3": {
+    "passed": true,
+    "problems": [],
+    "answered": "{\"status\": \"awaiting_story_acceptance\", \"stories\": [{\"given\": \"a developer has a job to be done\", \"when\": \"they submit it wanting my work to survive across sessions\", \"then\": \"it is fulfilled so that I can pick up where I left off\", \"state\": \"drafted\"}]}"
+  },
+  "passed": true
+}

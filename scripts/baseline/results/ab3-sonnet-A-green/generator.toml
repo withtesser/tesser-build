@@ -1,0 +1,9 @@
+[sample_values]
+jtbd_id = ["jtbd-1", "jtbd-2"]
+role = ["a developer", "a reviewer"]
+i_want = ["to keep my place", "to see what was decided"]
+so_that = ["I can step away", "I do not re-explain"]
+story_texts = [
+  [{ given = "a job to be done", when = "I submit it", then = "I can come back to it" }],
+  [{ given = "a drafted story", when = "I read it", then = "it is still there" }],
+]

@@ -68,6 +68,17 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
+# A prepare that fails from here on removes what it made, so the same run
+# can be prepared again.
+prepared=no
+undo() {
+  [ "$prepared" = yes ] && return
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  git branch -D "$branch" >/dev/null 2>&1 || true
+  rm -rf "$out"
+  docker rm -f "$container" >/dev/null 2>&1 || true
+}
+trap undo EXIT
 mkdir -p "$out"
 base_sha=$(git rev-parse "$base^{commit}")
 git worktree add -q -b "$branch" "$wt" "$base_sha"
@@ -94,11 +105,14 @@ fi
 # "## Heading" section of such a file (to the next "## "), and
 # {{EXAMPLE:path}} a file of the example tree, each pasted verbatim (run
 # values are not filled inside them). A name, path, or heading that does not
-# resolve stops the prepare.
+# resolve stops the prepare. {{AGENT_FILES}} is every tracked, non-empty
+# Python file of the worktree's story-drafting/ that carries no generated mark,
+# outside its acceptance tests: the files a red design leaves to green, which
+# differ with the design.
 WT="$wt" VENV="$MAIN/.venv" ENGINE_URL="http://localhost:$engine_port" ADMIN="http://localhost:$admin_port" \
   PORT="$host_port" PORT_LAST="$((host_port + 9))" SPEC="$out/spec.toml" LOG="$out/verify.log" EXAMPLE="$out/example" \
   python3 - "$prompt" "$out/prompt.md" <<'PY'
-import os, pathlib, re, sys
+import os, pathlib, re, subprocess, sys
 values = {"worktree": "WT", "venv": "VENV", "engine_url": "ENGINE_URL", "admin": "ADMIN", "port_last": "PORT_LAST", "port": "PORT", "spec": "SPEC", "log": "LOG"}
 roots = {"FILE": pathlib.Path(os.environ["WT"]), "EXAMPLE": pathlib.Path(os.environ["EXAMPLE"])}
 def fill(text):
@@ -120,11 +134,27 @@ def include(match):
             sys.exit(f"baseline: the prompt includes {kind}:{target}, which names no section")
         text = found.group(0)
     return text.rstrip("\n")
-parts = re.split(r"(\{\{(?:FILE|SECTION|EXAMPLE):[^}]+\}\})", open(sys.argv[1]).read())
+def agent_files():
+    tree = roots["FILE"] / "story-drafting"
+    listed = subprocess.run(["git", "ls-files", "--", "*.py"], cwd=tree, capture_output=True, text=True, check=True).stdout.split()
+    blocks = []
+    for relative in sorted(listed):
+        text = (tree / relative).read_text()
+        if relative.startswith("tests/") or not text.strip() or text.startswith("# pragma: tesser-generated"):
+            continue
+        blocks.append(f"`story-drafting/{relative}`:\n\n```python\n{text.rstrip(chr(10))}\n```")
+    if not blocks:
+        sys.exit("baseline: the prompt includes AGENT_FILES, and the tree has none")
+    return "\n\n".join(blocks)
+parts = re.split(r"(\{\{(?:(?:FILE|SECTION|EXAMPLE):[^}]+|AGENT_FILES)\}\})", open(sys.argv[1]).read())
 out = []
 for part in parts:
+    if part == "{{AGENT_FILES}}":
+        out.append(agent_files())
+        continue
     token = re.fullmatch(r"\{\{(FILE|SECTION|EXAMPLE):([^}]+)\}\}", part)
     out.append(include(token) if token else fill(part))
 open(sys.argv[2], "w").write("".join(out))
 PY
+prepared=yes
 echo "$out/prompt.md"

@@ -1,0 +1,106 @@
+{
+  "run": {
+    "phase": "bare",
+    "name": "ab3-opus-B",
+    "slot": 1,
+    "worktree": "<ab-runs>/ab3-opus-B/work",
+    "restate_ingress": "http://localhost:38180",
+    "restate_admin": "http://localhost:39170",
+    "host_port": 9310,
+    "prepared": "2026-09-30T18:42:17Z"
+  },
+  "conditions": {
+    "effort": [
+      "medium"
+    ],
+    "spawn": {
+      "agent_type": "tesser-red-trial-medium",
+      "task_kind": "subagent",
+      "model_requested": "opus"
+    },
+    "system_prompt": {
+      "chars": 1475,
+      "sha256": "a103749a015bf39e"
+    }
+  },
+  "agent": {
+    "models": [
+      "claude-opus-5-5"
+    ],
+    "duration_s": 245.5,
+    "time": {
+      "checking_s": 10.3,
+      "setup_s": 17.6,
+      "probing_s": 11.3,
+      "other_s": 43.3,
+      "model_s": 163.1
+    },
+    "api_requests": 25,
+    "tokens": {
+      "input": 50,
+      "cache_read": 1732329,
+      "cache_write": 86639
+    },
+    "tool_calls_total": 29,
+    "tool_calls": {
+      "Bash": 20,
+      "Write": 8,
+      "SubagentHandback": 1
+    },
+    "guidance": [],
+    "tessercheck_runs": [],
+    "tessercheck_runs_count": 0,
+    "final_message": "Now unit tests."
+  },
+  "output": {
+    "files": 12,
+    "python_files": 8,
+    "python_lines": 407,
+    "commits": 1,
+    "tests": {
+      "written": true,
+      "exit": 0,
+      "passed": 5,
+      "failed": 0
+    }
+  },
+  "check": {
+    "cmd": ".venv/bin/python main.py",
+    "cwd": "<ab-runs>/ab3-opus-B/work",
+    "seconds_to_listen": 0.25,
+    "served": true,
+    "restate_registration": {
+      "ok": true,
+      "status": 200,
+      "detail": "{\"id\":\"dp_16wsvPklM02laWoGB2wmuGd\",\"services\":[{\"name\":\"StoryDrafting\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"run\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"JSON object\",\"output_description\":\"JSON object\",\"input_json_schema\":{\"type\":\"object\"},\"output_json_schema\":{\"type\":\"object\"},\"retry_poli"
+    },
+    "story_1": {
+      "passed": true,
+      "problems": [],
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"status\":\"drafting_stories\"}"
+    },
+    "story_2": {
+      "passed": true,
+      "problems": [],
+      "seconds_until_drafted": 0.25,
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
+    },
+    "probes": {
+      "get_unknown_id_status": 404,
+      "post_missing_fields_status": 422
+    },
+    "exited_early": false,
+    "seconds_to_listen_after_restart": 0.25,
+    "restart_registration": {
+      "ok": true,
+      "status": 200,
+      "detail": "{\"id\":\"dp_16wsvPklM02laWoGB2wmuGd\",\"services\":[{\"name\":\"StoryDrafting\",\"ty\":\"Workflow\",\"handlers\":[{\"name\":\"run\",\"ty\":\"Workflow\",\"public\":true,\"input_description\":\"JSON object\",\"output_description\":\"JSON object\",\"input_json_schema\":{\"type\":\"object\"},\"output_json_schema\":{\"type\":\"object\"},\"retry_poli"
+    },
+    "story_3": {
+      "passed": true,
+      "problems": [],
+      "answered": "{\"jtbd_id\":\"c881a7e4-517e-4490-9890-f0da1ae57a2a\",\"role\":\"a developer\",\"i_want\":\"my work to survive across sessions\",\"so_that\":\"I can pick up where I left off\",\"status\":\"awaiting_story_acceptance\",\"stories\":[{\"given\":\"I am a developer and I want my work to survive across sessions\",\"when\":\"I ask for it\",\"then\":\"I get it, so that I can pick up where I left off\",\"state\":\"drafted\"},{\"given\":\"I am a developer, I want my work to survive across sessions, and I stepped away partway through\",\"when\":\"I come back\",\"then\":\"I pick up where I was, with what was decided so far, so that I can pick up where I "
+    },
+    "passed": true
+  }
+}

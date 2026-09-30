@@ -1,0 +1,473 @@
+#!/usr/bin/env python3
+"""Run one A/B round as a repeatable procedure: plan it, launch its agents in
+waves across the Restate slots, record each agent when it finishes, and report
+the full metric set per cell.
+
+    scripts/baseline/ab/round plan <round> --models opus,sonnet --n 3 [--scaffold TAG] [--slots 1-9] [--effort medium]
+    scripts/baseline/ab/round next <round>                  # prepare what can start now; print the launches as JSON
+    scripts/baseline/ab/round done <round> <run> <agent-id> # measure a finished agent, check it, record it
+    scripts/baseline/ab/round status <round>
+    scripts/baseline/ab/round review <round>                # a cold codex review of every finished tree
+    scripts/baseline/ab/round report <round>                # results/<round>-metrics.json and <round>-table.md
+    scripts/baseline/ab/round push-refs <round>             # arm A trees to refs/trials/<run>
+
+Trials are subagents of the orchestrating session, never headless agents, so
+this script does not start them: `next` prints each launch (the agent type,
+the model, and the exact prompt), and the session starts every printed launch
+in one message, unnamed, so the agent definition's effort applies. When one
+finishes, the session calls `done` with its agent id, then `next` again.
+
+A cell is one model and one arm; a sample is one run of a cell. Arm A is red
+then green on red's branch, both in one slot; arm B is one bare agent. Every
+run gets a slot (1-9 by default; slot 0's ports are the ones scripts/verify's
+own story-drafting Restate container uses), and a slot holds one sample until
+it is done, so up to nine samples run at once and the rest wait for a slot.
+Agents running at once share the machine, so the report records how many ran
+at the same time as each one: timings from rounds of different concurrency
+are not comparable.
+
+State lives in .baseline-runs/<round>/round.json (gitignored); the records a
+round commits are scripts/baseline/results/<run>.json and <run>/ (arm A, from
+scripts/baseline/record), scripts/baseline/ab/results/<run>.json (arm B),
+<run>-check.json (arm A's shared check), and the two report files.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import glob
+import json
+import os
+import pathlib
+import random
+import re
+import signal
+import statistics
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+BASELINE = HERE.parent
+MAIN = pathlib.Path(subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                   capture_output=True, text=True, check=True).stdout.strip()).parent
+RUNS = MAIN / ".baseline-runs"
+AB_WORK_ROOT = pathlib.Path(os.environ.get("AB_WORK_ROOT", "/private/tmp/claude-501/ab-runs"))
+TRANSCRIPTS = pathlib.Path.home() / ".claude" / "projects"
+# Warmed before a round, so no bare run pays for a download another run did
+# not: a cold cache cost run 2's bare agent 91 s that run 3's paid 17 s for.
+WARM_PACKAGES = ("restate-sdk", "hypercorn", "starlette", "httpx", "fastapi", "uvicorn", "pydantic", "pytest", "aiosqlite")
+POINTER = ("Your complete task prompt is in the file {prompt}. Your first action is to read that whole file with the "
+           "Read tool; then follow it exactly. It is the task: reading it does not count against its \"do not read "
+           "before you generate\" rule, which applies to the repository.")
+
+
+def now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def state_path(name: str) -> pathlib.Path:
+    return RUNS / name / "round.json"
+
+
+def load(name: str) -> dict:
+    path = state_path(name)
+    if not path.is_file():
+        sys.exit(f"round: no planned round '{name}'")
+    return json.loads(path.read_text())
+
+
+def save(state: dict) -> None:
+    state_path(state["round"]).write_text(json.dumps(state, indent=2) + "\n")
+
+
+def run_dir(run: str) -> pathlib.Path:
+    return RUNS / run
+
+
+def slot_ports(slot: int) -> range:
+    return range(9300 + 10 * slot, 9310 + 10 * slot)
+
+
+def listeners(ports: range) -> list[tuple[int, str]]:
+    """(pid, cwd) of every process listening on one of the ports."""
+    out = subprocess.run(["lsof", "-nP", "-t", f"-iTCP:{ports.start}-{ports.stop - 1}", "-sTCP:LISTEN"],
+                         capture_output=True, text=True).stdout.split()
+    found = []
+    for pid in sorted({int(p) for p in out}):
+        cwd = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
+        found.append((pid, next((line[1:] for line in cwd.splitlines() if line.startswith("n")), "")))
+    return found
+
+
+def plan(args: argparse.Namespace) -> None:
+    if state_path(args.round).exists():
+        sys.exit(f"round: {args.round} is already planned")
+    sha = subprocess.run(["git", "rev-parse", f"{args.scaffold}^{{commit}}"], capture_output=True, text=True, cwd=MAIN)
+    if sha.returncode != 0:
+        sys.exit(f"round: no scaffold {args.scaffold}")
+    first, _, last = args.slots.partition("-")
+    slots = list(range(int(first), int(last or first) + 1))
+    runs: dict[str, dict] = {}
+    for model in args.models.split(","):
+        for sample in range(1, args.n + 1):
+            cell_a, cell_b = f"{model}-A", f"{model}-B"
+            red, green = f"{args.round}-{model}-A{sample}-red", f"{args.round}-{model}-A{sample}-green"
+            runs[red] = {"cell": cell_a, "model": model, "arm": "A", "sample": sample, "phase": "red-specs",
+                         "status": "pending", "after": None, "next": green}
+            runs[green] = {"cell": cell_a, "model": model, "arm": "A", "sample": sample, "phase": "green-on-red",
+                           "status": "pending", "after": red, "next": None}
+            runs[f"{args.round}-{model}-B{sample}"] = {"cell": cell_b, "model": model, "arm": "B", "sample": sample,
+                                                       "phase": "bare", "status": "pending", "after": None, "next": None}
+    state = {"round": args.round, "planned": now(), "scaffold": args.scaffold, "scaffold_sha": sha.stdout.strip(),
+             "main_sha": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=HERE).stdout.strip(),
+             "agent_type": f"tesser-red-trial-{args.effort}", "models": args.models.split(","), "n": args.n,
+             "slots": slots, "runs": runs}
+    (RUNS / args.round).mkdir(parents=True, exist_ok=True)
+    warm = RUNS / args.round / "pip-warm"
+    subprocess.run([sys.executable, "-m", "venv", str(warm)], check=True)
+    subprocess.run([str(warm / "bin" / "pip"), "install", "-q", *WARM_PACKAGES], check=True)
+    state["pip_warmed"] = list(WARM_PACKAGES)
+    save(state)
+    print(f"planned {args.round}: {len(runs)} runs, {len(state['models']) * 2} cells x {args.n}, slots {slots}")
+
+
+def busy_slots(state: dict) -> set[int]:
+    """A slot is held from its sample's first phase until its last is done."""
+    held = set()
+    for run in state["runs"].values():
+        if run.get("slot") is None:
+            continue
+        if run["status"] in ("prepared", "running") or (run["status"] == "done" and run["next"] and
+                                                        state["runs"][run["next"]]["status"] in ("pending", "prepared", "running")):
+            held.add(run["slot"])
+    return held
+
+
+def prepare(state: dict, name: str, run: dict, slot: int) -> str | None:
+    if run["phase"] == "bare":
+        cmd = [str(HERE / "prepare-bare"), name, str(slot)]
+    elif run["phase"] == "red-specs":
+        cmd = [str(BASELINE / "prepare"), "red-specs", state["scaffold"], name, str(slot)]
+    else:
+        cmd = [str(BASELINE / "prepare"), "green-on-red", f"baseline/runs/{run['after']}", name, str(slot)]
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=HERE)
+    if proc.returncode != 0:
+        run["status"], run["blocked"] = "blocked", (proc.stdout + proc.stderr).strip()[-600:]
+        print(f"round: {name} is blocked: prepare failed:\n{run['blocked']}", file=sys.stderr)
+        return None
+    return proc.stdout.strip().splitlines()[-1]
+
+
+def launch(state: dict, name: str, run: dict, prompt: pathlib.Path) -> dict:
+    # Arm B's prompt is handed over whole; arm A's is a pointer to its file,
+    # because a red or green prompt is tens of kilobytes. Runs 1-3 did the same.
+    text = prompt.read_text() if run["phase"] == "bare" else POINTER.format(prompt=prompt)
+    return {"run": name, "subagent_type": state["agent_type"], "model": run["model"],
+            "description": f"{state['round']} {run['model']} {run['arm']}{run['sample']} {run['phase']}", "prompt": text}
+
+
+def next_launches(args: argparse.Namespace) -> None:
+    state = load(args.round)
+    launches = []
+    for name, run in state["runs"].items():
+        if run["status"] == "prepared":  # prepared, and not yet reported running: launch again
+            launches.append(launch(state, name, run, run_dir(name) / "prompt.md"))
+    for name, run in state["runs"].items():
+        if run["status"] != "pending":
+            continue
+        if run["after"]:
+            before = state["runs"][run["after"]]
+            if before["status"] != "done":
+                continue
+            slot = before["slot"]
+        else:
+            free = [s for s in state["slots"] if s not in busy_slots(state)]
+            free = [s for s in free if not listeners(slot_ports(s))]
+            if not free:
+                continue
+            slot = free[0]
+        run["slot"] = slot
+        prompt = prepare(state, name, run, slot)
+        if prompt is None:
+            run["slot"] = None
+            save(state)
+            continue
+        run["status"], run["prepared"] = "prepared", now()
+        save(state)
+        launches.append(launch(state, name, run, pathlib.Path(prompt)))
+    for item in launches:
+        state["runs"][item["run"]]["status"] = "running"
+    save(state)
+    json.dump(launches, sys.stdout, indent=2)
+    print()
+    waiting = [n for n, r in state["runs"].items() if r["status"] == "pending"]
+    print(f"{len(launches)} to launch now; {len(waiting)} waiting for a slot or a red", file=sys.stderr)
+
+
+def transcript_for(agent_id: str) -> pathlib.Path:
+    found = glob.glob(str(TRANSCRIPTS / "*" / "*" / "subagents" / f"agent-{agent_id}.jsonl"))
+    if len(found) != 1:
+        sys.exit(f"round: {len(found)} transcripts for agent {agent_id}")
+    return pathlib.Path(found[0])
+
+
+def reap(run: dict, name: str) -> list[int]:
+    """Kill what the run left listening on its slot's ports: a server an agent
+    started and did not stop holds the port the check needs. Only processes
+    whose working directory is the run's own tree are touched."""
+    tree = str(AB_WORK_ROOT / name) if run["phase"] == "bare" else str(MAIN / ".claude" / "worktrees" / f"run-{name}")
+    killed = []
+    for pid, cwd in listeners(slot_ports(run["slot"])):
+        if cwd.startswith(tree):
+            os.kill(pid, signal.SIGKILL)
+            killed.append(pid)
+    return killed
+
+
+def sanitize(text: str) -> str:
+    return text.replace(str(AB_WORK_ROOT), "<ab-runs>").replace(str(MAIN), "<repo>").replace(str(pathlib.Path.home()), "~")
+
+
+def done(args: argparse.Namespace) -> None:
+    state = load(args.round)
+    run = state["runs"].get(args.run)
+    if run is None or run["status"] not in ("running", "prepared"):
+        sys.exit(f"round: {args.run} is not a running run of {args.round}")
+    transcript = transcript_for(args.agent_id)
+    run["agent_id"], run["reaped_before_measure"] = args.agent_id, reap(run, args.run)
+    env = dict(os.environ, PATH=f"{MAIN / '.venv' / 'bin'}:{os.environ['PATH']}")
+    if run["phase"] == "bare":
+        subprocess.run([str(HERE / "measure-bare"), args.run, str(transcript)], check=True, env=env, cwd=HERE)
+        (HERE / "results" / f"{args.run}.json").write_text(sanitize((run_dir(args.run) / "ab-metrics.json").read_text()))
+    else:
+        subprocess.run([str(BASELINE / "measure"), args.run, str(transcript)], check=True, env=env, cwd=HERE)
+        if run["phase"] == "green-on-red":
+            check = subprocess.run([str(HERE / "check-tree"), "A", args.run], capture_output=True, text=True, env=env, cwd=HERE)
+            (HERE / "results" / f"{args.run}-check.json").write_text(sanitize(check.stdout))
+    run["reaped_after_measure"] = reap(run, args.run)
+    run["status"], run["done"] = "done", now()
+    save(state)
+    status(args)
+
+
+def status(args: argparse.Namespace) -> None:
+    state = load(args.round)
+    for name, run in state["runs"].items():
+        print(f"{run['status']:9} slot {run.get('slot', '-')!s:2} {name}")
+
+
+def final_tree(state: dict, name: str, run: dict) -> tuple[pathlib.Path, bool] | None:
+    """The tree a finished sample left, and whether it imports tesser-py."""
+    if run["arm"] == "A" and run["phase"] == "green-on-red" and run["status"] == "done":
+        return MAIN / ".claude" / "worktrees" / f"run-{name}" / "story-drafting", True
+    if run["arm"] == "B" and run["status"] == "done":
+        return AB_WORK_ROOT / name / "work", False
+    return None
+
+
+def review(args: argparse.Namespace) -> None:
+    """A cold codex review of every finished sample's tree, all at once, under
+    shuffled labels, so the reviewer is not told which arm or model made it
+    (arm A's generated-file markers still show). The reviews are part of the
+    round's report, not of its metrics: each is codex's own claim, unscored."""
+    state = load(args.round)
+    trees = {name: tree for name, run in state["runs"].items()
+             if (tree := final_tree(state, name, run)) and name not in state.get("reviews", {})}
+    if not trees:
+        sys.exit("round: no finished tree without a review")
+    seed = random.SystemRandom().randrange(1 << 30)
+    order = list(trees)
+    random.Random(seed).shuffle(order)
+    taken = len(state.get("reviews", {}))
+    labels = {name: f"{state['round']}-review-{taken + i + 1}" for i, name in enumerate(order)}
+    procs = {}
+    for name, (tree, with_tesser_py) in trees.items():
+        cmd = [str(HERE / "codex-review"), labels[name], str(tree)] + (["--with-tesser-py"] if with_tesser_py else [])
+        procs[name] = subprocess.Popen(cmd, cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        print(f"reviewing {name} as {labels[name]}", file=sys.stderr)
+    root = pathlib.Path(os.environ.get("AB_REVIEW_ROOT", "/private/tmp/claude-501/codex-review"))
+    state.setdefault("reviews", {})
+    for name, proc in procs.items():
+        output, _ = proc.communicate()
+        text = (root / labels[name] / "review.txt")
+        body = text.read_text() if text.is_file() else f"[no review: codex-review exited {proc.returncode}]\n{output[-800:]}"
+        (HERE / "results" / f"{name}-codex.txt").write_text(sanitize(body))
+        state["reviews"][name] = {"label": labels[name], "seed": seed, "exit": proc.returncode, "done": now()}
+        save(state)
+        print(f"{name}: {labels[name]} exit {proc.returncode}")
+
+
+FINDING_LINE = re.compile(r"^\s*(\d+)\.\s+\*\*(.+?)\*\*")
+
+
+def review_section(state: dict) -> list[str]:
+    reviews = state.get("reviews", {})
+    if not reviews:
+        return []
+    lines = ["", "## Cold codex reviews", "",
+             "Unscored: each finding is codex's own claim, not checked here. Codex reviewed each tree cold, under a",
+             "shuffled label, against the requirements text; arm A's generated-file markers were visible. The full",
+             "reviews are `<run>-codex.txt`.", ""]
+    for name, info in sorted(reviews.items(), key=lambda item: (state["runs"][item[0]]["cell"], item[0])):
+        run = state["runs"][name]
+        text_path = HERE / "results" / f"{name}-codex.txt"
+        text = text_path.read_text() if text_path.is_file() else ""
+        findings = [f"{m.group(1)}. {m.group(2)}" for m in map(FINDING_LINE.match, text.splitlines()) if m]
+        lines.append(f"### {run['cell']} sample {run['sample']} (`{name}`, reviewed as {info['label']})")
+        lines.append("")
+        lines.extend(f"- {f}" for f in findings) if findings else lines.append("- (no numbered findings; see the review)")
+        verdict = text.split("**Changeability verdict:**", 1)
+        if len(verdict) == 2:
+            lines.extend(["", "Changeability verdict: " + verdict[1].strip().split("\n")[0]])
+        lines.append("")
+    return lines
+
+
+def read_json(path: pathlib.Path) -> dict:
+    return json.loads(path.read_text()) if path.is_file() else {}
+
+
+def span(transcript: pathlib.Path) -> tuple[str, str] | None:
+    stamps = [row["timestamp"] for row in map(json.loads, filter(str.strip, transcript.read_text().splitlines())) if row.get("timestamp")]
+    return (min(stamps), max(stamps)) if stamps else None
+
+
+def sample_rows(state: dict) -> list[dict]:
+    """One row per finished sample: arm A sums red and green."""
+    rows = []
+    spans = {name: span(run_dir(name) / "transcript.jsonl") for name, run in state["runs"].items()
+             if run["status"] == "done" and (run_dir(name) / "transcript.jsonl").is_file()}
+    def concurrent(names: list[str]) -> int:
+        mine = [spans[n] for n in names if spans.get(n)]
+        others = [s for n, s in spans.items() if n not in names and s]
+        return max((sum(1 for o in others if o[0] < m[1] and m[0] < o[1]) for m in mine), default=0)
+    for name, run in state["runs"].items():
+        if run["arm"] == "A" and run["phase"] == "red-specs":
+            green = run["next"]
+            if state["runs"][green]["status"] != "done":
+                continue
+            r, g = read_json(run_dir(name) / "metrics.json"), read_json(run_dir(green) / "metrics.json")
+            check = read_json(HERE / "results" / f"{green}-check.json")
+            phases = [r["agent"], g["agent"]]
+            time = {k: round(sum(p["time"].get(k, 0) for p in phases), 1) for k in phases[0]["time"]}
+            rows.append({
+                "cell": run["cell"], "sample": run["sample"], "runs": [name, green],
+                "agent_s": round(sum(p["duration_s"] for p in phases), 1), **time,
+                "tool_calls": sum(p["tool_calls_total"] for p in phases),
+                "api_requests": sum(p["api_requests"] for p in phases),
+                "cache_read_tokens": sum(p["tokens"]["cache_read"] for p in phases),
+                "cache_write_tokens": sum(p["tokens"]["cache_write"] for p in phases),
+                "effort": sorted(set(r["conditions"]["effort"]) | set(g["conditions"]["effort"])),
+                "check_passed": check.get("passed"), **{s: check.get(s, {}).get("passed") for s in ("story_1", "story_2", "story_3")},
+                "probes": check.get("probes"),
+                "tests_passed": g["gate"]["test_outcomes"].get("passed", 0), "tests_failed": g["gate"]["test_outcomes"].get("failed", 0),
+                "impl_coverage_pct": g["gate"]["impl_coverage_pct"], "tessercheck_findings": g["gate"]["tessercheck_findings"],
+                "red_verify_exit": r["gate"]["verify_exit"], "green_verify_exit": g["gate"]["verify_exit"],
+                "integrity_ok": g["integrity"].get("ok"),
+                "red_files": r["diff"]["files_changed"], "green_files": g["diff"]["files_changed"],
+                "green_impl_lines": g["diff"]["py_impl_lines"], "green_test_lines": g["diff"]["py_test_lines"],
+                "tessercheck_runs_by_agents": r["agent"]["tessercheck_runs_count"] + g["agent"]["tessercheck_runs_count"],
+                "ran_alongside_max": concurrent([name, green]),
+            })
+        elif run["arm"] == "B" and run["status"] == "done":
+            b = read_json(run_dir(name) / "ab-metrics.json")
+            a, check = b["agent"], b["check"]
+            rows.append({
+                "cell": run["cell"], "sample": run["sample"], "runs": [name],
+                "agent_s": a["duration_s"], **a["time"], "tool_calls": a["tool_calls_total"], "api_requests": a["api_requests"],
+                "cache_read_tokens": a["tokens"]["cache_read"], "cache_write_tokens": a["tokens"]["cache_write"],
+                "effort": b["conditions"]["effort"],
+                "check_passed": check.get("passed"), **{s: check.get(s, {}).get("passed") for s in ("story_1", "story_2", "story_3")},
+                "probes": check.get("probes"),
+                "tests_passed": b["output"].get("tests", {}).get("passed", 0), "tests_failed": b["output"].get("tests", {}).get("failed", 0),
+                "impl_coverage_pct": None, "tessercheck_findings": None,
+                "files": b["output"]["files"], "python_lines": b["output"]["python_lines"],
+                "ran_alongside_max": concurrent([name]),
+            })
+    return rows
+
+
+NUMERIC = ("agent_s", "model_s", "checking_s", "setup_s", "probing_s", "other_s", "tool_calls", "api_requests",
+           "cache_read_tokens", "cache_write_tokens", "tests_passed", "tests_failed", "impl_coverage_pct", "tessercheck_findings")
+
+
+def summarize(rows: list[dict]) -> dict:
+    cells: dict[str, dict] = {}
+    for cell in sorted({row["cell"] for row in rows}):
+        mine = [row for row in rows if row["cell"] == cell]
+        summary: dict[str, object] = {"n": len(mine), "check_passed": f"{sum(1 for r in mine if r['check_passed'])}/{len(mine)}"}
+        for key in NUMERIC:
+            values = [r[key] for r in mine if isinstance(r.get(key), (int, float))]
+            if values:
+                summary[key] = {"median": round(statistics.median(values), 1), "min": min(values), "max": max(values)}
+        summary["ran_alongside_max"] = max(r["ran_alongside_max"] for r in mine)
+        cells[cell] = summary
+    return cells
+
+
+def report(args: argparse.Namespace) -> None:
+    state = load(args.round)
+    rows = sample_rows(state)
+    cells = summarize(rows)
+    out = {"round": state["round"], "scaffold": state["scaffold"], "scaffold_sha": state["scaffold_sha"],
+           "main_sha": state["main_sha"], "agent_type": state["agent_type"], "n_planned": state["n"],
+           "pip_warmed": state.get("pip_warmed"), "cells": cells, "samples": rows}
+    (HERE / "results" / f"{state['round']}-metrics.json").write_text(json.dumps(out, indent=2) + "\n")
+    names = list(cells)
+    def cell(c: str, key: str) -> str:
+        value = cells[c].get(key)
+        if isinstance(value, dict):
+            return f"{value['median']}" if value["min"] == value["max"] else f"{value['median']} ({value['min']}–{value['max']})"
+        return "–" if value is None else str(value)
+    lines = [f"<!-- generated by scripts/baseline/ab/round report {state['round']}; median (min–max) over each cell's samples -->",
+             "", "| | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
+    labels = [("n", "Samples"), ("check_passed", "Shared check passed"), ("agent_s", "Agent time, s"),
+              ("model_s", "Model's own time, s"), ("checking_s", "Checking, s"), ("setup_s", "Setup, s"),
+              ("probing_s", "Probing by hand, s"), ("other_s", "Other tool calls, s"), ("tool_calls", "Tool calls"),
+              ("api_requests", "API requests"), ("cache_read_tokens", "Cache-read tokens"), ("cache_write_tokens", "Cache-write tokens"),
+              ("tests_passed", "Tests passing"), ("tests_failed", "Tests failing"), ("impl_coverage_pct", "Impl coverage, %"),
+              ("tessercheck_findings", "Tessercheck findings"),
+              ("ran_alongside_max", "Most agents alongside")]
+    for key, label in labels:
+        lines.append(f"| {label} | " + " | ".join(cell(c, key) for c in names) + " |")
+    lines += review_section(state)
+    (HERE / "results" / f"{state['round']}-table.md").write_text("\n".join(lines) + "\n")
+    print("\n".join(lines))
+
+
+def push_refs(args: argparse.Namespace) -> None:
+    state = load(args.round)
+    for name, run in state["runs"].items():
+        if run["arm"] == "A" and run["status"] == "done":
+            subprocess.run(["git", "push", "-q", "origin", f"baseline/runs/{name}:refs/trials/{name}"], check=True, cwd=MAIN)
+            print(f"refs/trials/{name}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("plan")
+    p.add_argument("round")
+    p.add_argument("--models", default="opus,sonnet")
+    p.add_argument("--n", type=int, default=1)
+    p.add_argument("--scaffold", required=True)
+    p.add_argument("--slots", default="1-9")
+    p.add_argument("--effort", default="medium", choices=("low", "medium", "high", "default"))
+    p.set_defaults(func=plan)
+    for command, func in (("next", next_launches), ("status", status), ("review", review), ("report", report),
+                          ("push-refs", push_refs)):
+        p = sub.add_parser(command)
+        p.add_argument("round")
+        p.set_defaults(func=func)
+    p = sub.add_parser("done")
+    p.add_argument("round")
+    p.add_argument("run")
+    p.add_argument("agent_id")
+    p.set_defaults(func=done)
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

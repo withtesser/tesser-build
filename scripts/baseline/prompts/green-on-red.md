@@ -26,9 +26,9 @@ generated mark; do not edit one — a drift check fails if you do. **Yours are:*
   objects, private fields, validation, defaults, and how each read is
   computed. You may add domain modules (each with its sibling test) for the
   value objects and entities you model.
-- `story-drafting/drafting/adapters/gateways/template_story_drafter.py` and
-  its `test_template_story_drafter.py`: the body of the one implementation
-  the toolkit does not supply.
+- any other file under "Your files as they stand" below: a body the toolkit
+  does not supply, such as a gateway the composition implements with
+  `body = "agent"`.
 - the agent-owned STORE class that `implementations.toml` declares
   (`body = "agent"` on the repository port) and its sibling test, under
   `story-drafting/drafting/adapters/repositories/`: it starts as a working
@@ -90,21 +90,9 @@ there, not in your files.
 
 ## Your files as they stand
 
-```python
-{{FILE:story-drafting/drafting/domain/jtbd.py}}
-```
+Every file in the tree that carries no generated mark, outside the acceptance tests.
 
-```python
-{{FILE:story-drafting/drafting/domain/test_jtbd.py}}
-```
-
-```python
-{{FILE:story-drafting/drafting/adapters/gateways/template_story_drafter.py}}
-```
-
-```python
-{{FILE:story-drafting/drafting/adapters/gateways/test_template_story_drafter.py}}
-```
+{{AGENT_FILES}}
 
 ## How your files are built (from the tesser-build skill)
 
@@ -124,20 +112,19 @@ there, not in your files.
 - Run the gate like this, keeping its whole output:
 
   ```sh
-  cd {worktree} && RESTATE_URL={engine_url} RESTATE_ADMIN={admin} STORY_DRAFTING_PORT={port} \
-    scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
+  cd {worktree} && scripts/verify story-drafting > {log} 2>&1; echo "exit $?"
   grep -E '^(===|  →|  PASS|  FAIL)' {log}; tail -n 40 {log}
   ```
 
-  It runs its steps in order and stops at the first that fails: tessercheck,
-  `mypy --strict`, the non-root tests, then it serves the host on port {port}
-  and runs the acceptance tests against it. Grep `{log}` rather than running
-  it again to see more.
-- For a quick check while you work, run just your own tests:
-  `cd {worktree}/story-drafting && PYTHONPATH=.:../tesser-py pytest -q drafting/domain drafting/adapters/gateways`.
-- Your Restate server's URL is {engine_url} and its admin API {admin}; serve hosts
-  only on ports {port}–{port_last}. Other agents work side by side: don't
-  touch processes you didn't start. Work only inside the worktree.
+  It runs its steps in order and stops at the first that fails: the render
+  check, tessercheck, `mypy --strict`, then one plain `pytest` over every
+  tier. The tests own their infrastructure: the rendered root `conftest.py`
+  starts private Restate engines and serves the host for the acceptance
+  tests. Grep `{log}` rather than running it again to see more.
+- For a quick check while you work, run just your own tests: `cd
+  {worktree}/story-drafting && pytest -q <your test files>`.
+- Other agents work side by side: don't touch processes you didn't start.
+  Work only inside the worktree.
 
 Done means `scripts/verify story-drafting` is green — tessercheck with zero
 findings, `mypy --strict`, and every test tier — with the acceptance tests

@@ -1,0 +1,17 @@
+# 5 IMPLEMENTATIONS
+
+[implementations.StoryDrafter.canned]
+class = "CannedStoryDrafter"
+body = "agent"
+
+[implementations.JtbdRepository.sqlite]
+class = "SqliteJtbdRepository"
+body = "agent"
+
+[implementations.JtbdIdentityRepository.uuid]
+body = "supported"
+
+[environments.gate]
+implementations = { StoryDrafter = "canned", JtbdRepository = "sqlite", JtbdIdentityRepository = "uuid" }
+engine = "restate"
+hosts = ["http"]
