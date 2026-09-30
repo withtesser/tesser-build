@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import socket
 import typing
 import uuid
 
@@ -41,33 +39,24 @@ class FakeKeyedBetaCheck(ports.BetaCheck):
 
 class TestAlphaContext:
 
-    async def test_a_cli_add_reaches_the_wired_service(self) -> None:
-        alpha = component.Alpha(component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"], engine_url="http://localhost:8080")), FakeBetaCheck())
+    async def test_a_cli_add_reaches_the_wired_service(self, postgres_dsn: str) -> None:
+        alpha = component.Alpha(component.Config(component.Spec(storage=postgres_dsn, engine_url="http://localhost:8080")), FakeBetaCheck())
         cli_response = await handlers.Handler(alpha.client).add_part(protocol.CliRequest(args=("a", "p")))
         assert cli_response.line.text == "a"
 
-    async def test_a_widget_beta_holds_a_key_for_stands_as_kept_and_one_it_holds_none_for_as_released(self) -> None:
-        alpha = component.Alpha(component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"], engine_url="http://localhost:8080")), FakeKeyedBetaCheck(frozenset({"k"})))
+    async def test_a_widget_beta_holds_a_key_for_stands_as_kept_and_one_it_holds_none_for_as_released(self, postgres_dsn: str) -> None:
+        alpha = component.Alpha(component.Config(component.Spec(storage=postgres_dsn, engine_url="http://localhost:8080")), FakeKeyedBetaCheck(frozenset({"k"})))
         kept = await alpha.client.add_part(client.AddPartRequest(name="k", part="k"))
         released = await alpha.client.add_part(client.AddPartRequest(name="z", part="z"))
         assert (kept.standing, released.standing) == ("kept", "released")
 
-    async def test_a_created_widget_is_found_only_once_its_name_is_approved(self) -> None:
+    async def test_a_created_widget_is_found_only_once_its_name_is_approved(self, postgres_dsn: str, engine_url: str, engine_admin_url: str, engine_callback_host: str, free_port: int) -> None:
         name = "w-" + uuid.uuid4().hex
         alpha = component.Alpha(
-            component.Config(component.Spec(storage=os.environ["ALPHA_STORAGE"], engine_url=os.environ["RESTATE_URL"])),
+            component.Config(component.Spec(storage=postgres_dsn, engine_url=engine_url)),
             FakeBetaCheck(),
         )
-        port = 0
-        for candidate in range(9230, 9240):
-            with socket.socket() as probe:
-                try:
-                    probe.bind(("0.0.0.0", candidate))
-                except OSError:
-                    continue
-                port = candidate
-                break
-        assert port, "no free port in 9230-9239"
+        port = free_port
         hypercorn_config_config = hypercorn_config.Config()
         hypercorn_config_config.bind = [f"0.0.0.0:{port}"]
         shutdown = asyncio.Event()
@@ -81,13 +70,13 @@ class TestAlphaContext:
                 shutdown_trigger=shutdown.wait,
             )
         )
-        admin = httpx.AsyncClient(base_url=os.environ["RESTATE_ADMIN"], timeout=10.0)
+        admin = httpx.AsyncClient(base_url=engine_admin_url, timeout=10.0)
         registered = httpx.Response(503)
         try:
             for _ in range(50):
                 registered = await admin.post(
                     "/deployments",
-                    json={"uri": f"http://{os.environ['MINIMAL_CALLBACK_HOST']}:{port}", "force": True},
+                    json={"uri": f"http://{engine_callback_host}:{port}", "force": True},
                 )
                 if registered.is_success:
                     break
