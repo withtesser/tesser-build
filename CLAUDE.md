@@ -185,6 +185,13 @@ precisely to make that impossible to do silently. `scripts/verify` reads its
 tree list from the manifest, so a new `app` row must come with a `run_*` arm
 in the script and a CI job.
 
+CI runs only the jobs a PR can reach: the layout job runs
+`scripts/affected` over the PR's diff, and every other job runs only when it
+is named (pull requests only; a newer push cancels the older run). The
+dependencies between trees live in that script — **when a tree starts
+reading another tree, add the edge there**, or CI will skip a job the change
+can turn red. `scripts/verify` with no arguments still runs everything.
+
 Two things to know:
 
 - **`scripts/verify` covers more than the tree you are editing.** The

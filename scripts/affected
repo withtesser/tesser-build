@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+#
+# Which CI jobs a change can turn red, from what it touches.
+#
+#   scripts/affected BASE HEAD
+#
+# Prints a JSON list of gate names — the tree names scripts/verify takes, plus
+# "packaging" for scripts/verify-packaging — and CI runs only those jobs.
+# Running every job on every push cost about 25 billed minutes a run, most of
+# it trees the change could not reach (a PR that touched only
+# scripts/baseline/ ran all eighteen jobs forty-two times).
+#
+# The rule errs toward running: a path it does not recognise, a BASE it
+# cannot diff against, or a change it cannot pin to one arm or job runs
+# everything. What it knows:
+#
+#   - A path in an app tree runs that tree. A rename counts as a deletion and
+#     an addition, so moving a file out of a tree runs the tree it left.
+#   - tesser-py, tessercheck-py and layout are on every tree's path (every arm
+#     imports tesser-py, is checked by tessercheck-py, and runs the layout
+#     check as step 0 under its own installed dependencies), so any of them
+#     runs everything.
+#   - tessercheck-py's own tests read every app tree through the manifest
+#     (test_locate, test_tesser_allowlists, the example-tree fixtures), so any
+#     app tree runs tessercheck-py.
+#   - story-drafting is checked against a generator rendering, so generator
+#     runs story-drafting.
+#   - packaging installs tesser-py, tessercheck-py and tessercheck-cli, and
+#     smoke-runs the console script against examples/ports.
+#   - A scripts/verify change runs the trees whose run_* arm reaches the
+#     function it changed; a change outside every function, or in one no arm
+#     reaches (step 0, the case statement, the main loop), runs everything.
+#   - A workflow change runs the job it sits in; a change outside every job,
+#     or in the layout job (which decides what the others run), runs
+#     everything.
+#   - A comment or blank line in either file runs nothing: it cannot change
+#     what a gate does. A change git shows no text lines for (a binary diff,
+#     a mode change) runs everything.
+#   - docs/, skills/, scripts/baseline/ and top-level Markdown feed no gate.
+#
+# The layout job always runs: it is what says the manifest, the directories,
+# and this workflow agree, and it is the job that runs this script.
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import typing
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+VERIFY = "scripts/verify"
+
+WORKFLOW = ".github/workflows/test.yml"
+
+EVERYTHING_TREES = ("tesser-py", "tessercheck-py", "layout")
+
+IGNORED_PREFIXES = ("docs/", "skills/", "scripts/baseline/", ".claude/")
+
+IGNORED_TOP_LEVEL = (".gitignore", "LICENSE")
+
+PACKAGING_PREFIXES = (
+    "tesser-py/",
+    "tessercheck-py/",
+    "tessercheck-cli/",
+    "examples/ports/",
+    "scripts/verify-packaging",
+)
+
+DEPENDENTS = {"generator": ("story-drafting",)}
+
+FUNCTION = re.compile(r"^([a-z_][a-z0-9_]*)\(\) \{$")
+
+BODY = re.compile(r"^([a-z_][a-z0-9_]*)\(\) \{\n(.*?)^\}", re.MULTILINE | re.DOTALL)
+
+ARM = re.compile(r"^\s*([a-z0-9-]+)\)\s+(run_[a-z0-9_]+)\s", re.MULTILINE)
+
+JOB = re.compile(r"^  ([a-z0-9-]+):\s*$")
+
+GATE = re.compile(r"run: scripts/verify(-packaging| [a-z0-9-]+)\s*$")
+
+HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+Owners = list[str | None]
+
+Reach = dict[str, set[str]]
+
+
+def git(*args: str) -> str | None:
+    result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def function_owners(text: str) -> Owners:
+    """The top-level function each line of scripts/verify sits in, by line number."""
+    found: Owners = [None]
+    current = None
+    for line in text.splitlines():
+        match = FUNCTION.match(line)
+        if match:
+            current = match.group(1)
+        found.append(current)
+        if line == "}":
+            current = None
+    return found
+
+
+def function_reach(text: str) -> Reach:
+    """The trees whose arm reaches each function of scripts/verify."""
+    bodies = {match.group(1): match.group(2) for match in BODY.finditer(text)}
+    reached: Reach = {name: set() for name in bodies}
+    for match in ARM.finditer(text):
+        tree, pending, seen = match.group(1), [match.group(2)], set()
+        while pending:
+            name = pending.pop()
+            if name in seen or name not in bodies:
+                continue
+            seen.add(name)
+            reached[name].add(tree)
+            pending.extend(other for other in bodies if re.search(rf"\b{other}\b", bodies[name]))
+    return reached
+
+
+def job_owners(text: str) -> Owners:
+    """The workflow job each line of test.yml sits in, by line number."""
+    found: Owners = [None]
+    current, in_jobs = None, False
+    for line in text.splitlines():
+        match = JOB.match(line)
+        if line and not line.startswith((" ", "#")):
+            in_jobs, current = line.startswith("jobs:"), None
+        elif in_jobs and match:
+            current = match.group(1)
+        found.append(current)
+    return found
+
+
+def job_reach(text: str) -> Reach:
+    """The gates each workflow job runs; none for the layout job, so it runs every gate."""
+    owner = job_owners(text)
+    reached: Reach = {}
+    for number, line in enumerate(text.splitlines(), start=1):
+        match = GATE.search(line)
+        job = owner[number]
+        if match and job:
+            gate = "packaging" if match.group(1) == "-packaging" else match.group(1).strip()
+            reached.setdefault(job, set()).add(gate)
+    return {job: set() if "layout" in gates else gates for job, gates in reached.items()}
+
+
+def changed_gates(
+    base: str,
+    head: str,
+    path: str,
+    owners_of: typing.Callable[[str], Owners],
+    reach_of: typing.Callable[[str], Reach],
+) -> set[str] | None:
+    """The gates a change to scripts/verify or the workflow reaches, or None for every gate."""
+    diff = git("diff", "--no-renames", "-U0", base, head, "--", path)
+    old = git("show", f"{base}:{path}")
+    new = git("show", f"{head}:{path}")
+    if diff is None or old is None or new is None:
+        return None
+    sides = [(owners_of(text), reach_of(text), text.splitlines()) for text in (old, new)]
+    hunks = [match for match in map(HUNK.match, diff.splitlines()) if match]
+    if not hunks:
+        return None
+    gates: set[str] = set()
+    for match in hunks:
+        spans = (
+            (int(match.group(1)), int(match.group(2) or 1)),
+            (int(match.group(3)), int(match.group(4) or 1)),
+        )
+        for (owner, reached, lines), (start, count) in zip(sides, spans):
+            for number in range(start, start + count):
+                content = lines[number - 1].strip()
+                if not content or content.startswith("#"):
+                    continue
+                name = owner[number]
+                if name is None or not reached.get(name):
+                    return None
+                gates |= reached[name]
+    return gates
+
+
+def main() -> int:
+    manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
+    apps = {key: key.split("/")[-1] for key, kind in manifest.items() if kind == "app"}
+    every = json.dumps(sorted(set(apps.values()) | {"packaging"}))
+    names = git("diff", "--name-only", "--no-renames", *sys.argv[1:3]) if len(sys.argv) == 3 else None
+    if names is None:
+        print(every)
+        return 0
+    base, head = sys.argv[1], sys.argv[2]
+    affected: set[str] = {"layout"}
+    for path in (line.strip() for line in names.splitlines() if line.strip()):
+        if path.startswith(IGNORED_PREFIXES) or path in IGNORED_TOP_LEVEL:
+            continue
+        if "/" not in path and path.endswith(".md"):
+            continue
+        if path.startswith(PACKAGING_PREFIXES):
+            affected.add("packaging")
+        if path.startswith("tessercheck-cli/") or path == "scripts/verify-packaging":
+            continue
+        if path == VERIFY:
+            gates = changed_gates(base, head, path, function_owners, function_reach)
+        elif path == WORKFLOW:
+            gates = changed_gates(base, head, path, job_owners, job_reach)
+        else:
+            tree = next((name for key, name in apps.items() if path.startswith(f"{key}/")), None)
+            gates = None if tree is None or tree in EVERYTHING_TREES else {tree, "tessercheck-py"}
+        if gates is None:
+            print(every)
+            return 0
+        for gate in gates:
+            affected.add(gate)
+            affected.update(DEPENDENTS.get(gate, ()))
+    print(json.dumps(sorted(affected)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
