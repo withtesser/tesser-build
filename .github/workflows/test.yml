@@ -32,7 +32,13 @@ jobs:
           fetch-depth: 2
       - name: Which gates this change reaches
         id: affected
-        run: echo "gates=$(scripts/affected HEAD^1 HEAD)" >> "$GITHUB_OUTPUT"
+        # The assignment stands alone so a failing classifier fails this step
+        # (bash -e), and the list is checked before it is published: an empty
+        # or malformed output would leave every other job unscheduled.
+        run: |
+          gates=$(scripts/affected HEAD^1 HEAD)
+          python3 -c 'import json, sys; gates = json.loads(sys.argv[1]); assert isinstance(gates, list) and "layout" in gates, gates' "$gates"
+          echo "gates=$gates" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
