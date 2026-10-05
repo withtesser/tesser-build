@@ -220,6 +220,20 @@ after CI is green. After a set of file changes, commit (on the branch)
 before returning control. Write a descriptive message. Don't ask permission
 to commit. Stage files individually — never `git add -A`/`.`.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `withtesser/tesser-build` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: a root `CONTEXT.md` (created lazily), `docs/design-*.md` as the decision records, plus the brain and the gstack design docs. See `docs/agents/domain.md`.
+
 ## GBrain Search Guidance (configured by /sync-gbrain)
 <!-- gstack-gbrain-search-guidance:start -->
 
