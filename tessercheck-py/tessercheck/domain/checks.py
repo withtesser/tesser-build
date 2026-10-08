@@ -12258,7 +12258,9 @@ class Module(ts.Entity):
                             self._path,
                             stmt.lineno,
                             "TB072",
-                            f"{where} is an undeclared class; a class in a test module is a Test-prefixed test class or declares itself with @ts.fake",
+                            f"{where} is an undeclared class — prefix it Test if it holds tests, or declare it @ts.fake "
+                            "if it doubles a contract; a class in a test module is a Test-prefixed test class "
+                            "or declares itself with @ts.fake",
                         ))
                     )
                 else:
@@ -12285,7 +12287,8 @@ class Module(ts.Entity):
                                 stmt.lineno,
                                 "TB072",
                                 f"{where} implements no application port, store, relay, protocol "
-                                "port, client, deprecated workflow, or config repository; a fake implements "
+                                "port, client, deprecated workflow, or config repository — subclass the contract it "
+                                "stands in for; a fake implements "
                                 "the contract it doubles",
                             ))
                         )

@@ -20884,7 +20884,7 @@ def test_a_fake_of_a_subscripted_workflow_implements_that_workflow() -> None:
     assert not any(f"{where}.FakeFlowWorkflow implements no" in f for f in findings), findings
     assert any(
         f"{where}.FakeCounts implements no application port, store, relay, protocol port, client, "
-        "deprecated workflow, or config repository; a fake implements the contract it doubles" in f
+        "deprecated workflow, or config repository — subclass the contract it stands in for; a fake implements the contract it doubles" in f
         for f in findings
     ), findings
 
