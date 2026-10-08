@@ -298,6 +298,22 @@ file says *how*, and it is the cross-cutting layer they assume.
   signature changes. A fake that names nothing is a second, unversioned copy
   of a contract nobody can see.
 
+  **A fake's local and parameter are named for the fake's own class** in
+  snake_case (`TB085`, `python.md`, "A name is derived from the type it
+  carries"), never for the port it doubles and never shortened:
+
+  ```python
+  @ts.fake
+  class FakeHarborChartAnsweringUncharted(ports.HarborChart): ...
+
+  fake_harbor_chart_answering_uncharted = FakeHarborChartAnsweringUncharted()
+  voyage_service = application.VoyageService(fake_harbor_chart_answering_uncharted, fake_voyage_store)
+  ```
+
+  `fake_harbor_chart = FakeHarborChartAnsweringUncharted()` is a finding, and
+  so is a parameter `fake_harbor_chart: FakeHarborChartAnsweringUncharted`. A
+  second fake of one port gets a class of its own, and so a name of its own.
+
   The consequence worth stating, because it is where the reaching goes wrong:
   **if you want to fake a single callable behavior and there is no port to
   mirror, the missing thing is the port, not a new kind of fake.** A bare

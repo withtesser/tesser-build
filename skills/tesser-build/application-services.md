@@ -99,6 +99,70 @@ myself?* Yes → application service.
    (The boundary is a `ts.Store` the service opens once per method;
    see `repositories.md#rules` rule 6 and `python.md#ports`.)
 
+### Refusing on what a port answered
+
+A port can answer an outcome (a lookup answering whether a harbor is on the
+chart, say: `harbor_standing`, an enum `HarborStanding` of `uncharted` and
+`charted`). The service never writes `if` on it, and never matches the port
+answer itself (rule 2: a port answer is not a domain call). The answer is an
+input to the domain: the mapper that builds the domain spec turns it into the
+domain enum and matches it, and an arm that refuses raises `errors.invalid`.
+The mapper is constructed inside the service's one `try`, so the refusal
+crosses as `client.Rejected` and the route answers 422, like any other
+domain refusal:
+
+```python
+class MapToVoyageSpec(ts.Mapper, domain.VoyageSpec):
+
+    def __init__(self, plan_voyage_request: client.PlanVoyageRequest, look_up_harbor_response: ports.LookUpHarborResponse, issue_voyage_id_response: ports.IssueVoyageIdResponse) -> None:
+        match domain.HarborStanding(look_up_harbor_response.harbor_standing):
+            case domain.HarborStanding.UNCHARTED:
+                raise errors.invalid("uncharted_harbor", "a voyage is planned to a charted harbor", field="harbor")
+            case domain.HarborStanding.CHARTED:
+                pass
+            case _ as never:
+                typing.assert_never(never)
+        super().__init__(
+            voyage_id=issue_voyage_id_response.voyage_id,
+            vessel=plan_voyage_request.vessel,
+            harbor=plan_voyage_request.harbor,
+        )
+```
+
+```python
+    async def plan_voyage(self, plan_voyage_request: client.PlanVoyageRequest) -> client.PlanVoyageResponse:
+        look_up_harbor_response = await self._harbor_chart.look_up_harbor(MapToLookUpHarborRequest(plan_voyage_request))
+        issue_voyage_id_response = await self._voyage_identity_repository.issue_voyage_id(ports.IssueVoyageIdRequest())
+        try:
+            voyage = domain.Voyage(MapToVoyageSpec(plan_voyage_request, look_up_harbor_response, issue_voyage_id_response))
+        except errors.DomainError as domain_error:
+            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error
+```
+
+So the step that answers comes before the build. In a rendered tree this is
+`refuses` on the client operation (`generator/compositions/README.md`,
+"Refusing on what a step answers").
+
+### Where an unknown identity becomes a refusal
+
+In the service, never the repository. The store's load raises `KeyError` for
+an identity it does not hold, and that is all the repository does: it imports
+nothing from `client/`, which an adapter may not reach (`TB060`, and its
+sibling test would have to reach it too, `TB070`). The service translates it
+where it opens the transaction, the same one-statement shape as a port error:
+
+```python
+        try:
+            async with self._voyage_store.transaction() as voyage_repository:
+                load_voyage_response = await voyage_repository.load_voyage(MapToLoadVoyageRequest(get_voyage_request))
+        except KeyError as unknown:
+            raise client.VoyageRejected("unknown_voyage", "no voyage has that voyage_id") from unknown
+```
+
+A peer context that reaches this one through its client then sees an unknown
+identity as `VoyageRejected`, which its gateway can map to an answer of its
+own port.
+
 ## Shape
 
 ```
@@ -204,7 +268,10 @@ around the port call — `except ports.StoreUnavailable as store_error:`
 whose only statement raises `client.Unavailable(...)` from it. A service
 only ever raises errors its own `client/` declares; nothing declared in
 `ports/` leaves the service, and nothing from a peer context does either
-(a gateway translates a peer's `client.Unavailable` into the port error
+(a store's `KeyError` for an unknown identity takes the port-error shape:
+`except KeyError as unknown:` raising `client.Rejected(...)` from it, above,
+"Where an unknown identity becomes a refusal";
+a gateway translates a peer's `client.Unavailable` into the port error
 its own context declares, and a peer's `Rejected` is the caller's bug,
 left for the host's backstop).
 Each puts a rule in the service that a domain object should own; none is

@@ -1761,8 +1761,8 @@ class TestRenderingCompositions:
         edits = {
             "implementations.toml": [(
                 "[implementations.LoanIdentityRepository.uuid]\nbody = \"supported\"",
-                "[implementations.LoanIdentityRepository.counted]\nclass = \"CountedLoanIdentityRepository\"\nbody = \"agent\"",
-            ), ('LoanIdentityRepository = "uuid"', 'LoanIdentityRepository = "counted"')],
+                "[implementations.LoanIdentityRepository.handwritten]\nclass = \"HandwrittenLoanIdentityRepository\"\nbody = \"agent\"",
+            ), ('LoanIdentityRepository = "uuid"', 'LoanIdentityRepository = "handwritten"')],
         }
         for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
