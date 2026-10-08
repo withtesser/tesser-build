@@ -151,7 +151,7 @@ tests take and, when `infra.toml` declares an engine, the engines (Docker
 required); it passes when every failure is a root test's status assertion (the
 served host answered another status). `library/` is the small worked example, `library-direct/` is
 the same app with no engine: its service calls the ports itself, and
-`library-members/` is that app with a second context its gateway reaches
+`library-catalog/` is that app with a second context its gateway reaches
 (below, "Several contexts in one app").
 
 ## Which file answers which question
@@ -691,27 +691,27 @@ agent-owned gateway that `reaches` the other context:
 
 ```toml
 # composition.toml (context = "loans")
-[ports.MemberRegister]
-operations.check_member = { request = ["borrower"], response = [] }
+[ports.BookRegister]
+operations.check_book = { request = ["book_id"], response = [] }
 
 # implementations.toml
-[implementations.MemberRegister.members]
-class = "MembersMemberRegister"
+[implementations.BookRegister.catalog]
+class = "CatalogBookRegister"
 body = "agent"
-reaches = "members"                       # a context the directory declares
+reaches = "catalog"                       # a context the directory declares
 ```
 
-The gateway's `__init__` takes the peer's client (`members_client:
-members_client.MembersClient`) and its stub test hands it a fake of that
+The gateway's `__init__` takes the peer's client (`catalog_client:
+catalog_client.CatalogClient`) and its stub test hands it a fake of that
 client that answers each of its operations with samples, so the agent writes
 the call to the peer (and the translation of its answer) in the gateway's
 methods. The context's component takes the port as a parameter
-(`Loans(config, member_register)`), and the app builds each context after the
+(`Loans(config, book_register)`), and the app builds each context after the
 contexts it reaches and hands it the gateway over the peer's client
-(`loans_gateways.MembersMemberRegister(self.members.client)`); two contexts that
+(`loans_gateways.CatalogBookRegister(self.catalog.client)`); two contexts that
 reach each other are a problem. The host routes every context's operations,
 `pyproject.toml` collects every context's tests, and the root tests cover every
-context's routes. `library-members/` is the worked example.
+context's routes. `library-catalog/` is the worked example.
 
 ## 6 `generator.toml`
 

@@ -1,9 +1,9 @@
 # 4 COMPOSITION — the contracts of the loans context. See ../README.md.
 #
 # library-direct's loans, in an app of two contexts: lend_book first checks the
-# borrower against the member register, a port whose gateway reaches the
-# members context (composition.members.toml) through its client
-# (implementations.toml: reaches = "members").
+# book against the catalog, a port whose gateway reaches the catalog context
+# (composition.catalog.toml) through its client (implementations.toml:
+# reaches = "catalog").
 
 context = "loans"
 
@@ -15,35 +15,35 @@ serves = ["s-1"]
 [aggregate.spec]
 loan_id = "str"
 borrower = "str"
-title = "str"
+book_id = "str"
 
 [aggregate.reads]
 loan_id = "str"
 borrower = "str"
-title = "str"
+book_id = "str"
 
 [interfaces.http]
 serves = ["s-1-a-1", "s-1-b-1"]
 
 [client.operations.lend_book]
 kind = "write"
-request = ["borrower", "title"]
+request = ["borrower", "book_id"]
 response = ["loan_id"]
-steps = ["gateway.check_member", "identity.issue_loan_id", "gateway.send_notice", "repository.save_loan"]
+steps = ["gateway.check_book", "identity.issue_loan_id", "gateway.send_notice", "repository.save_loan"]
 serves = ["s-1", "s-1-a-1"]
 
 [client.operations.get_loan]
 kind = "read"
 request = ["loan_id"]
-response = ["loan_id", "borrower", "title"]
+response = ["loan_id", "borrower", "book_id"]
 steps = ["repository.load_loan"]
 serves = ["s-1", "s-1-b-1"]
 
-[ports.MemberRegister]
-operations.check_member = { request = ["borrower"], response = [] }
+[ports.BookRegister]
+operations.check_book = { request = ["book_id"], response = [] }
 
 [ports.NoticeSender]
-operations.send_notice = { request = ["borrower", "title"], response = [] }
+operations.send_notice = { request = ["borrower", "book_id"], response = [] }
 serves = ["s-1"]
 
 [ports.LoanRepository]

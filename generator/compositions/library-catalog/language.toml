@@ -1,4 +1,4 @@
-# 1 LANGUAGE — the words of the loans and members contexts. See ../README.md.
+# 1 LANGUAGE — the words of the loans and catalog contexts. See ../README.md.
 
 context = "loans"
 
@@ -13,8 +13,13 @@ means = "The person a book is lent to."
 code_names = ["borrower"]
 
 [[terms]]
+term = "book"
+means = "A work the library holds, which can be lent."
+code_names = ["Book", "book_id"]
+
+[[terms]]
 term = "title"
-means = "The title of the book lent."
+means = "The title of a book in the catalog."
 code_names = ["title"]
 
 [[terms]]
@@ -28,9 +33,5 @@ means = "The note the borrower gets when a loan is opened."
 code_names = ["Notice", "send_notice", "NoticeSender"]
 
 [[terms]]
-term = "member"
-means = "A person on the member register, who may borrow."
-
-[[terms]]
-term = "member register"
-means = "The members context's record of every member, by member_id and name."
+term = "catalog"
+means = "The catalog context's record of every book the library holds, by book_id and title."

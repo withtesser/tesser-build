@@ -1,0 +1,28 @@
+# 5 IMPLEMENTATIONS — what satisfies each contract, per environment. See ../README.md.
+
+[implementations.NoticeSender.printed]
+class = "PrintedNoticeSender"
+body = "agent"
+
+[implementations.LoanRepository.memory]
+body = "supported"
+
+[implementations.LoanIdentityRepository.uuid]
+body = "supported"
+
+# reaches: the gateway is handed the catalog context's client, so the app
+# builds catalog first and hands its client to this gateway.
+[implementations.BookRegister.catalog]
+class = "CatalogBookRegister"
+body = "agent"
+reaches = "catalog"
+
+[implementations.BookRepository.memory]
+body = "supported"
+
+[implementations.BookIdentityRepository.uuid]
+body = "supported"
+
+[environments.gate]
+implementations = { NoticeSender = "printed", LoanRepository = "memory", BookRegister = "catalog", BookRepository = "memory", BookIdentityRepository = "uuid", LoanIdentityRepository = "uuid" }
+hosts = ["http"]

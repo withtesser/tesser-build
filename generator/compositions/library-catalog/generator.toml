@@ -3,6 +3,5 @@
 [sample_values]
 loan_id = ["loan-1", "loan-2"]
 borrower = ["Ada", "Grace"]
+book_id = ["book-1", "book-2"]
 title = ["Middlemarch", "Beloved"]
-member_id = ["member-1", "member-2"]
-name = ["Ada Lovelace", "Grace Hopper"]
