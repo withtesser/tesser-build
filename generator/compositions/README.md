@@ -67,6 +67,30 @@ of its own when you can (a method beside the rendered ones, a class of your
 own), because an edited rendered definition stops following the composition;
 to hand one back to the composition, delete it and render again.
 
+**What the composition cannot say is written by hand.** For example, "POST
+/loans may leave out the days, and the loan is then for the days the operator
+sets in `TOOLSHED_DEFAULT_DAYS`, or 7" (no request field is optional, and
+`infra.toml`'s `[variables]` are read by no one):
+
+- `protocol/http.py`: add a method to `HttpRequest`,
+  `integer_or(self, name: str, default: int) -> int`, that answers the default
+  when the body leaves the field out (added; kept);
+- `srv/http/main.py`: add the constants `_DEFAULT_DAYS_VARIABLE` and
+  `_DEFAULT_DAYS` (added; kept), and in `HttpHost.run` read
+  `int(os.environ.get(_DEFAULT_DAYS_VARIABLE) or _DEFAULT_DAYS)` and hand it to
+  the context's `HttpHandler` (edited; kept);
+- `<context>/adapters/handlers/http.py`: have `HttpHandler.__init__` take and
+  keep `default_days: int`, and the route's method read
+  `http_request.integer_or("days", self._default_days)` (edited; kept);
+- the tests beside them: add a test for each (added; kept), and describe the
+  variable in `infra.toml`'s `[variables]`.
+
+Every render keeps all of it. The edited definitions (`HttpHost.run`,
+`HttpHandler.__init__`, the route's method) no longer follow the composition,
+so when the composition changes one of them (a route added, the route's fields
+changed) the render keeps your version and names it, and you add the change by
+hand.
+
 **Renaming a term.** `.tesser-rendered` also records the context, the
 aggregate, and its identity (its `names` line). When a render names any of them
 differently, each file the last render wrote whose path, with the old names
@@ -310,8 +334,8 @@ listen_port_variable = "STORY_DRAFTING_PORT"   # required: the port it listens o
 [storage.sqlite]                          # [storage.<name>]: where stored things live
 location_variable = "JTBD_DB_PATH"        # the variable that names its location (a SQLite file path)
 
-[variables]                               # informational: what each variable is
-JTBD_DB_PATH = "the path of the SQLite database file"
+[variables]                               # informational: what each variable is; one only hand-written code reads
+JTBD_DB_PATH = "the path of the SQLite database file"  # is read by hand ("Writing by hand in a rendered tree")
 ```
 
 **Without an engine.** An `infra.toml` with no `[engine]` table renders a
