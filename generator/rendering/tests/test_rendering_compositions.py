@@ -1848,10 +1848,10 @@ class TestRenderingCompositions:
         assert (
             "    def __init__(self, plan_voyage_request: client.PlanVoyageRequest, look_up_harbor_response: ports.LookUpHarborResponse, "
             "issue_voyage_id_response: ports.IssueVoyageIdResponse) -> None:\n"
-            "        match domain.HarborStanding(look_up_harbor_response.harbor_standing):\n"
-            "            case domain.HarborStanding.UNCHARTED:\n"
+            "        match look_up_harbor_response.outcome:\n"
+            "            case ports.LookUpHarborOutcome.UNCHARTED:\n"
             "                raise errors.invalid(\"uncharted_harbor\", \"a voyage is planned to a charted harbor\", field=\"harbor\")\n"
-            "            case domain.HarborStanding.CHARTED:\n"
+            "            case ports.LookUpHarborOutcome.CHARTED:\n"
             "                pass\n"
             "            case _ as never:\n"
             "                typing.assert_never(never)\n"
@@ -1860,6 +1860,54 @@ class TestRenderingCompositions:
         assert "class FakeHarborChartAnsweringUncharted(ports.HarborChart):" in service_test
         assert "    async def test_plan_voyage_refuses_uncharted_harbor(self) -> None:" in service_test
         assert "    async def test_get_voyage_refuses_an_unknown_voyage(self) -> None:" in service_test
+
+    def test_an_enum_a_port_answers_renders_as_the_responses_outcome_declared_in_the_ports_module(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+
+        assert render_composition_response.problems == ()
+        port = (tmp_path / "out" / "voyages" / "application" / "ports" / "harbor_chart.py").read_text()
+        assert (
+            "class LookUpHarborOutcome(enum.Enum):\n"
+            "    UNCHARTED = \"uncharted\"\n"
+            "    CHARTED = \"charted\"\n"
+        ) in port
+        assert (
+            "    def __init__(self, harbor_name: str, outcome: LookUpHarborOutcome) -> None:\n"
+            "        self.harbor_name = harbor_name\n"
+            "        self.outcome = outcome\n"
+        ) in port
+        assert "harbor_standing" not in port
+        assert "HarborStanding" not in (tmp_path / "out" / "voyages" / "domain" / "voyage.py").read_text()
+        assert ("from voyages.application.ports.harbor_chart import LookUpHarborOutcome as LookUpHarborOutcome"
+                in (tmp_path / "out" / "voyages" / "application" / "ports" / "__init__.py").read_text())
+
+    def test_a_port_answering_two_enums_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        composition = tmp_path / "composition"
+        composition.mkdir()
+        for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+            text = found.read_text()
+            if found.name == "composition.toml":
+                old = '"harbor_standing: HarborStanding"]'
+                assert old in text
+                text = text.replace(old, '"harbor_standing: HarborStanding", "harbor_depth: HarborStanding"]', 1)
+            (composition / found.name).write_text(text)
+
+        problems = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+        )).problems
+
+        assert problems == (
+            "ports.HarborChart operation look_up_harbor answers 2 enums (harbor_standing, harbor_depth); a response carries at "
+            "most one outcome, because its caller matches one answer: answer one, or split the operation",
+        )
+        assert not (tmp_path / "out").exists()
 
     def test_a_refusal_that_cannot_be_raised_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -1918,9 +1966,9 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ()
         assert tested.returncode == 0, tested.stdout
-        assert 'return ports.LookUpHarborResponse(harbor_name="Hobart", harbor_standing="charted")' in (
+        assert 'return ports.LookUpHarborResponse(harbor_name="Hobart", outcome=ports.LookUpHarborOutcome.CHARTED)' in (
             tmp_path / "out" / "voyages" / "application" / "test_voyage_service.py").read_text()
-        assert '        return ports.LookUpHarborResponse(harbor_name="", harbor_standing="charted")\n' in (
+        assert '        return ports.LookUpHarborResponse(harbor_name="", outcome=ports.LookUpHarborOutcome.CHARTED)\n' in (
             tmp_path / "out" / "voyages" / "adapters" / "gateways" / "harbors_harbor_chart.py").read_text()
 
     def test_a_gateway_that_says_what_it_calls_renders_the_call_to_the_peer_and_tests_both_answers(self, tmp_path: pathlib.Path) -> None:
@@ -1943,8 +1991,8 @@ class TestRenderingCompositions:
             "        try:\n"
             "            get_harbor_response = await self._harbors_client.get_harbor(harbors_client.GetHarborRequest(harbor_id=look_up_harbor_request.harbor))\n"
             "        except harbors_client.HarborRejected:\n"
-            "            return ports.LookUpHarborResponse(harbor_name=\"\", harbor_standing=\"uncharted\")\n"
-            "        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, harbor_standing=\"charted\")\n"
+            "            return ports.LookUpHarborResponse(harbor_name=\"\", outcome=ports.LookUpHarborOutcome.UNCHARTED)\n"
+            "        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, outcome=ports.LookUpHarborOutcome.CHARTED)\n"
         ) in gateway
         gateway_test = (tmp_path / "out" / "voyages" / "adapters" / "gateways" / "test_harbors_harbor_chart.py").read_text()
         assert "class FakeRejectingHarborsClient(harbors_client.HarborsClient):" in gateway_test

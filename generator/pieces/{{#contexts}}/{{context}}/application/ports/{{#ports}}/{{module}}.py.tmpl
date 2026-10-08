@@ -1,9 +1,20 @@
 # pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 from __future__ import annotations
 
+{{#enumerated}}
+import enum
+{{/enumerated}}
 import typing
 
 import tesser.application as ts
+{{#outcomes}}
+
+
+class {{Outcome}}(enum.Enum):
+{{#members}}
+    {{MEMBER}} = "{{value}}"
+{{/members}}
+{{/outcomes}}
 {{#records}}
 
 

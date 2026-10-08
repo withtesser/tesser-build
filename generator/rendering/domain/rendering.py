@@ -84,6 +84,8 @@ PRIMITIVE_TYPES: typing.Final[tuple[str, ...]] = ("str", "int")
 
 UNKNOWN: typing.Final[str] = "\x00unknown"
 
+OUTCOME_FIELD: typing.Final[str] = "outcome"
+
 WHOLE: typing.Final[str] = "*"
 
 NESTED: typing.Final[str] = " / "
@@ -294,11 +296,13 @@ class TypesSpec(ts.Spec):
         shapes: tuple[tuple[str, tuple[tuple[str, str], ...]], ...],
         aggregate: str,
         aggregate_fields: tuple[tuple[str, str], ...],
+        outcomes: tuple[tuple[str, tuple[str, ...]], ...] = (),
     ) -> None:
         self.enums = enums
         self.shapes = shapes
         self.aggregate = aggregate
         self.aggregate_fields = aggregate_fields
+        self.outcomes = outcomes
 
 
 class Types(ts.ValueObject):
@@ -307,6 +311,7 @@ class Types(ts.ValueObject):
 
     def __init__(self, spec: TypesSpec) -> None:
         rows = [(name, "enum", tuple((member, member) for member in members)) for name, members in spec.enums]
+        rows.extend((name, "outcome", tuple((member, member) for member in members)) for name, members in spec.outcomes)
         rows.extend((name, "shape", fields) for name, fields in spec.shapes)
         rows.append((spec.aggregate, "aggregate", spec.aggregate_fields))
         object.__setattr__(self, "_rows", tuple(rows))
@@ -332,7 +337,7 @@ class Types(ts.ValueObject):
 
     def members(self, enum: str) -> Pairs:
         for name, kind, items in self._rows:
-            if name == enum and kind == "enum":
+            if name == enum and kind in ("enum", "outcome"):
                 return Pairs(items)
         raise ValueError(f"{enum} is named as an enum, and [enums] does not declare it")
 
@@ -405,6 +410,8 @@ class Target(ts.ValueObject):
         member = pairs.get(str(self._type_text))
         if kind == "enum" and member is not None:
             return Text(json.dumps(str(member)))
+        if kind == "outcome" and member is not None:
+            return Text(f"{self._package}.{self._type_text}.{str(member).upper()}")
         return Text("0" if str(self._type_text) == "int" else '""')
 
 
@@ -677,7 +684,8 @@ class Mappers(ts.Entity):
             values.append((field, held))
         guards: list[tuple[str, str]] = []
         for guarded, guard in ask.guards():
-            matched = sources.find(Word(guarded))
+            named = str(json.loads(str(guard)).get("source", ""))
+            matched = next((source for source in sources.held() if str(source.expr()) == named), None) if named else sources.find(Word(guarded))
             if matched is None:
                 raise ValueError(f"{name} matches {guarded}, and nothing before it in the steps holds one")
             if matched not in used:
@@ -728,6 +736,8 @@ class Sample(ts.ValueObject):
             return Text(f"({', '.join(items)},)" if items else "()")
         if package == "domain" and str(target.kind()) == "enum":
             return Text(f"domain.{target.type_text()}.{str(value).upper()}")
+        if str(target.kind()) == "outcome":
+            return Text(f"{package}.{target.type_text()}.{str(value).upper()}")
         return Text(json.dumps(value))
 
 
@@ -765,7 +775,7 @@ class Samples(ts.ValueObject):
                 listed = values[wanted_field]
                 found[wanted_field] = listed[index % len(listed)]
                 continue
-            if str(self._types.kind(wanted_type)) == "enum":
+            if str(self._types.kind(wanted_type)) in ("enum", "outcome"):
                 members = [member for member, _ in self._types.members(wanted_type)]
                 found[wanted_field] = members[index % len(members)]
                 continue
@@ -894,7 +904,7 @@ class Records(ts.Entity):
         type_text = str(field_ask.type_text())
         prefix = str(field_ask.prefix())
         kind = str(self._types.kind(type_text))
-        if kind in ("scalar", "enum"):
+        if kind in ("scalar", "enum", "outcome"):
             return Target(TargetSpec(field=field, type_text=type_text, kind=kind, package=self._package, record="",
                                      element=(), members=()))
         if kind == "shape":
@@ -1008,7 +1018,7 @@ class Echo(ts.ValueObject):
                 args.append((field, str(found.prefix()) + field))
                 values.append((field, str(found.holds().get(field))))
                 continue
-            chosen = self._chosen.get(str(target.type_text())) if str(target.kind()) == "enum" else None
+            chosen = self._chosen.get(str(target.type_text())) if str(target.kind()) in ("enum", "outcome") else None
             sample = Sample(json.dumps(str(chosen))) if chosen is not None else self._samples.value(target)
             args.append((field, str(sample.literal(target))))
             values.append((field, str(sample)))
@@ -1056,11 +1066,54 @@ class Model(ts.Entity):
         shapes = dict(composition.get("shapes", {}))
         shapes.update(composition.get("messages", {}))
         self._shapes = {str(name): [(str(field), str(type_text)) for field, type_text in fields.items()] for name, fields in shapes.items()}
+        self._outcome_of: dict[str, tuple[str, str, str]] = {}
+        self._outcome_enums: dict[str, list[str]] = {}
+        port_typed = dict(self._spec_fields)
+        for command in self._commands.values():
+            for field, type_text in command.get("takes", {}).items():
+                port_typed.setdefault(str(field), str(type_text))
+        for field, type_text in self._reads:
+            port_typed.setdefault(field, type_text)
+        for port_name, port in composition.get("ports", {}).items():
+            for operation_name, operation in port.get("operations", {}).items():
+                answered: list[tuple[str, str]] = []
+                for listed in operation.get("response", []):
+                    field, _, annotation = (part.strip() for part in str(listed).partition(":"))
+                    type_text = annotation or port_typed.get(field, "")
+                    if type_text in self._enums:
+                        answered.append((field, type_text))
+                if len(answered) > 1:
+                    raise ValueError(f"ports.{port_name} operation {operation_name} answers {len(answered)} enums "
+                                     f"({', '.join(field for field, _ in answered)}); a response carries at most one outcome, "
+                                     f"because its caller matches one answer: answer one, or split the operation")
+                if not answered:
+                    continue
+                field, Enum = answered[0]
+                Outcome = str(Word(str(operation_name)).pascal()) + "Outcome"
+                if Outcome in self._enums or Outcome in self._shapes:
+                    raise ValueError(f"ports.{port_name} operation {operation_name} answers {field}, an enum, which renders as "
+                                     f"its outcome {Outcome}, and the composition already declares {Outcome}")
+                self._outcome_of[str(Word(str(operation_name)).pascal()) + "Response"] = (field, Outcome, Enum)
+                self._outcome_enums[Outcome] = list(self._enums[Enum])
+        typed: list[str] = [type_text for _, type_text in self._spec_fields + self._reads]
+        typed.extend(str(t) for command in self._commands.values() for t in command.get("takes", {}).values())
+        typed.extend(type_text for fields in self._shapes.values() for _, type_text in fields)
+        for operation in composition.get("client", {}).get("operations", {}).values():
+            typed.extend(str(listed).partition(":")[2].strip() for side in ("request", "response") for listed in operation.get(side, []))
+        for port in composition.get("ports", {}).values():
+            for operation_name, operation in port.get("operations", {}).items():
+                answered_outcome = self._outcome_of.get(str(Word(str(operation_name)).pascal()) + "Response")
+                typed.extend(str(listed).partition(":")[2].strip() for listed in operation.get("request", []))
+                typed.extend(str(listed).partition(":")[2].strip() for listed in operation.get("response", [])
+                             if answered_outcome is None or str(listed).partition(":")[0].strip() != answered_outcome[0])
+        answered_only = {Enum for _, _, Enum in self._outcome_of.values()} - set(typed)
+        self._domain_enums = {name: members for name, members in self._enums.items() if name not in answered_only}
         self._types_args = (
             tuple((name, tuple(members)) for name, members in self._enums.items()),
             tuple((name, tuple(fields)) for name, fields in self._shapes.items()),
             self._Aggregate,
             tuple(self._spec_fields),
+            tuple((name, tuple(members)) for name, members in self._outcome_enums.items()),
         )
         self._types = Types(TypesSpec(*self._types_args))
         for sampled_field, sampled in dict(self._generator.get("sample_values", {})).items():
@@ -1151,6 +1204,9 @@ class Model(ts.Entity):
             name: next((member for member in members if member not in refused_members), members[0])
             for name, members in self._enums.items() if members
         }
+        for _, Outcome, Enum in self._outcome_of.values():
+            if Enum in self._success:
+                self._success[Outcome] = self._success[Enum]
         self._chosen = Pairs(tuple(self._success.items()))
         self._echo = {
             index: Echo(EchoSpec(SamplesSpec(values=self._sample_values, index=index, types=TypesSpec(*self._types_args)),
@@ -1349,6 +1405,14 @@ class Model(ts.Entity):
             records = self._packages[package]
             record = Record(RecordSpec(module=module, name=name, base=base, snapshot=snapshot))
             for field in fields:
+                outcome = self._outcome_of.get(name) if package == "ports" else None
+                if outcome is not None and field == outcome[0]:
+                    if OUTCOME_FIELD in fields and field != OUTCOME_FIELD:
+                        raise ValueError(f"{name} answers {field}, an enum, as its outcome, and lists a field named "
+                                         f"{OUTCOME_FIELD} too: name that field otherwise")
+                    record.add(records.target(FieldAsk(FieldAskSpec(module=module, field=OUTCOME_FIELD, type_text=outcome[1],
+                                                                    prefix=prefix))))
+                    continue
                 if package in ("ports", "client") and (module, name, field) in self._inline:
                     type_text = self._inline[(module, name, field)]
                 elif reading and field in self._read_types:
@@ -1375,9 +1439,9 @@ class Model(ts.Entity):
                         element = list(target.element())
                         field_frames.append({
                             "field": str(target.field()),
-                            "dto_type": {"scalar": str(target.type_text()), "enum": "str",
+                            "dto_type": {"scalar": str(target.type_text()), "enum": "str", "outcome": str(target.type_text()),
                                          "array": f"tuple[{target.record()}, ...]"}.get(kind, str(target.record())),
-                            "scalar": [{}] if kind in ("scalar", "enum") else [],
+                            "scalar": [{}] if kind in ("scalar", "enum", "outcome") else [],
                             "array": [{}] if kind == "array" else [],
                             "var": str(target.field().singular()),
                             "primitive": "int" if str(target.type_text()) == "int" else "str",
@@ -1601,22 +1665,26 @@ class Model(ts.Entity):
                     elif port_response.targets():
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(fakes[("ports", Step + "Response1")].values()))))
-                        answered_types = {str(t.field()): t for t in port_response.targets()}
+                        answered_types = {str(t.field()): t for t in port_response.targets() if str(t.kind()) != "outcome"}
+                        outcome = self._outcome_of.get(Step + "Response")
+                        if outcome is not None:
+                            answered_types[outcome[0]] = next(t for t in port_response.targets() if str(t.kind()) == "outcome")
                         for refusal in [refusal for refusal in unmatched if refusal[1] in answered_types]:
                             code, when, refused_names, message = refusal
                             unmatched.remove(refusal)
                             matched_target = answered_types[when]
-                            if str(matched_target.kind()) != "enum":
+                            if str(matched_target.kind()) != "outcome":
                                 raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
                                                  f"{', '.join(refused_names)}, and {step} answers {when} as {matched_target.type_text()}, "
                                                  f"not an enum: a refusal matches an enum field a step answers")
-                            Enum = str(matched_target.type_text())
-                            enum_members = self._enums[Enum]
+                            Outcome = str(matched_target.type_text())
+                            Enum = self._outcome_of[Step + "Response"][2]
+                            enum_members = self._outcome_enums[Outcome]
                             strangers = [member for member in refused_names if member not in enum_members]
                             if strangers:
                                 raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
                                                  f"{', '.join(strangers)}, which {Enum} does not list")
-                            if pending and any(guarded == when for guarded, _ in pending):
+                            if pending and any(json.loads(guard)["when"] == when for _, guard in pending):
                                 raise ValueError(f"client operation {operation_name} refuses on {when} twice: write one refusal "
                                                  f"per field, its is listing every member it refuses")
                             if set(enum_members) <= set(refused_names):
@@ -1625,7 +1693,7 @@ class Model(ts.Entity):
                             arms = [{"members": [member.upper() for member in refused_names], "code": code, "message": message}] + [
                                 {"members": [member.upper()], "code": "", "message": ""}
                                 for member in enum_members if member not in refused_names]
-                            pending.append((when, json.dumps({"Enum": Enum, "arms": arms})))
+                            pending.append((OUTCOME_FIELD, json.dumps({"Outcome": Outcome, "when": when, "source": local, "arms": arms})))
                             refusing.append((port_name, rest, refused_names[0], code))
                 elif kind == "orchestrator":
                     mode, orchestrator_operation = rest.split("_", 1)
@@ -1666,7 +1734,7 @@ class Model(ts.Entity):
             for code, when, _, _ in unmatched:
                 raise ValueError(f"client operation {operation_name} refuses {code} when {when} is answered, and none of its "
                                  f"steps answers {when}")
-            for when, _ in pending:
+            for when in [str(json.loads(guard)["when"]) for _, guard in pending]:
                 raise ValueError(f"client operation {operation_name} refuses on {when}, and no step after the one that answers "
                                  f"it builds the {aggregate}, where a refusal is raised: put that step before the step that "
                                  f"builds or loads the {aggregate}")
@@ -1675,8 +1743,7 @@ class Model(ts.Entity):
                 Refusing = str(Word(refusing_operation).pascal())
                 refusing_request = self._messages[("ports", Refusing + "Request")]
                 refusing_response = self._messages[("ports", Refusing + "Response")]
-                refused_enum = next(str(t.type_text()) for t in refusing_response.targets()
-                                    if str(t.kind()) == "enum" and refused_member in self._enums[str(t.type_text())])
+                refused_enum = self._outcome_of[Refusing + "Response"][1]
                 echo = Echo(EchoSpec(
                     SamplesSpec(values=self._sample_values, index=1, types=TypesSpec(*self._types_args)),
                     chosen=tuple((name, refused_member if name == refused_enum else member) for name, member in self._success.items())))
@@ -1725,8 +1792,8 @@ class Model(ts.Entity):
                 "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                 "args": [{"field": field, "expr": expr} for field, expr in made.args()],
                 "guards": [
-                    {"Enum": str(matched["Enum"]), "subject": subject, "arms": [
-                        {"patterns": " | ".join(f"domain.{matched['Enum']}.{member}" for member in arm["members"]),
+                    {"subject": subject, "arms": [
+                        {"patterns": " | ".join(f"ports.{matched['Outcome']}.{member}" for member in arm["members"]),
                          "refuse": [{"code": arm["code"], "arguments": arm["message"]}] if arm["code"] else [],
                          "passes": [] if arm["code"] else [{}]}
                         for arm in matched["arms"]]}
@@ -2044,10 +2111,15 @@ class Model(ts.Entity):
             module = str(Word(port_name).snake())
             records = [self._frames[("ports", str(r.name()))] for r in self._packages["ports"].declared(Word(module))]
             store = self._stores.get(port_name, "")
+            outcomes = [self._outcome_of[str(Word(op).pascal()) + "Response"][1] for op in operations
+                        if str(Word(op).pascal()) + "Response" in self._outcome_of]
             ports.append({"module": module, "Port": port_name, "records": records, "store": [{}] if store else [],
-                          "Store": store,
+                          "Store": store, "enumerated": [{}] if outcomes else [],
+                          "outcomes": [{"Outcome": Outcome, "members": [{"MEMBER": member.upper(), "value": member}
+                                                                        for member in self._outcome_enums[Outcome]]}
+                                       for Outcome in outcomes],
                           "operations": [{"operation": op, "Operation": str(Word(op).pascal())} for op in operations]})
-            names = sorted([str(r["Record"]) for r in records] + [port_name] + ([store] if store else []))
+            names = sorted([str(r["Record"]) for r in records] + [port_name] + ([store] if store else []) + outcomes)
             ports_exports.extend({"module": module, "name": name} for name in names)
         self._binding["ports"] = ports
         self._binding["ports_exports"] = ports_exports
@@ -2159,7 +2231,7 @@ class Model(ts.Entity):
         self._binding["enums"] = [
             {"Enum": name, "enum_snake": str(Word(name).snake()),
              "members": [{"MEMBER": member.upper(), "value": member} for member in members]}
-            for name, members in self._enums.items()
+            for name, members in self._domain_enums.items()
         ]
         specs: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -2263,7 +2335,7 @@ class Model(ts.Entity):
         self._binding["stub_text"] = [{}] if "Text" in leaves or any(r["read_type"] == "Text" for r in reads) else []
         self._binding["stub_number"] = [{}] if "Number" in leaves else []
         self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] else []
-        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._enums) | {str(c["Outcome"]) for c in commands}
+        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._domain_enums) | {str(c["Outcome"]) for c in commands}
         self._binding["domain_exports"] = [{"name": name} for name in sorted(exports)]
         spec_parts = []
         bare_parts = []
@@ -2877,19 +2949,23 @@ class Model(ts.Entity):
                 checks: list[dict[str, object]] = []
                 refused_checks: list[dict[str, object]] = []
                 reads_peer = False
+                outcome = self._outcome_of.get(Operation + "Response")
+                named_fields = {str(t.field()) for t in response.targets() if str(t.kind()) != "outcome"} | (
+                    {outcome[0]} if outcome is not None else set())
                 for target in response.targets():
                     field = str(target.field())
                     kind = str(target.kind())
-                    if kind == "enum":
-                        Enum = str(target.type_text())
-                        member = answers.get(field, self._success[Enum])
-                        for named, chosen in (("answers", member), ("refused", refused.get(field, member))):
-                            if chosen not in self._enums[Enum]:
-                                raise ValueError(f"{at} {named} {field} as {chosen}, which {Enum} does not list")
-                        answered.append(f"{field}={json.dumps(member)}")
-                        fallen.append(f"{field}={json.dumps(refused.get(field, member))}")
-                        checks.append({"check": f"{operation_name}_response.{field} == {json.dumps(member)}"})
-                        refused_checks.append({"check": f"{operation_name}_response.{field} == {json.dumps(refused.get(field, member))}"})
+                    if kind == "outcome" and outcome is not None:
+                        spec_field, Outcome, Enum = outcome
+                        member = answers.get(spec_field, self._success[Outcome])
+                        refused_member = refused.get(spec_field, member)
+                        for named, chosen in (("answers", member), ("refused", refused_member)):
+                            if chosen not in self._outcome_enums[Outcome]:
+                                raise ValueError(f"{at} {named} {spec_field} as {chosen}, which {Enum} does not list")
+                        answered.append(f"{field}=ports.{Outcome}.{member.upper()}")
+                        fallen.append(f"{field}=ports.{Outcome}.{refused_member.upper()}")
+                        checks.append({"check": f"{operation_name}_response.{field} is ports.{Outcome}.{member.upper()}"})
+                        refused_checks.append({"check": f"{operation_name}_response.{field} is ports.{Outcome}.{refused_member.upper()}"})
                         continue
                     if field in refused:
                         raise ValueError(f"{at} refused names {field}, a {target.type_text()}: refused gives an enum field "
@@ -2907,8 +2983,8 @@ class Model(ts.Entity):
                     expected = str(Sample(str(peer._samples.value(theirs[source]))).literal(target))
                     checks.append({"check": f"{operation_name}_response.{field} == {expected}"})
                     refused_checks.append({"check": f"{operation_name}_response.{field} == {target.empty(self._chosen)}"})
-                strays = sorted(set(answers) - {str(t.field()) for t in response.targets()})
-                strays += sorted(set(refused) - {str(t.field()) for t in response.targets()})
+                strays = sorted(set(answers) - named_fields)
+                strays += sorted(set(refused) - named_fields)
                 if strays:
                     raise ValueError(f"{at} names {', '.join(strays)}, which {operation_name} does not answer")
                 refusable = "refused" in call

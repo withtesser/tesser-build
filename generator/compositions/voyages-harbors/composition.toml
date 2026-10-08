@@ -3,7 +3,10 @@
 # plan_voyage looks the harbor up on the harbor chart, a port whose gateway
 # reaches the harbors context (composition.harbors.toml), and refuses a harbor
 # the chart answers as uncharted (refuses). get_voyage reads the harbor's name
-# through the same port.
+# through the same port. harbor_standing is what look_up_harbor answers, so it
+# renders as LookUpHarborResponse.outcome, a LookUpHarborOutcome declared in the
+# port's module; every key here and in implementations.toml still names it
+# harbor_standing.
 
 context = "voyages"
 

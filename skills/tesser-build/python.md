@@ -942,9 +942,9 @@ import typing
 import tesser.application as ts
 
 
-class CampaignLookup(enum.Enum):
+class FindCampaignOutcome(enum.Enum):
     FOUND = "found"
-    MISSING = "missing"
+    NOT_FOUND = "not_found"
 
 
 class LinkRecord(ts.Response):
@@ -973,7 +973,7 @@ class FindCampaignRequest(ts.Request):
 
 class FindCampaignResponse(ts.Response):
 
-    def __init__(self, outcome: CampaignLookup, campaigns: tuple[CampaignRecord, ...]) -> None:
+    def __init__(self, outcome: FindCampaignOutcome, campaigns: tuple[CampaignRecord, ...]) -> None:
         self.outcome = outcome
         self.campaigns = campaigns
 
@@ -1070,9 +1070,9 @@ class MapToCampaignSpec(ts.Mapper, domain.CampaignSpec):
         find_campaign_response: ports.FindCampaignResponse,
     ) -> None:
         match find_campaign_response.outcome:
-            case ports.CampaignLookup.FOUND:
+            case ports.FindCampaignOutcome.FOUND:
                 record = find_campaign_response.campaigns[0]
-            case ports.CampaignLookup.MISSING:
+            case ports.FindCampaignOutcome.NOT_FOUND:
                 raise errors.not_found(
                     "campaign_missing",
                     f"no campaign {find_campaign_request.campaign_id!r}",
@@ -1603,7 +1603,7 @@ class StorageCampaignRepository(ts.Repository):
             row = self._backend.load(find_campaign_request.campaign_id)
         except storage.StorageMiss:
             return ports.FindCampaignResponse(
-                outcome=ports.CampaignLookup.MISSING, campaigns=()
+                outcome=ports.FindCampaignOutcome.NOT_FOUND, campaigns=()
             )
         except storage.StorageUnavailable as e:
             raise errors.InfraError(
@@ -1611,7 +1611,7 @@ class StorageCampaignRepository(ts.Repository):
             ) from e
         campaign_record = ports.CampaignRecord(id=find_campaign_request.campaign_id, ...)
         return ports.FindCampaignResponse(
-            outcome=ports.CampaignLookup.FOUND,
+            outcome=ports.FindCampaignOutcome.FOUND,
             campaigns=(campaign_record,),
         )
 ```

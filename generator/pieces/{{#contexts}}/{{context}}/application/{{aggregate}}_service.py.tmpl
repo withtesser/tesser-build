@@ -20,7 +20,7 @@ class {{Mapper}}(ts.Mapper, {{target}}):
 
     def __init__(self{{#params}}, {{param}}: {{param_type}}{{/params}}) -> None:
 {{#guards}}
-        match domain.{{Enum}}({{subject}}):
+        match {{subject}}:
 {{#arms}}
             case {{patterns}}:
 {{#refuse}}

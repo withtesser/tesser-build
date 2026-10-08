@@ -102,23 +102,25 @@ myself?* Yes → application service.
 ### Refusing on what a port answered
 
 A port can answer an outcome (a lookup answering whether a harbor is on the
-chart, say: `harbor_standing`, an enum `HarborStanding` of `uncharted` and
-`charted`). The service never writes `if` on it, and never matches the port
-answer itself (rule 2: a port answer is not a domain call). The answer is an
-input to the domain: the mapper that builds the domain spec turns it into the
-domain enum and matches it, and an arm that refuses raises `errors.invalid`.
-The mapper is constructed inside the service's one `try`, so the refusal
-crosses as `client.Rejected` and the route answers 422, like any other
-domain refusal:
+chart, say: an enum of `uncharted` and `charted`). The answer is the
+response's `outcome` field, typed as the enum `LookUpHarborOutcome` declared in
+the port's own module (TB085: a response's outcome is the field named
+`outcome`, named for the operation), never a `str` carrying the member's value
+for the reader to convert back. The service never writes `if` on it, and never
+matches the port answer itself (rule 2: a port answer is not a domain call).
+The answer is an input to the domain: the mapper that builds the domain spec
+matches it, and an arm that refuses raises `errors.invalid`. The mapper is
+constructed inside the service's one `try`, so the refusal crosses as
+`client.Rejected` and the route answers 422, like any other domain refusal:
 
 ```python
 class MapToVoyageSpec(ts.Mapper, domain.VoyageSpec):
 
     def __init__(self, plan_voyage_request: client.PlanVoyageRequest, look_up_harbor_response: ports.LookUpHarborResponse, issue_voyage_id_response: ports.IssueVoyageIdResponse) -> None:
-        match domain.HarborStanding(look_up_harbor_response.harbor_standing):
-            case domain.HarborStanding.UNCHARTED:
+        match look_up_harbor_response.outcome:
+            case ports.LookUpHarborOutcome.UNCHARTED:
                 raise errors.invalid("uncharted_harbor", "a voyage is planned to a charted harbor", field="harbor")
-            case domain.HarborStanding.CHARTED:
+            case ports.LookUpHarborOutcome.CHARTED:
                 pass
             case _ as never:
                 typing.assert_never(never)

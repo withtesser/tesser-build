@@ -185,7 +185,9 @@ language, the key of a class of actions (below).
 A field's type is one of:
 
 - `"str"` or `"int"`
-- an enum's name (declared in `[enums]`); it crosses every message as its string value
+- an enum's name (declared in `[enums]`); it crosses every message as its string value,
+  except the one place an enum is an answer: a port operation's response field
+  (below, "An enum a port answers is the response's outcome")
 - `"<Shape>[]"`: a list of a shape or message (declared in `[shapes]` or
   `[messages]`). A shape's own fields are `str`, `int`, or enums, never lists.
   A shape is never carried alone, only as a list.
@@ -501,6 +503,38 @@ so the route answers 422, and the service test checks it
 (`test_<operation>_refuses_an_unknown_<aggregate>`). A gateway that reaches
 this context sees the refusal as the client's `<Aggregate>Rejected`.
 
+**An enum a port answers is the response's outcome.** A port operation's
+response field typed with an enum (`harbor_standing: HarborStanding`, below) is
+that response's answer, the thing its caller matches, so it renders the way
+tessercheck's TB085 wants every port answer: the field is named `outcome`, and
+it is typed as the enum `<Operation>Outcome`, declared in the port's own module
+with the enum's members (a ports module imports nothing from its own tree, so
+it cannot hold the domain's enum):
+
+```python
+class LookUpHarborOutcome(enum.Enum):
+    UNCHARTED = "uncharted"
+    CHARTED = "charted"
+
+
+class LookUpHarborResponse(ts.Response):
+
+    def __init__(self, harbor_name: str, outcome: LookUpHarborOutcome) -> None:
+        self.harbor_name = harbor_name
+        self.outcome = outcome
+```
+
+The composition keeps the domain's words: the field and its enum are named as
+the language names them, and every key that names the field (`refuses`'
+`when`, a gateway's `answers` and `refused`) uses that name. Everything
+rendered from it (the fakes, the gateway's answers, the match below, the
+tests) speaks `outcome` and `ports.<Operation>Outcome`, never the member's
+string. A response answers at most one enum (two are a problem: its caller
+matches one answer), and an enum only ports answer is not rendered in the
+domain; one the aggregate, a command, a shape, or a client message is typed
+with is, as before. An enum inside a list of records a port answers is data,
+not an answer, and crosses as its string value.
+
 **Refusing on what a step answers.** A port that answers an enum (a lookup
 answering whether what it was asked about is known, say) can refuse the
 operation on some of its members. List them on the client operation:
@@ -519,7 +553,8 @@ HarborStanding = ["uncharted", "charted"]
 operations.look_up_harbor = { request = ["harbor"], response = ["harbor_name: str", "harbor_standing: HarborStanding"] }
 ```
 
-`when` is an enum field a step of the operation answers, `is` the member (or a
+`when` is the enum field a step of the operation answers, named as the port
+operation lists it, `is` the member (or a
 list of members) that refuses, `code` the refusal's code (snake_case), and
 `message` (optional; the code's words otherwise) its message, printable ASCII
 free of quotes and backslashes, and `field` (optional) the request field it
@@ -530,10 +565,10 @@ aggregate after that step (`MapTo<Aggregate>Spec`, or
 builds inside its `try`, so the refusal reaches the route as 422 like any other:
 
 ```python
-        match domain.HarborStanding(look_up_harbor_response.harbor_standing):
-            case domain.HarborStanding.UNCHARTED:
+        match look_up_harbor_response.outcome:
+            case ports.LookUpHarborOutcome.UNCHARTED:
                 raise errors.invalid("uncharted_harbor", "a voyage is planned to a charted harbor", field="harbor")
-            case domain.HarborStanding.CHARTED:
+            case ports.LookUpHarborOutcome.CHARTED:
                 pass
             case _ as never:
                 typing.assert_never(never)
@@ -794,8 +829,10 @@ refused = { harbor_standing = "uncharted" }           # optional: what it answer
   of ours it names, or from ours of the same name when it is left out; both
   are a `str` or an `int` of the same type.
 - `answers`: each response field of ours is the peer's response field it names
-  (or the peer's field of the same name), of the same type; an enum field is
-  instead the member named here (or the enum's success member, below).
+  (or the peer's field of the same name), of the same type; the enum field (the
+  response's outcome, named here as the port operation lists it) is instead the
+  member named here (or the enum's success member, below), answered as
+  `ports.<Operation>Outcome.<MEMBER>`.
 - `refused`: with it, the call is made in a `try` that catches the peer's
   `<Aggregate>Rejected` (what it raises when it refuses, an unknown identity
   included) and answers the member named for each enum field (its `answers`
@@ -807,8 +844,8 @@ refused = { harbor_standing = "uncharted" }           # optional: what it answer
         try:
             get_harbor_response = await self._harbors_client.get_harbor(harbors_client.GetHarborRequest(harbor_id=look_up_harbor_request.harbor))
         except harbors_client.HarborRejected:
-            return ports.LookUpHarborResponse(harbor_name="", harbor_standing="uncharted")
-        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, harbor_standing="charted")
+            return ports.LookUpHarborResponse(harbor_name="", outcome=ports.LookUpHarborOutcome.UNCHARTED)
+        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, outcome=ports.LookUpHarborOutcome.CHARTED)
 ```
 
 The gateway stays agent-owned, so a method edited by hand is kept like any
