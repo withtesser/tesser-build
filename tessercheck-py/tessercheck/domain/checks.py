@@ -16109,7 +16109,7 @@ class Codebase(ts.AggregateRoot):
 
 FIX_PASSES: typing.Final[int] = 8
 
-FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB085"})
+FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB053", "TB085"})
 
 
 class FindingSpec(ts.Spec):

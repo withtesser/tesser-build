@@ -23077,3 +23077,58 @@ def test_a_tally_names_what_the_fix_cleared_and_what_a_check_still_finds() -> No
     assert cleared[0].startswith("mod/domain/test_tag.py:3: TB085 mod.domain.test_tag.test_one names made for a tag_spec;")
     assert len(remaining) == 1
     assert remaining[0].startswith("mod/domain/test_tag.py:5: TB085 mod.domain.test_tag.test_two names made for a tag_spec;")
+
+
+def test_a_fixing_aliases_a_bare_package_import_and_every_read_through_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain\n"
+            "def test_a_tag_is_built() -> None:\n"
+            "    assert mod.domain.Tag(mod.domain.TagSpec('a')) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["tests/test_tags.py"] == (
+        "import mod.domain as mod_domain\n"
+        "def test_a_tag_is_built() -> None:\n"
+        "    assert mod_domain.Tag(mod_domain.TagSpec('a')) is not None\n"
+    )
+
+
+def test_a_fixing_realiases_a_package_imported_under_a_name_the_rule_does_not_derive() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain as dom\n"
+            "def test_a_tag_is_built() -> None:\n"
+            "    assert dom.Tag(dom.TagSpec('a')) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["tests/test_tags.py"] == (
+        "import mod.domain as mod_domain\n"
+        "def test_a_tag_is_built() -> None:\n"
+        "    assert mod_domain.Tag(mod_domain.TagSpec('a')) is not None\n"
+    )
+
+
+def test_a_fixing_leaves_an_alias_whose_derived_name_a_reader_already_binds() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain as dom\n"
+            "def test_a_tag_is_built(mod_domain: str) -> None:\n"
+            "    assert dom.Tag(dom.TagSpec(mod_domain)) is not None\n",
+            False,
+        ),
+    )))
+    assert fixing.rewritten() == ()
