@@ -1096,6 +1096,77 @@ class TestRenderingCompositions:
             "number of lists that answer one \"<field>: Loan[]\" and take only fields of its spec to match",
         )
 
+    def test_two_contexts_render_into_one_app_whose_gateway_reaches_the_peer_through_its_client(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "library-members"), out_dir=str(tmp_path / "out"), printed=(),
+        )
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+        gateway = tmp_path / "out" / "loans" / "adapters" / "gateways" / "members_member_register.py"
+        gateway.write_text(gateway.read_text().replace(
+            "        return ports.CheckMemberResponse()\n",
+            "        await self._members_client.get_member(members_client.GetMemberRequest(member_id=check_member_request.borrower))\n"
+            "        return ports.CheckMemberResponse()\n",
+        ))
+        (tmp_path / "out" / "tests" / "test_lending_to_members.py").write_text(
+            "import json\nimport urllib.error as urllib_error\nimport urllib.request as urllib_request\n\n\n"
+            "class TestLendingToMembers:\n\n    def test_a_book_is_lent_to_a_registered_member_only(self, host: str) -> None:\n"
+            "        with urllib_request.urlopen(urllib_request.Request(f\"{host}/members\", data=b'{\"name\": \"Ada Lovelace\"}', "
+            "headers={\"Content-Type\": \"application/json\"}, method=\"POST\"), timeout=30) as answer:\n"
+            "            member_id = json.loads(answer.read())[\"member_id\"]\n"
+            "        statuses = []\n"
+            "        for borrower in (member_id, \"nobody\"):\n"
+            "            lend = urllib_request.Request(f\"{host}/loans\", data=json.dumps({\"borrower\": borrower, \"title\": \"Beloved\"}).encode(), "
+            "headers={\"Content-Type\": \"application/json\"}, method=\"POST\")\n"
+            "            try:\n                with urllib_request.urlopen(lend, timeout=30) as answer:\n                    statuses.append(answer.status)\n"
+            "            except urllib_error.HTTPError as error:\n                statuses.append(error.code)\n"
+            "        assert statuses == [201, 500]\n"
+        )
+
+        again = rendering.client.render_composition(render_composition_request)
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "app", "loans", "members", "tests/test_lending_to_members.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert (render_composition_response.problems, again.problems) == ((), ())
+        assert "loans/adapters/gateways/members_member_register.py" in again.kept
+        assert "            loans_gateways.MembersMemberRegister(self.members.client),\n" in (tmp_path / "out" / "app" / "app.py").read_text()
+        assert tested.returncode == 0, tested.stdout
+
+    def test_contexts_that_do_not_fit_together_are_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        answered: list[tuple[str, ...]] = []
+        for document, old, new, renamed in (
+            ("implementations", 'reaches = "members"', 'reaches = "patrons"', ""),
+            ("implementations", "", "", "composition.patrons"),
+            ("composition.members", "[ports.MemberRepository]",
+             "[ports.NoticeSender]\noperations.notify_member = { request = [\"name\"], response = [] }\n\n[ports.MemberRepository]", ""),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "library-members").glob("*.toml"):
+                text = found.read_text()
+                if found.stem == document and old:
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                (composition / (f"{renamed}.toml" if renamed and found.stem == "composition.members" else found.name)).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ("context loans has a gateway that reaches patrons, and no composition in the directory declares context patrons",),
+            ("composition.patrons.toml declares context members, and the composition of a further context is named "
+             "composition.<context>.toml",),
+            ("contexts loans and members both declare port NoticeSender, and implementations.toml names a port once, "
+             "so one context declares it",),
+        ]
+        assert not (tmp_path / "out").exists()
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

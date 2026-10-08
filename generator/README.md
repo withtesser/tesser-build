@@ -185,7 +185,8 @@ and runs the generated tree's own gates.
 The second entry point renders a tree from a composition directory (the six
 spec formats of `compositions/<name>/`, read in order: `language.toml`,
 `story.toml`, `infra.toml`, `composition.toml`, `implementations.toml`,
-`generator.toml`) instead of a fixed-shape spec:
+`generator.toml`, then a `composition.<context>.toml` for each further context
+of the app) instead of a fixed-shape spec:
 
 ```sh
 cd generator

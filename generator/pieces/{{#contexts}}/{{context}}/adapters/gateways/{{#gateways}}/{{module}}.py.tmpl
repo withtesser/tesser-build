@@ -4,9 +4,17 @@ from __future__ import annotations
 import tesser.adapters as ts
 
 import {{context}}.application.ports as ports
+{{#reaches}}
+import {{peer}}.client as {{peer}}_client
+{{/reaches}}
 
 
 class {{Gateway}}(ts.Gateway):
+{{#reaches}}
+
+    def __init__(self, {{peer}}_client: {{peer}}_client.{{PeerClient}}) -> None:
+        self._{{peer}}_client = {{peer}}_client
+{{/reaches}}
 {{#operations}}
 
     async def {{operation}}(self, {{operation}}_request: ports.{{Operation}}Request) -> ports.{{Operation}}Response:

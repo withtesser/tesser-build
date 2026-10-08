@@ -127,8 +127,10 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 `mypy --strict`, and a plain `pytest` from its root, which starts the host the
 tests take and, when `infra.toml` declares an engine, the engines (Docker
 required); it passes when every failure is a root test's status assertion (the
-served host answered another status). `library/` is the small worked example, and `library-direct/` is
-the same app with no engine: its service calls the ports itself.
+served host answered another status). `library/` is the small worked example, `library-direct/` is
+the same app with no engine: its service calls the ports itself, and
+`library-members/` is that app with a second context its gateway reaches
+(below, "Several contexts in one app").
 
 ## Which file answers which question
 
@@ -628,7 +630,9 @@ The implementation types:
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
   and answers one field; issues version-4 UUIDs from a seed, rendered in full.
 - any key with `body = "agent"` and a `class` on a gateway port: a stub gateway
-  of that class, agent-owned (below).
+  of that class, agent-owned (below). With `reaches = "<context>"`, naming
+  another context of the composition, the gateway is handed that context's
+  client (below, "Several contexts in one app").
 - any key with `body = "agent"` and a `class` on a store port (one that carries
   the aggregate): a stub store of that class, agent-owned, in
   `<context>/adapters/repositories/<class>.py` with its sibling test. The class
@@ -646,6 +650,46 @@ The implementation types:
 class = "SqliteJtbdRepository"
 body = "agent"
 ```
+
+## Several contexts in one app
+
+A composition directory holds one context's contracts in `composition.toml`
+and each further context's in `composition.<context>.toml`, in the same format
+(its `context` is the `<context>` of its file name). The other five files are
+the app's, shared by every context: one `language.toml` and `story.toml`, one
+`infra.toml` (the app, its host, its storages), one `implementations.toml`
+naming an implementation for every port of every context (so no two contexts
+declare a port of one name), and one `generator.toml`. Each context's client
+operations serve its own level-2 stories (in its own `[interfaces.http]`), and
+every routed story is served by one context. A composition of several contexts
+renders without an engine.
+
+A context calls another through a gateway port of its own, implemented by an
+agent-owned gateway that `reaches` the other context:
+
+```toml
+# composition.toml (context = "loans")
+[ports.MemberRegister]
+operations.check_member = { request = ["borrower"], response = [] }
+
+# implementations.toml
+[implementations.MemberRegister.members]
+class = "MembersMemberRegister"
+body = "agent"
+reaches = "members"                       # a context the directory declares
+```
+
+The gateway's `__init__` takes the peer's client (`members_client:
+members_client.MembersClient`) and its stub test hands it a fake of that
+client that answers each of its operations with samples, so the agent writes
+the call to the peer (and the translation of its answer) in the gateway's
+methods. The context's component takes the port as a parameter
+(`Loans(config, member_register)`), and the app builds each context after the
+contexts it reaches and hands it the gateway over the peer's client
+(`loans_gateways.MembersMemberRegister(self.members.client)`); two contexts that
+reach each other are a problem. The host routes every context's operations,
+`pyproject.toml` collects every context's tests, and the root tests cover every
+context's routes. `library-members/` is the worked example.
 
 ## 6 `generator.toml`
 
@@ -689,8 +733,8 @@ The rendered tree: `<context>/domain`, `client`, `application` (the
 snapshots, `client/` application clients, `orchestrators/`), `adapters`
 (Restate `activities/`, `workflows/`, `dispatchers/`, the `handlers/http.py`
 HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
-`protocol/`, `srv/http/main.py` (the HTTP host serving the routes with the
-Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
+`protocol/`, `srv/http/main.py` (the HTTP host serving every context's routes,
+one `<Context>HttpRoutes` class per context, with the Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
 generated `conftest.py` and `__init__.py`),
 `pyproject.toml`, `requirements-dev.txt`, `conftest.py`, and `.tesser-root`.
 Every module has its sibling test. A tree with no engine has the same pieces
@@ -728,7 +772,8 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    request/response app; `[hosts.http]` with its listen port
    variable; a `[storage.<name>]` for each storage (every one but `memory`
    with its `location_variable`); `[variables]`.
-4. `composition.toml`: `context`; the aggregate's spec and reads (identity in
+4. `composition.toml` (and a `composition.<context>.toml` for each further
+   context): `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
    serving it and its steps in order; with an engine, exactly one
    orchestrator operation whose request holds the identity, its actions (one

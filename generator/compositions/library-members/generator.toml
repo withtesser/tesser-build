@@ -1,0 +1,8 @@
+# 6 GENERATOR — sample values for the generated sibling tests. See ../README.md.
+
+[sample_values]
+loan_id = ["loan-1", "loan-2"]
+borrower = ["Ada", "Grace"]
+title = ["Middlemarch", "Beloved"]
+member_id = ["member-1", "member-2"]
+name = ["Ada Lovelace", "Grace Hopper"]

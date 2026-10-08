@@ -5,7 +5,23 @@ from __future__ import annotations
 import pathlib
 {{/located}}
 
+{{#peers_reached}}
+import tesser.testing as ts
+
+import {{context}}.application.ports as ports
+{{/peers_reached}}
 import {{context}}.component as component
+{{#peer_gateways}}
+
+
+@ts.fake
+class Fake{{Port}}(ports.{{Port}}):
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: ports.{{Operation}}Request) -> ports.{{Operation}}Response:
+        return ports.{{Operation}}Response({{minimal}})
+{{/operations}}
+{{/peer_gateways}}
 {{#configured}}
 
 
@@ -66,7 +82,7 @@ class Test{{Context}}:
             )
         )
 
-        {{context}} = component.{{Context}}(config)
+        {{context}} = component.{{Context}}(config{{#peer_gateways}}, Fake{{Port}}(){{/peer_gateways}})
         await {{context}}.close()
 
         assert {{context}}.client is not None

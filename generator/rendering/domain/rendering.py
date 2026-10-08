@@ -1134,6 +1134,8 @@ class Model(ts.Entity):
             for key, implementation in choices.items():
                 if implementation.get("body") == "agent":
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
+                if "reaches" in implementation:
+                    named.append(("snake", f"[implementations.{port_name}.{key}] reaches", str(implementation["reaches"])))
         engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
                      for key in ("engine_url_variable",) if key in engine)
@@ -1178,6 +1180,9 @@ class Model(ts.Entity):
             "Rejected": self._Aggregate + "Rejected", "rejected": self._aggregate + "_rejected",
         }
         self._frames: dict[tuple[str, str], dict[str, object]] = {}
+        self._joined: list[Model] = []
+        self._unserved: set[str] = set()
+        self._root: dict[str, object] = self._binding
 
     @property
     def identity(self) -> str:
@@ -2190,8 +2195,15 @@ class Model(ts.Entity):
                             for t in response.targets()),
                         "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
                     })
-                gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations})
-                port_exprs[port_name] = f"gateways.{Gateway}()"
+                peer = str(implementation.get("reaches", ""))
+                reaches: list[dict[str, object]] = []
+                if peer:
+                    if peer == self._context:
+                        raise ValueError(f"[implementations.{port_name}.{key}] reaches {peer}, its own context: a gateway reaches a peer")
+                    reaches.append({"peer": peer, "PeerClient": str(Word(peer).pascal()) + "Client", "peer_operations": []})
+                gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations,
+                                 "reaches": reaches, "Port": port_name, "port_param": str(Word(port_name).snake())})
+                port_exprs[port_name] = str(Word(port_name).snake()) if peer else f"gateways.{Gateway}()"
             elif body == "supported" and key == "memory":
                 if port_name not in self._stores:
                     raise ValueError(f"{port_name} is memory, which renders a store, and it does not carry {self._aggregate}")
@@ -2220,6 +2232,8 @@ class Model(ts.Entity):
             else:
                 raise ValueError(f"{port_name} is implemented by {key}, a type the toolkit does not support; say body = \"agent\"")
         self._binding["gateways"] = gateways
+        self._binding["peer_gateways"] = [gateway for gateway in gateways if gateway["reaches"]]
+        self._binding["peers_reached"] = [{}] if self._binding["peer_gateways"] else []
         self._binding["memory_repositories"] = memory_repositories
         self._binding["agent_stores"] = agent_stores
         self._binding["locations"] = locations
@@ -2245,7 +2259,7 @@ class Model(ts.Entity):
         imported = {"activities", "workflows"} if self._engine_declared else set()
         if self._relay_ops.get(Orchestrator + "Relay"):
             imported.add("dispatchers")
-        if gateways:
+        if any(not gateway["reaches"] for gateway in gateways):
             imported.add("gateways")
         if memory_repositories or uuid_repositories or agent_stores:
             imported.add("repositories")
@@ -2456,6 +2470,13 @@ class Model(ts.Entity):
                 "status": str(status_code), "inputs": inputs, "has_inputs": [{}] if inputs else [],
                 "outputs": self._frames[("client", Operation + "Response")]["fields"],
                 "response_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in response.targets()),
+                "peer_response_sample": ", ".join(
+                    f"{t.field()}=" + str(self._samples.value(t).literal(Target(TargetSpec(
+                        field=str(t.field()), type_text=str(t.type_text()), kind=str(t.kind()), package=self._context + "_client",
+                        record=str(t.record()), element=tuple(t.element()), members=(),
+                    ))))
+                    for t in response.targets()
+                ),
                 "response_json": json.dumps(response_values),
                 "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
                 "path_params_sample": json.dumps(path_params),
@@ -2484,9 +2505,7 @@ class Model(ts.Entity):
             elif path_fields and loading:
                 probes.append({"method": method, "path": probe_path, "body": "None"})
                 answers.append("500")
-        unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)
-        if unserved:
-            raise ValueError(f"{', '.join(unserved)} has a route, and no client operation serves it")
+        self._unserved = {story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories}
         root_tests: list[dict[str, object]] = []
         for story_id in sorted(routed_stories):
             story = stories[story_id]
@@ -2542,10 +2561,73 @@ class Model(ts.Entity):
         if untraced:
             raise ValueError(*untraced)
 
+    def join(self, model: Model) -> None:
+        self._joined.append(model)
+
+    def compose(self) -> None:
+        models = [self, *self._joined]
+        declared = {model._context: model for model in models}
+        if len(models) > 1 and any(model._engine_declared for model in models):
+            raise ValueError("the composition declares more than one context and infra.toml declares an [engine]: a composition "
+                             "of several contexts renders without an engine")
+        unserved = set.intersection(*(model._unserved for model in models))
+        if unserved:
+            raise ValueError(f"{', '.join(sorted(unserved))} has a route, and no client operation serves it")
+        owners: dict[str, str] = {}
+        for model in models:
+            for port_name in model._port_ops:
+                if port_name in owners:
+                    raise ValueError(f"contexts {owners[port_name]} and {model._context} both declare port {port_name}, and "
+                                     f"implementations.toml names a port once, so one context declares it")
+                owners[port_name] = model._context
+        ordered: list[Model] = []
+        remaining = list(models)
+        while remaining:
+            reached = {
+                model._context: [str(typing.cast(list[dict[str, object]], gateway["reaches"])[0]["peer"])
+                                 for gateway in typing.cast(list[dict[str, object]], model._binding["peer_gateways"])]
+                for model in remaining
+            }
+            for context, peers in reached.items():
+                for peer in peers:
+                    if peer not in declared:
+                        raise ValueError(f"context {context} has a gateway that reaches {peer}, and no composition in the "
+                                         f"directory declares context {peer}")
+            ready = [model for model in remaining if all(peer in [done._context for done in ordered] for peer in reached[model._context])]
+            if not ready:
+                raise ValueError(f"contexts {', '.join(sorted(reached))} reach each other in a cycle, so none can be built first")
+            ordered.append(ready[0])
+            remaining.remove(ready[0])
+        for model in models:
+            for gateway in typing.cast(list[dict[str, object]], model._binding["peer_gateways"]):
+                reach = typing.cast(list[dict[str, object]], gateway["reaches"])[0]
+                reach["peer_operations"] = [
+                    {"operation": route["operation"], "Operation": route["Operation"], "peer_response_sample": route["peer_response_sample"]}
+                    for route in typing.cast(list[dict[str, object]], declared[str(reach["peer"])]._binding["routes"])
+                ]
+        bindings = [model._binding for model in ordered]
+        locations: list[dict[str, object]] = []
+        for binding in bindings:
+            for location in typing.cast(list[dict[str, object]], binding["locations"]):
+                if not any(known["location_attr"] == location["location_attr"] for known in locations):
+                    locations.append(location)
+        root = dict(self._binding)
+        root["contexts"] = bindings
+        root["contexts_reversed"] = list(reversed(bindings))
+        root["root_tests"] = [test for binding in bindings for test in typing.cast(list[dict[str, object]], binding["root_tests"])]
+        root["root_tier"] = [{}] if root["root_tests"] else []
+        root["route_probes"] = [probe for binding in bindings for probe in typing.cast(list[dict[str, object]], binding["route_probes"])]
+        root["route_probe_answers"] = ", ".join(str(binding["route_probe_answers"]) for binding in bindings if binding["route_probe_answers"])
+        root["locations"] = locations
+        root["located"] = [{}] if locations else []
+        root["identity_seeded_any"] = [{}] if any(binding["identity_seeded"] for binding in bindings) else []
+        root["reads_environment_any"] = [{}] if any(binding["reads_environment"] for binding in bindings) else []
+        self._root = root
+
     def scope(self) -> Scope:
         table: list[str] = []
         indexes: dict[int, int] = {}
-        stack: list[tuple[dict[str, object], bool]] = [(self._binding, False)]
+        stack: list[tuple[dict[str, object], bool]] = [(self._root, False)]
         while stack:
             node, done = stack.pop()
             if not done:
@@ -2564,7 +2646,7 @@ class Model(ts.Entity):
                     frame[key] = [indexes[id(child)] for child in bound if isinstance(child, dict)]
             indexes[id(node)] = len(table)
             table.append(json.dumps(frame))
-        return Scope((tuple(table), (indexes[id(self._binding)],)))
+        return Scope((tuple(table), (indexes[id(self._root)],)))
 
 
 class Digest(ts.ValueObject):
@@ -2927,21 +3009,30 @@ class RenderedTree(ts.AggregateRoot):
         rendered: list[RenderedFile] = []
         if not found:
             try:
-                model = Model(ModelSpec(
-                    language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts["composition"],
-                    implementations=texts["implementations"], generator=texts["generator"],
-                ))
-                model.messages()
-                model.bodies()
-                model.actions()
-                model.orchestrator()
-                model.publish()
-                model.stub()
-                model.engine()
-                model.restate()
-                model.routes()
-                model.traced()
-                scope = model.scope()
+                models: list[Model] = []
+                for name in ["composition", *sorted(name for name in texts if name.startswith("composition."))]:
+                    model = Model(ModelSpec(
+                        language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts[name],
+                        implementations=texts["implementations"], generator=texts["generator"],
+                    ))
+                    if name != "composition" and model.identity != name.removeprefix("composition."):
+                        raise ValueError(f"{name}.toml declares context {model.identity}, and the composition of a further "
+                                         f"context is named composition.<context>.toml")
+                    model.messages()
+                    model.bodies()
+                    model.actions()
+                    model.orchestrator()
+                    model.publish()
+                    model.stub()
+                    model.engine()
+                    model.restate()
+                    model.routes()
+                    model.traced()
+                    models.append(model)
+                for model in models[1:]:
+                    models[0].join(model)
+                models[0].compose()
+                scope = models[0].scope()
                 for path, text in spec.pieces:
                     template = Template(path.removesuffix(TEMPLATE_SUFFIX))
                     for placed in template.place(scope):
