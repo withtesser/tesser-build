@@ -12207,7 +12207,9 @@ class Module(ts.Entity):
                         self._path,
                         stmt.lineno,
                         "TB071",
-                        f"{where} is neither a test nor a declared helper; a test module holds "
+                        f"{where} is neither a test nor a declared helper — name it test_ if it is a test, "
+                        "declare it @ts.helper, @ts.assembly, or @ts.fake if it is one of those, "
+                        "or inline it into the tests that call it; a test module holds "
                         "tests, @ts.helper builders, @ts.assembly inputs, and @ts.fake doubles",
                     ))
                 )
@@ -12225,7 +12227,9 @@ class Module(ts.Entity):
                                             self._path,
                                             item.lineno,
                                             "TB071",
-                                            f"{where}.{item.name} is not a test method; a test class holds only test methods",
+                                            f"{where}.{item.name} is not a test method — name it test_ if it is a test, "
+                                            "or move it to module level as a @ts.helper or @ts.assembly; "
+                                            "a test class holds only test methods",
                                         ))
                                     )
                             elif isinstance(item, ast.ClassDef):
@@ -12234,7 +12238,8 @@ class Module(ts.Entity):
                                         self._path,
                                         item.lineno,
                                         "TB071",
-                                        f"{where}.{item.name} is a nested class; a test class holds test methods, never nested classes",
+                                        f"{where}.{item.name} is a nested class — move it to module level; "
+                                        "a test class holds test methods, never nested classes",
                                     ))
                                 )
                             else:
@@ -12243,7 +12248,8 @@ class Module(ts.Entity):
                                         self._path,
                                         item.lineno,
                                         "TB071",
-                                        f"{where} carries a loose statement in its body; a test class holds test methods, never loose statements",
+                                        f"{where} carries a loose statement in its body — move it into the test methods that use it; "
+                                        "a test class holds test methods, never loose statements",
                                     ))
                                 )
                         continue
@@ -12289,7 +12295,8 @@ class Module(ts.Entity):
                         self._path,
                         stmt.lineno,
                         "TB071",
-                        f"{module_name} has a loose module-level statement; "
+                        f"{module_name} has a loose module-level statement — move it into the "
+                        "test, helper, or assembly that uses it; "
                         "a test module holds only imports, tests, helpers, and fakes",
                     ))
                 )

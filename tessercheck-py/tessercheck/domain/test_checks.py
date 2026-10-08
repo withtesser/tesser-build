@@ -10759,7 +10759,7 @@ def test_the_shells_tests_keep_function_totality() -> None:
         )).violations()
     )
     assert any(
-        "is neither a test nor a declared helper; a test module holds "
+        "is neither a test nor a declared helper — name it test_ if it is a test, declare it @ts.helper, @ts.assembly, or @ts.fake if it is one of those, or inline it into the tests that call it; a test module holds "
         "tests, @ts.helper builders, @ts.assembly inputs, and @ts.fake doubles" in f
         for f in findings
     ), findings
