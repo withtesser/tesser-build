@@ -867,6 +867,43 @@ of the peer's issues it), the test expects the status the unknown sample
 meets: 422 when `refused` answers a member the operation refuses, 500 when the
 call does not catch the refusal.
 
+**Root tests and another context.** The root tests get the same identity the
+same way. For each identity the host test issues, the rendered root
+`conftest.py` holds a fixture named `issued_<identity>` that submits the peer's
+sample through the peer's issuing route and answers the identity it issued
+(one fixture per identity, a new identity per test):
+
+```python
+@pytest.fixture
+def issued_harbor_id(host: str) -> str:
+    answer = httpx.post(f"{host}/harbors", json={"place_name": "Valparaiso"}, timeout=DEADLINE_SECONDS)
+    answer.raise_for_status()
+    return str(answer.json()["harbor_id"])
+```
+
+The skeleton of a route whose step looks that identity up takes the fixture
+and sends it in place of the sample, so it answers its status as rendered:
+
+```python
+    def test_s_1_a_1(self, host: str, issued_harbor_id: str) -> None:
+        request = urllib_request.Request(
+            f"{host}/voyages", data=json.dumps({"vessel": "Endeavour", "harbor": issued_harbor_id}).encode(), ...
+        )
+```
+
+The fixture is generated and the root tests stay agent-owned: a render never
+rewrites a test written by hand, and the given and the then are still the
+author's. A test written by hand before the route reached the other context
+takes the fixture as a parameter and sends it where it sent the sample (a test
+that needs two distinct harbors submits the second one itself). The render
+names every such test it keeps: a function of a root test that calls the
+route (its path and its method written out, as in `f"{host}/voyages"` and
+`"POST"`) and does not name the fixture is listed as `kept <path>: <Class>.<test>,
+written by hand, calls POST /voyages and does not take the issued_harbor_id
+fixture: ...`, so every one can be changed before the gate runs rather than
+found one failing test at a time. A route with a `{field}` in its path is not
+listed this way.
+
 ## 6 `generator.toml`
 
 ```toml

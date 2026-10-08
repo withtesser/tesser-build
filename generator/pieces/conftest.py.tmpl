@@ -126,6 +126,15 @@ def host(request: pytest.FixtureRequest{{#located}}, tmp_path_factory: pytest.Te
             os.killpg(served.pid, signal.SIGKILL)
             served.wait()
 {{/restate_engine}}
+{{#given_helpers}}
+
+
+@pytest.fixture
+def {{helper}}(host: str) -> {{type}}:
+    answer = httpx.{{verb}}(f"{host}{{path}}", json={{helper_json}}, timeout=DEADLINE_SECONDS)
+    answer.raise_for_status()
+    return {{type}}(answer.json()["{{identity}}"])
+{{/given_helpers}}
 {{/root_tier}}
 
 

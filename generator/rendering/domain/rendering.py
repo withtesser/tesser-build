@@ -2725,7 +2725,7 @@ class Model(ts.Entity):
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
             answered_by[str(story["route"])] = {
                 "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
-                "body": repr(json.dumps(body).encode()) if body else "None",
+                "body": repr(json.dumps(body).encode()) if body else "None", "sample_body": body,
                 "path_types": {str(t.field()): str(t.type_text()) for t in request.targets() if str(t.field()) in path_fields},
                 "path_samples": {str(t.field()): str(self._samples.value(t).literal(t)) for t in request.targets()
                                  if str(t.field()) in path_fields},
@@ -2770,7 +2770,8 @@ class Model(ts.Entity):
                 else:
                     answer = str(status_code)
                 probes.append(dict(probe, body=repr(json.dumps(body).encode()), answer=answer, body_fields=sorted(body),
-                                   issues=[str(t.field()) for t in response.targets()] if answer == str(status_code) else []))
+                                   issues=[str(t.field()) for t in response.targets()] if answer == str(status_code) else [],
+                                   issue_types={str(t.field()): str(t.type_text()) for t in response.targets()}))
             elif path_fields and loads_at:
                 probes.append(dict(probe, body="None", answer=unknown))
         self._unserved = {story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories}
@@ -2787,6 +2788,7 @@ class Model(ts.Entity):
             ])
             root_tests.append({
                 "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
+                "operation": call["operation"], "sample_body": call["sample_body"], "given_params": "", "issues_any": [],
                 "method": method, "path": path, "body": call["body"], "status": str(story["status"]),
                 "path_values": [{"name": name, "type": kind, "sample": path_samples[name]} for name, kind in path_types.items()],
                 "story_text": repr(f"{story_id}: given {story.get('given', '')}; then {story.get('then', '')}"),
@@ -2878,6 +2880,35 @@ class Model(ts.Entity):
                     model.join(other)
             model.reach()
         bindings = [model._binding for model in ordered]
+        issuers: dict[str, dict[str, object]] = {}
+        for model in models:
+            for probe in typing.cast(list[dict[str, object]], model._binding["route_probes"]):
+                if model._identity in typing.cast(list[str], probe["issues"]) and model._identity not in issuers:
+                    issuers[model._identity] = probe
+        helpers: dict[str, dict[str, object]] = {}
+        issued_routes: list[tuple[str, str, str, str]] = []
+        for model in models:
+            for test in typing.cast(list[dict[str, object]], model._binding["root_tests"]):
+                sampled = [probe for probe in typing.cast(list[dict[str, object]], model._binding["route_probes"])
+                           if probe["operation"] == test["operation"] and "body_fields" in probe]
+                fills = typing.cast(dict[str, str], json.loads(str(sampled[0]["fills"]))) if sampled else {}
+                for identity in fills.values():
+                    issuer = issuers[identity]
+                    helpers[identity] = {
+                        "helper": "issued_" + identity, "identity": identity,
+                        "type": typing.cast(dict[str, str], issuer["issue_types"])[identity],
+                        "verb": str(issuer["method"]).lower(), "path": str(issuer["path"]),
+                        "helper_json": json.dumps(json.loads(ast.literal_eval(str(issuer["body"])))),
+                    }
+                if not fills:
+                    continue
+                test["given_params"] = "".join(f", issued_{identity}: {helpers[identity]['type']}" for identity in dict.fromkeys(fills.values()))
+                test["issues_any"] = [{}]
+                test["body"] = "json.dumps({" + ", ".join(
+                    f"{json.dumps(field)}: {'issued_' + fills[field] if field in fills else json.dumps(value)}"
+                    for field, value in typing.cast(dict[str, object], test["sample_body"]).items()) + "}).encode()"
+                issued_routes.extend((str(test["method"]), str(test["path"]), "issued_" + identity, field)
+                                     for field, identity in fills.items() if "{" not in str(test["path"]))
         locations: list[dict[str, object]] = []
         for binding in bindings:
             for location in typing.cast(list[dict[str, object]], binding["locations"]):
@@ -2888,6 +2919,8 @@ class Model(ts.Entity):
         root["contexts_reversed"] = list(reversed(bindings))
         root["root_tests"] = [test for binding in bindings for test in typing.cast(list[dict[str, object]], binding["root_tests"])]
         root["root_tier"] = [{}] if root["root_tests"] else []
+        root["given_helpers"] = [helpers[identity] for identity in sorted(helpers)]
+        root["issued_routes"] = json.dumps(issued_routes)
         root["route_probes"] = [probe for binding in bindings for probe in typing.cast(list[dict[str, object]], binding["route_probes"])]
         root["route_probe_answers"] = ", ".join(str(probe["answer"]) for probe in typing.cast(list[dict[str, object]], root["route_probes"]))
         root["locations"] = locations
@@ -3167,6 +3200,38 @@ class Level(ts.Entity):
         return tuple(self._drift)
 
 
+class RootTestSpec(ts.Spec):
+
+    def __init__(self, path: str, source: str, issued: str) -> None:
+        self.path = path
+        self.source = source
+        self.issued = issued
+
+
+class RootTest(ts.ValueObject):
+
+    _unissued: tuple[Text, ...]
+
+    def __init__(self, spec: RootTestSpec) -> None:
+        statements = ast.parse(spec.source).body
+        found: list[Text] = []
+        for owner, node in [("", top) for top in statements] + [
+            (top.name + ".", member) for top in statements if isinstance(top, ast.ClassDef) for member in top.body
+        ]:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            text = ast.get_source_segment(spec.source, node) or ""
+            for method, route, fixture, field in typing.cast(list[list[str]], json.loads(spec.issued)):
+                if f"{{host}}{route}\"" in text and f"\"{method}\"" in text and fixture not in text:
+                    found.append(Text(
+                        f"{spec.path}: {owner}{node.name}, written by hand, calls {method} {route} and does not take the "
+                        f"{fixture} fixture: take it, and send it as {field}, which {method} {route} looks up in another context"))
+        object.__setattr__(self, "_unissued", tuple(found))
+
+    def unissued(self) -> tuple[Text, ...]:
+        return self._unissued
+
+
 class MergeSpec(ts.Spec):
 
     def __init__(self, path: str, rendered: str, existing: str, records: tuple[tuple[str, str], ...], mode: str) -> None:
@@ -3413,6 +3478,7 @@ class RenderedTree(ts.AggregateRoot):
         if spec.target == "not_directory":
             found.append(Text("the output directory is a file"))
         rendered: list[RenderedFile] = []
+        issued = ""
         if not found:
             try:
                 models: list[Model] = []
@@ -3439,6 +3505,7 @@ class RenderedTree(ts.AggregateRoot):
                     models[0].join(model)
                 models[0].compose()
                 scope = models[0].scope()
+                issued = str(scope.value("issued_routes"))
                 for path, text in spec.pieces:
                     template = Template(path.removesuffix(TEMPLATE_SUFFIX))
                     for placed in template.place(scope):
@@ -3553,6 +3620,8 @@ class RenderedTree(ts.AggregateRoot):
                 kept.append(Text(path if origin is None else f"{path}: what was written by hand in {origin}"))
             kept.extend(Text(f"{path}: {name}, written by hand, which the composition now renders differently")
                         for name in merge.conflicts())
+            if issued and path.startswith("tests/") and current.startswith(AGENT_MARKER):
+                kept.extend(RootTest(RootTestSpec(path=path, source=current, issued=issued)).unissued())
         removed: list[Text] = []
         for path in sorted(records):
             if rendered and path not in rendered_paths and path in existing:

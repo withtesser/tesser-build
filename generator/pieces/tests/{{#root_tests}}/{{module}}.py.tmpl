@@ -1,13 +1,16 @@
 # pragma: tesser-agent-owned; rendered as a skeleton for you to write, and a render keeps each definition written here by hand
 from __future__ import annotations
 
+{{#issues_any}}
+import json
+{{/issues_any}}
 import urllib.error as urllib_error
 import urllib.request as urllib_request
 
 
 class Test{{Words}}:
 
-    def test_{{story}}(self, host: str) -> None:
+    def test_{{story}}(self, host: str{{given_params}}) -> None:
 {{#path_values}}
         {{name}}: {{type}} = {{sample}}
 {{/path_values}}

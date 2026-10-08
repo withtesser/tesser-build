@@ -2054,3 +2054,71 @@ class TestRenderingCompositions:
         assert "            (\"POST\", \"/harbors\", b'{\"place_name\": \"Valparaiso\"}', {}),\n" in host_test
         assert "            (\"POST\", \"/voyages\", b'{\"vessel\": \"Endeavour\", \"harbor\": \"harbor-1\"}', {\"harbor\": \"harbor_id\"}),\n" in host_test
         assert "        assert answers == [400, 201, 422, 400, 201, 422]\n" in host_test
+
+    def test_a_root_test_takes_a_fixture_that_issues_what_its_route_looks_up_in_another_context(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_submitting_voyages.py", "tests/test_submitting_harbors.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert (
+            "@pytest.fixture\n"
+            "def issued_harbor_id(host: str) -> str:\n"
+            "    answer = httpx.post(f\"{host}/harbors\", json={\"place_name\": \"Valparaiso\"}, timeout=DEADLINE_SECONDS)\n"
+            "    answer.raise_for_status()\n"
+            "    return str(answer.json()[\"harbor_id\"])\n"
+        ) in (tmp_path / "out" / "conftest.py").read_text()
+        submitting = (tmp_path / "out" / "tests" / "test_submitting_voyages.py").read_text()
+        assert "import json\n" in submitting
+        assert "    def test_s_1_a_1(self, host: str, issued_harbor_id: str) -> None:\n" in submitting
+        assert 'f"{host}/voyages", data=json.dumps({"vessel": "Endeavour", "harbor": issued_harbor_id}).encode(),' in submitting
+        reading = (tmp_path / "out" / "tests" / "test_reading_voyages_by_voyage_id.py").read_text()
+        assert "    def test_s_1_b_1(self, host: str) -> None:\n" in reading
+        assert "import json" not in reading
+        assert "issued_" not in (tmp_path / "out" / "tests" / "test_submitting_harbors.py").read_text()
+
+    def test_a_render_names_each_root_test_written_by_hand_that_calls_the_route_without_the_fixture(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        )
+        rendering.client.render_composition(render_composition_request)
+        reading = tmp_path / "out" / "tests" / "test_reading_voyages_by_voyage_id.py"
+        reading.write_text(reading.read_text().replace(
+            "    def test_s_1_b_1(self, host: str) -> None:\n        voyage_id: str = \"voyage-1\"\n",
+            "    def test_s_1_b_1(self, host: str) -> None:\n"
+            "        planning = urllib_request.Request(\n"
+            "            f\"{host}/voyages\", data=b'{\"vessel\": \"Endeavour\", \"harbor\": \"harbor-1\"}', "
+            "headers={\"Content-Type\": \"application/json\"}, method=\"POST\"\n"
+            "        )\n"
+            "        with urllib_request.urlopen(planning, timeout=30) as planned:\n"
+            "            voyage_id: str = planned.headers[\"Location\"]\n"
+            "\n"
+            "    def test_s_2(self, host: str, issued_harbor_id: str) -> None:\n"
+            "        planning = urllib_request.Request(\n"
+            "            f\"{host}/voyages\", data=issued_harbor_id.encode(), headers={\"Content-Type\": \"application/json\"}, method=\"POST\"\n"
+            "        )\n"
+            "\n"
+            "    def test_s_3(self, host: str) -> None:\n"
+            "        charting = urllib_request.Request(f\"{host}/harbors\", data=b'{}', method=\"POST\")\n"
+            "        voyage_id: str = \"voyage-1\"\n",
+        ))
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+
+        assert render_composition_response.problems == ()
+        assert [kept for kept in render_composition_response.kept if "issued_harbor_id" in kept] == [
+            "tests/test_reading_voyages_by_voyage_id.py: TestReadingVoyagesByVoyageId.test_s_1_b_1, written by hand, calls POST "
+            "/voyages and does not take the issued_harbor_id fixture: take it, and send it as harbor, which POST /voyages looks "
+            "up in another context",
+        ]
