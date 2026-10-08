@@ -43,7 +43,8 @@ app as `{tree}`. The filled prompts and the agents' gate logs go to
    If green reports a **GAP** (the contract lacks something a story needs), it
    stops without working around it. The fix is in the composition: correct
    `composition.toml` (by hand, or with an agent given the gap) and render
-   again, which keeps every file an agent owns; then run green again. If the
+   again, which keeps every definition written by hand
+   (`generator/compositions/README.md`); then run green again. If the
    gap is really in the stories, go back to step 3.
 6. **Ship.** Run `scripts/verify <app>`, and open a PR.
 

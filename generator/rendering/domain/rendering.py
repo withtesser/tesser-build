@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import enum
+import hashlib
 import json
 import keyword
 import re
@@ -81,6 +83,16 @@ WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 PRIMITIVE_TYPES: typing.Final[tuple[str, ...]] = ("str", "int")
 
 UNKNOWN: typing.Final[str] = "\x00unknown"
+
+WHOLE: typing.Final[str] = "*"
+
+NESTED: typing.Final[str] = " / "
+
+RECORDED: typing.Final[str] = "recorded"
+
+GENERATED: typing.Final[str] = "generated"
+
+OWNED: typing.Final[str] = "owned"
 
 
 class Health(ts.Outcome):
@@ -2488,6 +2500,260 @@ class Model(ts.Entity):
         return Scope((tuple(table), (indexes[id(self._binding)],)))
 
 
+class Digest(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        normalized = "\n".join(line.rstrip() for line in value.splitlines()).strip("\n")
+        object.__setattr__(self, "_value", hashlib.sha256(normalized.encode()).hexdigest()[:16])
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class LevelSpec(ts.Spec):
+
+    def __init__(
+        self,
+        path: str,
+        mode: str,
+        records: tuple[tuple[str, str], ...],
+        rendered: tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...]], ...],
+        existing: tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...]], ...],
+    ) -> None:
+        self.path = path
+        self.mode = mode
+        self.records = records
+        self.rendered = rendered
+        self.existing = existing
+
+
+class Level(ts.Entity):
+
+    def __init__(self, spec: LevelSpec) -> None:
+        self._path = spec.path
+        self._kept: list[Text] = []
+        self._conflicts: list[Text] = []
+        self._drift: list[Text] = []
+        records = dict(spec.records)
+        wanted = {row[0]: row for row in spec.rendered}
+        placed: list[tuple[str, str, str]] = []
+        for key, name, lead, text, members in spec.existing:
+            whole = text + "".join(member_lead + member_text for _, _, member_lead, member_text in members)
+            row = wanted.get(key)
+            if row is None:
+                untouched = spec.mode == RECORDED and records.get(key) == str(Digest(text)) and all(
+                    records.get(member_key) == str(Digest(member_text)) for member_key, _, _, member_text in members
+                )
+                if untouched and not key.startswith(("import ", "from ")):
+                    self._drift.append(Text(f"{spec.path}: {name} is no longer rendered"))
+                elif not untouched:
+                    self._kept.append(Text(name))
+                    placed.append((key, lead, whole))
+                continue
+            _, rendered_name, _, rendered_text, rendered_members = row
+            split = bool(members) and bool(rendered_members)
+            rendered_whole = rendered_text + "".join(member_lead + member_text for _, _, member_lead, member_text in rendered_members)
+            ours, theirs = (text, rendered_text) if split else (whole, rendered_whole)
+            recorded = records.get(key)
+            chosen = theirs
+            if Digest(ours) == Digest(theirs):
+                chosen = theirs
+            elif spec.mode == RECORDED and recorded == str(Digest(ours)):
+                self._drift.append(Text(f"{spec.path}: {rendered_name} differs from what the composition renders"))
+            else:
+                chosen = ours
+                self._kept.append(Text(name))
+                if spec.mode == RECORDED and recorded != str(Digest(theirs)):
+                    self._conflicts.append(Text(name))
+                    self._drift.append(Text(f"{spec.path}: {name} was edited by hand, and the composition now renders it differently"))
+            if split:
+                level = Level(LevelSpec(
+                    path=spec.path, mode=spec.mode, records=spec.records,
+                    rendered=tuple((member_key, member_name, member_lead, member_text, ())
+                                   for member_key, member_name, member_lead, member_text in rendered_members),
+                    existing=tuple((member_key, member_name, member_lead, member_text, ())
+                                   for member_key, member_name, member_lead, member_text in members),
+                ))
+                self._kept.extend(level.kept())
+                self._conflicts.extend(level.conflicts())
+                self._drift.extend(level.drift())
+                chosen += "".join(str(piece) for piece in level.placed())
+            placed.append((key, lead, chosen))
+        for index, (key, name, lead, text, members) in enumerate(spec.rendered):
+            if any(placed_key == key for placed_key, _, _ in placed):
+                continue
+            if not key.startswith(("import ", "from ")):
+                self._drift.append(Text(f"{spec.path}: {name} is missing"))
+            position = 0
+            for earlier in reversed(spec.rendered[:index]):
+                at = [spot for spot, (placed_key, _, _) in enumerate(placed) if placed_key == earlier[0]]
+                if at:
+                    position = at[0] + 1
+                    break
+            placed.insert(position, (key, lead, text + "".join(member_lead + member_text for _, _, member_lead, member_text in members)))
+        self._placed = tuple(Text(lead + text) for _, lead, text in placed)
+
+    @property
+    def identity(self) -> str:
+        return self._path
+
+    def placed(self) -> tuple[Text, ...]:
+        return self._placed
+
+    def kept(self) -> tuple[Text, ...]:
+        return tuple(self._kept)
+
+    def conflicts(self) -> tuple[Text, ...]:
+        return tuple(self._conflicts)
+
+    def drift(self) -> tuple[Text, ...]:
+        return tuple(self._drift)
+
+
+class MergeSpec(ts.Spec):
+
+    def __init__(self, path: str, rendered: str, existing: str, records: tuple[tuple[str, str], ...], mode: str) -> None:
+        self.path = path
+        self.rendered = rendered
+        self.existing = existing
+        self.records = records
+        self.mode = mode
+
+
+class Merge(ts.Entity):
+
+    def __init__(self, spec: MergeSpec) -> None:
+        self._path = spec.path
+        self._kept: list[Text] = []
+        self._conflicts: list[Text] = []
+        self._drift: list[Text] = []
+        self._text = Text(spec.rendered)
+        records = dict(spec.records)
+        if not spec.path.endswith(".py"):
+            self._recorded: tuple[Text, ...] = (Text(f"{Digest(spec.rendered)}\t{spec.path}\t{WHOLE}"),)
+            recorded = records.get(WHOLE)
+            if Digest(spec.existing) == Digest(spec.rendered):
+                return
+            if spec.mode == GENERATED or (spec.mode == RECORDED and recorded == str(Digest(spec.existing))):
+                self._drift.append(Text(f"{spec.path} differs from what the composition renders"))
+                return
+            self._text = Text(spec.existing)
+            self._kept.append(Text(spec.path))
+            if spec.mode == RECORDED and recorded != str(Digest(spec.rendered)):
+                self._conflicts.append(Text(spec.path))
+                self._drift.append(Text(f"{spec.path} was edited by hand, and the composition now renders it differently"))
+            return
+        layouts: list[tuple[str, tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool], ...], str]] = []
+        for source in (spec.rendered,) if spec.mode == GENERATED else (spec.rendered, spec.existing):
+            try:
+                statements = ast.parse(source).body
+            except SyntaxError as error:
+                raise ValueError(f"line {error.lineno}: {error.msg}") from error
+            lines = source.splitlines(keepends=True)
+            spots: dict[int, tuple[int, str, str]] = {}
+            for statement in [*statements, *(member for top in statements if isinstance(top, ast.ClassDef) for member in top.body)]:
+                start = statement.lineno
+                if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    start = min([start] + [decorator.lineno for decorator in statement.decorator_list])
+                if isinstance(statement, (ast.Import, ast.ImportFrom)):
+                    key = name = ast.unparse(statement)
+                elif isinstance(statement, ast.ClassDef):
+                    key, name = f"class {statement.name}", statement.name
+                elif isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    key, name = f"def {statement.name}", statement.name
+                elif isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
+                    key, name = f"{statement.targets[0].id} =", statement.targets[0].id
+                elif isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+                    key, name = f"{statement.target.id} =", statement.target.id
+                else:
+                    key = name = lines[statement.lineno - 1].strip()
+                spots[id(statement)] = (start, key, name)
+            first = spots[id(statements[0])][0] if statements else len(lines) + 1
+            head = 0
+            while head < first - 1 and lines[head].startswith("#"):
+                head += 1
+            headers: dict[int, int] = {}
+            for top in statements:
+                if isinstance(top, ast.ClassDef) and spots[id(top.body[0])][0] > top.lineno:
+                    header_end = spots[id(top.body[0])][0] - 1
+                    while header_end > spots[id(top)][0] and (
+                        not lines[header_end - 1].strip() or lines[header_end - 1].lstrip().startswith("#")
+                    ):
+                        header_end -= 1
+                    headers[id(top)] = header_end
+            work: list[tuple[list[ast.stmt], int, str, str, int]] = [
+                (top.body, headers[id(top)], spots[id(top)][1] + NESTED, spots[id(top)][2] + ".", id(top))
+                for top in statements if isinstance(top, ast.ClassDef) and id(top) in headers
+            ]
+            work.append((statements, head, "", "", 0))
+            levels: dict[int, tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool], ...]] = {}
+            for body, after, prefix, owner, owner_id in work:
+                rows: list[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool]] = []
+                seen: dict[str, int] = {}
+                previous = after
+                for statement in body:
+                    start, key, name = spots[id(statement)]
+                    end = statement.end_lineno or start
+                    seen[key] = seen.get(key, 0) + 1
+                    if seen[key] > 1:
+                        key, name = f"{key} #{seen[key]}", f"{name} #{seen[key]}"
+                    text = "".join(lines[start - 1 : headers.get(id(statement), end) if owner_id == 0 else end])
+                    members = tuple(row[:4] for row in levels.get(id(statement), ())) if owner_id == 0 else ()
+                    rows.append((
+                        prefix + key, owner + name, "".join(lines[previous : start - 1]),
+                        text if text.endswith("\n") else text + "\n", members,
+                        isinstance(statement, (ast.Import, ast.ImportFrom)),
+                    ))
+                    previous = end
+                levels[owner_id] = tuple(rows)
+            last = max((statement.end_lineno or 0) for statement in statements) if statements else head
+            layouts.append(("".join(lines[:head]), levels[0], "".join(lines[last:])))
+        head_text, module_rows, tail = layouts[0]
+        self._recorded = tuple(
+            Text(f"{Digest(text)}\t{spec.path}\t{key}")
+            for row_key, _, _, row_text, members, _ in module_rows
+            for key, text in [(row_key, row_text), *((member_key, member_text) for member_key, _, _, member_text in members)]
+        )
+        if spec.mode == GENERATED:
+            if spec.existing != spec.rendered:
+                self._drift.append(Text(f"{spec.path} differs from what the composition renders"))
+            return
+        pieces: list[str] = [head_text]
+        for imported in (True, False):
+            level = Level(LevelSpec(
+                path=spec.path, mode=spec.mode, records=spec.records,
+                rendered=tuple(row[:5] for row in module_rows if row[5] == imported),
+                existing=tuple(row[:5] for row in layouts[1][1] if row[5] == imported),
+            ))
+            self._kept.extend(level.kept())
+            self._conflicts.extend(level.conflicts())
+            self._drift.extend(level.drift())
+            pieces.extend(str(piece) for piece in level.placed())
+        if self._kept:
+            self._text = Text("".join(pieces) + tail)
+
+    @property
+    def identity(self) -> str:
+        return self._path
+
+    def text(self) -> Text:
+        return self._text
+
+    def kept(self) -> tuple[Text, ...]:
+        return tuple(self._kept)
+
+    def conflicts(self) -> tuple[Text, ...]:
+        return tuple(self._conflicts)
+
+    def drift(self) -> tuple[Text, ...]:
+        return tuple(self._drift)
+
+    def recorded(self) -> tuple[Text, ...]:
+        return self._recorded
+
+
 class RenderedFileSpec(ts.Spec):
 
     def __init__(self, path: str, content: str) -> None:
@@ -2585,28 +2851,60 @@ class RenderedTree(ts.AggregateRoot):
                 found.append(Text(f"a piece renders the path {path!r}, which leaves the output directory"))
         self._faults = tuple(found)
         existing = dict(spec.existing)
+        records: dict[str, list[tuple[str, str]]] = {}
+        for line in existing.get(RENDERED_FROM, "").splitlines()[1:]:
+            fields = line.split("\t")
+            if len(fields) == 3:
+                records.setdefault(fields[1], []).append((fields[2], fields[0]))
         written: list[RenderedFile] = []
         kept: list[Text] = []
         drift: list[Text] = []
+        recorded: list[str] = []
+        composed = ""
         for rendered_file in sorted(rendered, key=str):
             path = str(rendered_file.path())
             content = str(rendered_file.content())
-            agents = content.startswith(AGENT_MARKER)
-            if not agents and path not in existing:
-                drift.append(Text(f"{path} is missing"))
-            elif not agents and existing[path] != content:
-                marked = not content.startswith(GENERATED_MARKER) or existing[path].startswith(GENERATED_MARKER)
-                drift.append(Text(f"{path} differs from what the composition renders" if marked else f"{path} has lost its generated mark"))
-            if path not in existing or existing[path] == content:
-                written.append(rendered_file)
-            elif agents:
-                kept.append(Text(path))
-            elif content.startswith(GENERATED_MARKER) and existing[path].startswith(GENERATED_MARKER):
-                written.append(rendered_file)
-            else:
+            if path == RENDERED_FROM:
+                composed = content
+                if path not in existing:
+                    drift.append(Text(f"{path} is missing"))
+                elif existing[path].split("\n", 1)[0] != content.split("\n", 1)[0]:
+                    drift.append(Text(f"{path} differs from what the composition renders"))
+                continue
+            current = existing.get(path)
+            if current is None or path in records:
+                mode = RECORDED
+            elif not current.startswith((GENERATED_MARKER, AGENT_MARKER)) and current != content and not content.startswith(AGENT_MARKER):
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
+                drift.append(Text(f"{path} has lost its generated mark"))
+                continue
+            elif current.startswith(GENERATED_MARKER) and not records:
+                mode = GENERATED
+            else:
+                mode = OWNED
+            try:
+                merge = Merge(MergeSpec(
+                    path=path, rendered=content, existing=content if current is None else current,
+                    records=tuple(records.get(path, [])), mode=mode,
+                ))
+            except ValueError as unparsed:
+                found.append(Text(f"{path} does not parse ({unparsed}), so the render cannot keep what is written in it by hand"))
+                continue
+            recorded.extend(str(line) for line in merge.recorded())
+            written.append(RenderedFile(RenderedFileSpec(path=path, content=str(merge.text()))))
+            if current is None:
+                drift.append(Text(f"{path} is missing"))
+                continue
+            if content.startswith(GENERATED_MARKER) and not current.startswith(GENERATED_MARKER):
+                drift.append(Text(f"{path} has lost its generated mark"))
+            drift.extend(merge.drift())
+            if merge.kept():
+                kept.append(Text(path))
+            kept.extend(Text(f"{path}: {name}, written by hand, which the composition now renders differently")
+                        for name in merge.conflicts())
+        if composed:
+            written.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=composed + "".join(f"{line}\n" for line in recorded))))
         on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
-        on_disk.update({str(path): RenderedFile(RenderedFileSpec(path=str(path), content=existing[str(path)])) for path in kept})
         selected: list[str] = []
         for path in spec.printed:
             if "*" in path:

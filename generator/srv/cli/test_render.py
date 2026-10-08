@@ -131,28 +131,38 @@ class TestRenderHost:
         )
         assert not (tmp_path / "library" / "app").exists()
 
-    def test_rendering_again_overwrites_an_edited_generated_file_and_keeps_an_edited_agent_owned_one(
-        self, tmp_path: pathlib.Path
-    ) -> None:
+    def test_rendering_again_keeps_each_definition_written_by_hand_and_renders_the_rest(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         library = tmp_path / "library"
         env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
         render = [sys.executable, "-m", "srv.cli.render", str(tree / "compositions" / "library"), str(library)]
         subprocess.run(render, capture_output=True, text=True, check=True, env=env)
-        generated = library / "loans" / "client" / "client.py"
+        handler = library / "loans" / "adapters" / "handlers" / "http.py"
+        client_module = library / "loans" / "client" / "client.py"
+        component_module = library / "loans" / "component" / "component.py"
         owned = library / "loans" / "domain" / "loan.py"
-        rendered = generated.read_text()
-        generated.write_text(rendered + "\n")
-        owned.write_text(owned.read_text() + "\n")
+        rendered_component = component_module.read_text()
+        edited_handler = handler.read_text().replace("status_code=200,", "status_code=203,")
+        handler.write_text(edited_handler)
+        added_client = client_module.read_text() + (
+            "\n\nclass LoanMissing(ts.Error):\n\n    def __init__(self, message: str) -> None:\n        super().__init__(message)\n"
+        )
+        client_module.write_text(added_client)
+        component_module.write_text(rendered_component.replace("\n    async def close(self) -> None:\n        return None\n", ""))
+        edited_owned = owned.read_text().replace("self._borrower = spec.borrower", "self._borrower = spec.borrower.strip()")
+        owned.write_text(edited_owned)
 
         completed = subprocess.run(render, capture_output=True, text=True, check=False, env=env)
 
         assert (completed.returncode, completed.stderr) == (0, "")
-        assert generated.read_text() == rendered
-        assert owned.read_text().endswith("\n\n")
-        assert "kept loans/domain/loan.py" in completed.stdout.splitlines()
+        assert (handler.read_text(), client_module.read_text(), component_module.read_text(), owned.read_text()) == (
+            edited_handler, added_client, rendered_component, edited_owned,
+        )
+        assert [line for line in completed.stdout.splitlines() if line.startswith("kept ")] == [
+            "kept loans/adapters/handlers/http.py", "kept loans/client/client.py", "kept loans/domain/loan.py",
+        ]
 
-    def test_a_check_passes_on_a_fresh_render_and_fails_naming_each_generated_file_that_drifted(
+    def test_a_check_passes_on_a_fresh_render_and_beside_hand_edits_and_fails_naming_what_a_render_would_change(
         self, tmp_path: pathlib.Path
     ) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -161,24 +171,29 @@ class TestRenderHost:
         composition = str(tree / "compositions" / "library")
         subprocess.run([sys.executable, "-m", "srv.cli.render", composition, str(library)], capture_output=True, check=True, env=env)
         check = [sys.executable, "-m", "srv.cli.render", "--check", composition, str(library)]
+        handler = library / "loans" / "adapters" / "handlers" / "http.py"
 
         fresh = subprocess.run(check, capture_output=True, text=True, check=False, env=env)
+        handler.write_text(handler.read_text().replace("status_code=200,", "status_code=203,"))
         (library / "loans" / "client" / "client.py").write_text(
-            (library / "loans" / "client" / "client.py").read_text() + "\n"
+            (library / "loans" / "client" / "client.py").read_text()
+            + "\n\nclass LoanMissing(ts.Error):\n\n    def __init__(self, message: str) -> None:\n        super().__init__(message)\n"
         )
+        edited = subprocess.run(check, capture_output=True, text=True, check=False, env=env)
+        handler.write_text(handler.read_text().split("\n    async def get_loan(", 1)[0])
         (library / "loans" / "component" / "component.py").unlink()
         (library / "loans" / "client" / "__init__.py").write_text(
             (library / "loans" / "client" / "__init__.py").read_text().split("\n", 1)[1]
         )
-        (library / "loans" / "domain" / "loan.py").write_text("the agent's own\n")
         drifted = subprocess.run(check, capture_output=True, text=True, check=False, env=env)
 
         assert fresh.returncode == 0, fresh.stderr
         assert fresh.stdout.startswith("check: ")
+        assert edited.returncode == 0, edited.stderr
         assert (drifted.returncode, drifted.stdout) == (1, "")
         assert drifted.stderr.splitlines() == [
+            "check: loans/adapters/handlers/http.py: HttpHandler.get_loan is missing",
             "check: loans/client/__init__.py has lost its generated mark",
-            "check: loans/client/client.py differs from what the composition renders",
             "check: loans/component/component.py is missing",
         ]
 

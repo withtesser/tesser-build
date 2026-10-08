@@ -9,11 +9,11 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> 
 ```
 
 It prints the path of every file it wrote, one per line (then `kept <path>` for
-each agent-owned file it left alone), and exits 0; or it prints every problem
+each file in which it kept something written by hand, below), and exits 0; or it prints every problem
 on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
 (repeatable) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
-as the render leaves it (so a kept agent-owned file prints as it stands). A
+as the render leaves it (so what was written by hand prints as it stands). A
 `--print` path the composition does not render is a problem. A `--print` with
 a `*` is a pattern (`*` matches within one path segment): it prints every
 rendered path it matches, in path order, so `--print 'tests/test_*.py'`
@@ -24,14 +24,48 @@ tree follows its composition:
 
 - a file the renderer does not write (a `README.md`, a `specs/` directory
   holding the composition itself) is left where it is;
-- a file marked generated (below) is overwritten;
-- an agent-owned file that already exists is kept as it is;
-- a file where a generated one goes that is not marked generated, and differs,
-  is a problem.
+- a file it renders is merged definition by definition (below, "Writing by
+  hand in a rendered tree"): what the composition renders follows it, and what
+  was written by hand stays;
+- a file where a rendered one goes that carries no mark, was not rendered there
+  before, and differs, is a problem;
+- a Python file that does not parse is a problem, since nothing in it can be
+  told apart.
 
 If anything is a problem, nothing is written. Every rendered path stays inside
 the output directory: the renderer refuses a path that resolves outside it,
 symlinks included, and two pieces rendering one path.
+
+## Writing by hand in a rendered tree
+
+The unit is the definition: an import, a module constant, a function, a class,
+and each method or class-level statement of a class. Every render records in
+`.tesser-rendered` what it rendered for each definition of each file, so the
+next render can tell three kinds apart:
+
+- **untouched** — the file still holds what the last render wrote. It follows
+  the composition: a render rewrites it, and removes it when the composition no
+  longer renders it.
+- **edited by hand** — a rendered definition you changed. A render keeps it as
+  you left it. If the composition now renders it differently, the render keeps
+  your version and says so (`kept <path>: <Class.method>, written by hand,
+  which the composition now renders differently`); merge the two by hand.
+- **added by hand** — a definition the composition does not render: a method
+  on a rendered class, a class, a constant, an import. A render keeps it where
+  you put it.
+
+A definition the composition renders and the file lacks is written back, after
+the definition it follows. So the hand-written path is: change the
+composition for what it can say, and write the rest by hand where it is
+needed, in any file, rendered or not. Put hand-written logic in a definition
+of its own when you can (a method beside the rendered ones, a class of your
+own), because an edited rendered definition stops following the composition;
+to hand one back to the composition, delete it and render again.
+
+A file rendered before the renderer kept records (its `.tesser-rendered` has
+only its first line) is rendered over if it carries the generated mark, and
+keeps every definition that differs if it carries the agent-owned mark; that
+render writes the records, and the next one merges.
 
 **Checking a tree against its composition:**
 
@@ -39,15 +73,22 @@ symlinks included, and two pieces rendering one path.
 PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check <composition-dir> <tree>
 ```
 
-renders in memory, writes nothing, and exits 1 naming each generator-owned
-file that differs from what the composition renders, is missing, or has lost
-its generated mark (agent-owned files are not checked); otherwise it exits 0.
-Every render writes `.tesser-rendered` (generator-owned, and like
-`.tesser-root` it carries no marker): its one line is the composition
-directory, relative to the root of the git repo the output directory is in
-when the composition is inside that repo, else absolute. A tree's
-`scripts/verify` arm runs the check first when the file is there, so a
-rendered tree is checked against its composition by default.
+renders in memory, writes nothing, and exits 1 naming what a render would
+change or would meet: a rendered file that is missing or has lost its generated
+mark, and per definition (`<path>: <Class.method> ...`) one the file lacks
+(`is missing`), an untouched one the composition now renders differently
+(`differs from what the composition renders`), an untouched one it no longer
+renders (`is no longer rendered`), and one edited by hand that the composition
+has rendered differently since (`was edited by hand, and the composition now
+renders it differently`); otherwise it exits 0. A definition edited or added by
+hand is not a difference, and neither is an import. Every render writes
+`.tesser-rendered` (the renderer's, and like `.tesser-root` it carries no
+marker): its first line is the composition directory, relative to the root of
+the git repo the output directory is in when the composition is inside that
+repo, else absolute, and each further line records one rendered definition
+(`<digest>\t<path>\t<definition>`). A tree's `scripts/verify` arm runs the
+check first when the file is there, so a rendered tree is checked against its
+composition by default.
 
 **Names.** Every name that reaches a path or an identifier is checked: the
 context, app, storages, fields, action keys, and enum members and outcomes are
@@ -566,12 +607,13 @@ problem, since there is nothing to pick from.
 
 ## What is rendered, and who owns it
 
-Every rendered file says on its first line who owns it:
+Every rendered file says on its first line what it is; both kinds merge the
+same way (above, "Writing by hand in a rendered tree"):
 
-- `# pragma: tesser-generated; ...` — the renderer's. Change the composition
-  and render again, never the file (`--check` catches an edit).
-- `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
-  agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
+- `# pragma: tesser-generated; ...` — plumbing the composition determines.
+  Change the composition for what it can say; write by hand what it cannot.
+- `# pragma: tesser-agent-owned; ...` — a stub for the agent to write:
+  `<context>/domain/<aggregate>.py` with its `__init__.py` and
   `test_<aggregate>.py`, each `body = "agent"` implementation
   (`<context>/adapters/gateways/<class>.py` and its test, or for a store port
   `<context>/adapters/repositories/<class>.py` and its test), and the root

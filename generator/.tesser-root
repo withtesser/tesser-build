@@ -1,4 +1,5 @@
 app
+stdlib hashlib
 stdlib json
 stdlib keyword
 stdlib tomllib

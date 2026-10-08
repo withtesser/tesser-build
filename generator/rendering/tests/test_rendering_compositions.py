@@ -613,7 +613,9 @@ class TestRenderingCompositions:
             [sys.executable, "-m", "mypy", "--strict", "loans"], cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
         )
         store_path = tmp_path / "out" / "loans" / "adapters" / "repositories" / "file_loan_store.py"
-        edited = store_path.read_text() + "# the agent's edit\n"
+        edited = store_path.read_text().replace(
+            "    def __init__(self, location: str) -> None:\n", "    def __init__(self, location: str) -> None:\n        self._location = location\n"
+        )
         store_path.write_text(edited)
         second_response = rendering.client.render_composition(render_composition_request)
         check_composition_response = rendering.client.check_composition(
@@ -623,7 +625,7 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert tested.returncode == 0, tested.stdout
         assert typed.returncode == 0, typed.stdout
-        assert store_path.read_text().startswith("# pragma: tesser-agent-owned; generated once as a stub, the agent owns it from here\n")
+        assert store_path.read_text().startswith("# pragma: tesser-agent-owned; rendered as a stub for you to write, and a render keeps each definition written here by hand\n")
         assert "class FileLoanStore(ts.Repository):" in store_path.read_text()
         assert "async def transaction(self)" in store_path.read_text()
         assert (tmp_path / "out" / "loans" / "adapters" / "repositories" / "test_file_loan_store.py").read_text().startswith(
@@ -770,7 +772,7 @@ class TestRenderingCompositions:
 
         assert render_composition_response.problems == ()
         assert reading.read_text() == edited
-        assert "tests/test_reading_loans_by_loan_id.py" not in render_composition_response.written
+        assert "tests/test_reading_loans_by_loan_id.py" in render_composition_response.kept
 
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

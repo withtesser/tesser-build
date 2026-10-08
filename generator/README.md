@@ -194,7 +194,10 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir>
 
 `compositions/README.md` is the reference: every key each format takes, what
 the renderer derives, what it renders, and which rendered files are the
-agent's.
+agent's. Rendering again merges each file definition by definition: what the
+composition renders follows it, and every import, constant, function, class,
+or method edited or added by hand stays (`compositions/README.md`, "Writing by
+hand in a rendered tree").
 
 `infra.toml` holds what the app runs on and what an operator must provide: the
 app, the runtime, the engine if there is one (with `engine_path` and
