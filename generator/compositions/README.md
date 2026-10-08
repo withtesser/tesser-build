@@ -67,21 +67,19 @@ of its own when you can (a method beside the rendered ones, a class of your
 own), because an edited rendered definition stops following the composition;
 to hand one back to the composition, delete it and render again.
 
-**What the composition cannot say is written by hand.** For example, "POST
-/loans may leave out the days, and the loan is then for the days the operator
-sets in `TOOLSHED_DEFAULT_DAYS`, or 7" (no request field is optional, and
+**What the composition cannot say is written by hand.** For example, "a
+search may leave out the page size, and it is then the size the operator sets
+in `LIBRARY_PAGE_SIZE`, or 20" (no request field is optional, and
 `infra.toml`'s `[variables]` are read by no one):
 
-- `protocol/http.py`: add a method to `HttpRequest`,
-  `integer_or(self, name: str, default: int) -> int`, that answers the default
-  when the body leaves the field out (added; kept);
-- `srv/http/main.py`: add the constants `_DEFAULT_DAYS_VARIABLE` and
-  `_DEFAULT_DAYS` (added; kept), and in `HttpHost.run` read
-  `int(os.environ.get(_DEFAULT_DAYS_VARIABLE) or _DEFAULT_DAYS)` and hand it to
-  the context's `HttpHandler` (edited; kept);
+- `protocol/http.py`: add a method to `HttpRequest` that answers a default when
+  the request leaves the field out (added; kept);
+- `srv/http/main.py`: add a constant for the variable's name and one for its
+  fallback (added; kept), and in `HttpHost.run` read the variable and hand the
+  value to the context's `HttpHandler` (edited; kept);
 - `<context>/adapters/handlers/http.py`: have `HttpHandler.__init__` take and
-  keep `default_days: int`, and the route's method read
-  `http_request.integer_or("days", self._default_days)` (edited; kept);
+  keep the value, and the route's method read the field through the new
+  `HttpRequest` method with it as the default (edited; kept);
 - the tests beside them: add a test for each (added; kept), and describe the
   variable in `infra.toml`'s `[variables]`.
 
@@ -95,12 +93,12 @@ hand.
 aggregate, and its identity (its `names` line). When a render names any of them
 differently, each file the last render wrote whose path, with the old names
 spelled as the new, is a file this render writes and the tree lacks
-(`loans/domain/loan.py` as `checkouts/domain/checkout.py`,
-`tests/test_reading_loans_by_loan_id.py` as
-`tests/test_reading_checkouts_by_checkout_id.py`) hands what was written in it
+(`books/domain/book.py` as `titles/domain/title.py`,
+`tests/test_reading_books_by_book_id.py` as
+`tests/test_reading_titles_by_title_id.py`) hands what was written in it
 by hand to that file, with the old names spelled as the new wherever they are a
-whole word or a whole segment of a name (`Loan`, `LoanSpec`, `loans`,
-`loan_id`, `LOAN_ID`, `"loan-1"`; never `Loaner`), and is removed; the render
+whole word or a whole segment of a name (`Book`, `BookSpec`, `books`,
+`book_id`, `BOOK_ID`, `"book-1"`; never `Booking`), and is removed; the render
 says `kept <new path>: what was written by hand in <old path>`. Nothing else is
 carried by a rename: to rename an agent-owned class (a gateway, a store), move
 its file and rename the class by hand (`git mv`) before rendering, and the
