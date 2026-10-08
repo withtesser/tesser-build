@@ -5,14 +5,15 @@ and writes a complete tesser app tree:
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>...]...
 ```
 
 It prints the path of every file it wrote, one per line (then `removed <path>`
 for each file it removed, and `kept <path>` for each file in which it kept
 something written by hand, below), and exits 0; or it prints every problem
 on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
-(repeatable) names a rendered path, relative to the output directory; after
+(repeatable, and taking every path after it up to the next option:
+`--print a.py b.py`) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
 as the render leaves it (so what was written by hand prints as it stands). A
 `--print` path the composition does not render is a problem. A `--print` with
@@ -150,9 +151,12 @@ generator` renders it and runs the rendered tree's tessercheck (zero findings),
 tests take and, when `infra.toml` declares an engine, the engines (Docker
 required); it passes when every failure is a root test's status assertion (the
 served host answered another status). `library/` is the small worked example, `library-direct/` is
-the same app with no engine: its service calls the ports itself, and
+the same app with no engine: its service calls the ports itself,
 `library-catalog/` is that app with a second context its gateway reaches
-(below, "Several contexts in one app").
+(below, "Several contexts in one app"), and `voyages-harbors/` is two contexts
+whose gateway call is rendered and whose client operation refuses on what the
+gateway answers (below, "Refusing on what a step answers" and "What a gateway
+calls").
 
 ## Which file answers which question
 
@@ -490,6 +494,60 @@ aggregate inside `try` / `except errors.DomainError` and raises the client's
 the `ERRORS` tuple), and the HTTP handler answers it with 422 and
 `{"detail": "<message>"}`, so nothing a refusal crosses needs a hand edit.
 
+**A load of an identity nothing stored is refused too.** The store raises
+`KeyError` for it; the service turns that into
+`<Aggregate>Rejected("unknown_<aggregate>", "no <aggregate> has that <identity>")`,
+so the route answers 422, and the service test checks it
+(`test_<operation>_refuses_an_unknown_<aggregate>`). A gateway that reaches
+this context sees the refusal as the client's `<Aggregate>Rejected`.
+
+**Refusing on what a step answers.** A port that answers an enum (a lookup
+answering whether what it was asked about is known, say) can refuse the
+operation on some of its members. List them on the client operation:
+
+```toml
+[client.operations.plan_voyage]
+request = ["vessel", "harbor"]
+response = ["voyage_id"]
+steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
+refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "uncharted", message = "a voyage is planned to a charted harbor", field = "harbor" }]
+
+[enums]
+HarborStanding = ["uncharted", "charted"]
+
+[ports.HarborChart]
+operations.look_up_harbor = { request = ["harbor"], response = ["harbor_name: str", "harbor_standing: HarborStanding"] }
+```
+
+`when` is an enum field a step of the operation answers, `is` the member (or a
+list of members) that refuses, `code` the refusal's code (snake_case), and
+`message` (optional; the code's words otherwise) its message, printable ASCII
+free of quotes and backslashes, and `field` (optional) the request field it
+blames (`errors.invalid`'s `field`). One refusal per field, its `is` listing every
+member it refuses. The renderer writes the match in the mapper that builds the
+aggregate after that step (`MapTo<Aggregate>Spec`, or
+`MapTo<Aggregate>SpecWhenLoaded` after a load), which the service already
+builds inside its `try`, so the refusal reaches the route as 422 like any other:
+
+```python
+        match domain.HarborStanding(look_up_harbor_response.harbor_standing):
+            case domain.HarborStanding.UNCHARTED:
+                raise errors.invalid("uncharted_harbor", "a voyage is planned to a charted harbor", field="harbor")
+            case domain.HarborStanding.CHARTED:
+                pass
+            case _ as never:
+                typing.assert_never(never)
+```
+
+The service test gets a fake of the port answering the refused member
+(`FakeHarborChartAnsweringUncharted`) and a test that the operation raises
+`<Aggregate>Rejected` with the code and saves nothing
+(`test_plan_voyage_refuses_uncharted_harbor`). A refusal on a field no step
+answers, on a field that is not an enum, on a member the enum does not list, or
+whose step no build follows (the aggregate is built, and so refuses, before
+the step answers) is a problem. Put the step before the step that builds or
+loads the aggregate.
+
 **Steps**, in order:
 
 - `identity.<operation>` / `repository.<operation>` / `gateway.<operation>`:
@@ -705,13 +763,72 @@ The gateway's `__init__` takes the peer's client (`catalog_client:
 catalog_client.CatalogClient`) and its stub test hands it a fake of that
 client that answers each of its operations with samples, so the agent writes
 the call to the peer (and the translation of its answer) in the gateway's
-methods. The context's component takes the port as a parameter
+methods, unless `implementations.toml` says what each operation calls (below,
+"What a gateway calls"), and then the call is rendered. The context's component takes the port as a parameter
 (`Loans(config, book_register)`), and the app builds each context after the
 contexts it reaches and hands it the gateway over the peer's client
 (`loans_gateways.CatalogBookRegister(self.catalog.client)`); two contexts that
 reach each other are a problem. The host routes every context's operations,
 `pyproject.toml` collects every context's tests, and the root tests cover every
 context's routes. `library-catalog/` is the worked example.
+
+### What a gateway calls
+
+A gateway that `reaches` a context may say, per port operation, which of the
+peer client's operations it calls and how the fields cross:
+
+```toml
+[implementations.HarborChart.harbors]
+class = "HarborsHarborChart"
+body = "agent"
+reaches = "harbors"
+
+[implementations.HarborChart.harbors.operations.look_up_harbor]
+calls = "get_harbor"                                  # an operation of the harbors client
+sends = { harbor_id = "harbor" }                      # <its request field> = "<our request field>"
+answers = { harbor_name = "place_name", harbor_standing = "charted" }
+refused = { harbor_standing = "uncharted" }           # optional: what it answers when harbors refuses
+```
+
+- `sends`: each request field of the peer's operation is sent from the field
+  of ours it names, or from ours of the same name when it is left out; both
+  are a `str` or an `int` of the same type.
+- `answers`: each response field of ours is the peer's response field it names
+  (or the peer's field of the same name), of the same type; an enum field is
+  instead the member named here (or the enum's success member, below).
+- `refused`: with it, the call is made in a `try` that catches the peer's
+  `<Aggregate>Rejected` (what it raises when it refuses, an unknown identity
+  included) and answers the member named for each enum field (its `answers`
+  member when left out) and an empty value (`""`, `0`, `()`) for every other
+  field. Without it, a refusal is not caught.
+
+```python
+    async def look_up_harbor(self, look_up_harbor_request: ports.LookUpHarborRequest) -> ports.LookUpHarborResponse:
+        try:
+            get_harbor_response = await self._harbors_client.get_harbor(harbors_client.GetHarborRequest(harbor_id=look_up_harbor_request.harbor))
+        except harbors_client.HarborRejected:
+            return ports.LookUpHarborResponse(harbor_name="", harbor_standing="uncharted")
+        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, harbor_standing="charted")
+```
+
+The gateway stays agent-owned, so a method edited by hand is kept like any
+other; its test checks what the call answers from the fake peer client and,
+with `refused`, what it answers from a `FakeRejecting<Peer>Client`. A peer
+operation the peer's client does not declare, a field that does not cross
+(missing, or of another type), a list field, or a member the enum does not
+list is a problem, and so is an `operations` table on a gateway that reaches
+no context. An operation the table leaves out is stubbed as before.
+
+**The host test and another context.** `srv/http/test_main.py` calls each
+route with a sample body and checks the status it answers. When a step's
+rendered call looks the sample up in the peer by its identity (the peer's
+operation loads its aggregate), the test first submits the peer's sample
+through the peer's own route that issues that identity, and sends the issued
+identity in place of the sample: the probe carries `{"harbor": "harbor_id"}`,
+and the earlier `POST /harbors` answered `harbor_id`. When it cannot (no route
+of the peer's issues it), the test expects the status the unknown sample
+meets: 422 when `refused` answers a member the operation refuses, 500 when the
+call does not catch the refusal.
 
 ## 6 `generator.toml`
 
@@ -746,7 +863,14 @@ same way (above, "Writing by hand in a rendered tree"):
   test skeletons in `tests/` (above). A stub answers
   placeholders and never raises: a str read answers what the spec holds, a
   command its first outcome (the success outcome), an enum read its first value, a gateway
-  `""`, `0`, or an empty list for each field it answers.
+  `""`, `0`, or an empty list for each field it answers, and an enum field
+  its success member (below).
+
+**The success member of an enum** is its first member no `refuses` of the
+context names (its first member when none does). Every fake that answers an
+enum field the request does not carry (the service test's port fakes, the
+relay fakes) answers it, and so does a gateway stub, so a rendered tree passes
+its own tests whatever order the enum lists its members in.
 
 `.tesser-root` carries no marker: its lines are declarations only.
 

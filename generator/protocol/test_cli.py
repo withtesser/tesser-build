@@ -56,6 +56,22 @@ def test_an_option_takes_the_value_after_each_of_its_flags_in_order() -> None:
     assert (rest, values) == (protocol.CliRequest(args=("spec.toml", "out")), ("a.py", "b.py"))
 
 
+def test_a_listed_option_takes_every_value_after_it_once_the_positional_arguments_are_in() -> None:
+    cli_request = protocol.CliRequest(args=("--print", "a.py", "spec.toml", "out", "--print", "b.py", "c.py", "--print", "d.py"))
+
+    rest, values = cli_request.take_listed_option("--print", "path", "usage: prog", 2)
+
+    assert (rest, values) == (protocol.CliRequest(args=("spec.toml", "out")), ("a.py", "b.py", "c.py", "d.py"))
+
+
+def test_a_listed_option_before_the_positional_arguments_takes_one_value() -> None:
+    cli_request = protocol.CliRequest(args=("--print", "a.py", "spec.toml", "out", "extra"))
+
+    rest, values = cli_request.take_listed_option("--print", "path", "usage: prog", 2)
+
+    assert (rest, values) == (protocol.CliRequest(args=("spec.toml", "out", "extra")), ("a.py",))
+
+
 def test_an_absent_option_takes_nothing_and_leaves_the_arguments() -> None:
     cli_request = protocol.CliRequest(args=("spec.toml", "out"))
 

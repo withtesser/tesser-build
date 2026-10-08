@@ -1,9 +1,7 @@
 # pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 from __future__ import annotations
 
-{{#restate_engine}}
 import json
-{{/restate_engine}}
 import os
 {{#located}}
 import pathlib
@@ -85,16 +83,19 @@ class TestHttpHost:
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
+        issued: dict[str, object] = {}
+        probes: list[tuple[str, str, bytes | None, dict[str, str]]] = [
+{{#route_probes}}
+            ("{{method}}", "{{path}}", {{body}}, {{fills}}),
+{{/route_probes}}
+        ]
 
         try:
-            for method, path, body in (
-{{#route_probes}}
-                ("{{method}}", "{{path}}", {{body}}),
-{{/route_probes}}
-            ):
+            for method, path, body, fills in probes:
+                sent = json.dumps({**json.loads(body or b"{}"), **{field: issued[name] for field, name in fills.items()}}).encode() if fills else body
                 request = urllib_request.Request(
                     f"http://127.0.0.1:{port}{path}",
-                    data=body,
+                    data=sent,
                     method=method,
                     headers={"Content-Type": "application/json"},
                 )
@@ -102,6 +103,8 @@ class TestHttpHost:
                     try:
                         with urllib_request.urlopen(request, timeout=5) as answer:
                             answers.append(answer.status)
+                            answered = json.loads(answer.read() or b"null")
+                        issued.update(answered if isinstance(answered, dict) else {})
                         break
                     except urllib_error.HTTPError as error:
                         answers.append(error.code)

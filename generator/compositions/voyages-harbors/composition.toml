@@ -1,0 +1,51 @@
+# 4 COMPOSITION — the contracts of the voyages context. See ../README.md.
+#
+# plan_voyage looks the harbor up on the harbor chart, a port whose gateway
+# reaches the harbors context (composition.harbors.toml), and refuses a harbor
+# the chart answers as uncharted (refuses). get_voyage reads the harbor's name
+# through the same port.
+
+context = "voyages"
+
+[aggregate]
+name = "Voyage"
+identity = "voyage_id"
+
+[aggregate.spec]
+voyage_id = "str"
+vessel = "str"
+harbor = "str"
+
+[aggregate.reads]
+voyage_id = "str"
+vessel = "str"
+harbor = "str"
+
+[interfaces.http]
+serves = ["s-1-a-1", "s-1-b-1"]
+
+[client.operations.plan_voyage]
+request = ["vessel", "harbor"]
+response = ["voyage_id"]
+steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
+refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "uncharted", message = "a voyage is planned to a charted harbor", field = "harbor" }]
+serves = ["s-1", "s-2", "s-1-a-1"]
+
+[client.operations.get_voyage]
+request = ["voyage_id"]
+response = ["voyage_id", "vessel", "harbor", "harbor_name"]
+steps = ["repository.load_voyage", "gateway.look_up_harbor"]
+serves = ["s-1", "s-1-b-1"]
+
+[enums]
+HarborStanding = ["uncharted", "charted"]     # the refused member is listed first: a fake answers the one no refusal names
+
+[ports.HarborChart]
+operations.look_up_harbor = { request = ["harbor"], response = ["harbor_name: str", "harbor_standing: HarborStanding"] }
+
+[ports.VoyageRepository]
+operations.save_voyage = { request = ["voyage"], response = [] }
+operations.load_voyage = { request = ["voyage_id"], response = ["voyage"] }
+
+[ports.VoyageIdentityRepository]
+operations.issue_voyage_id = { request = [], response = ["voyage_id"] }

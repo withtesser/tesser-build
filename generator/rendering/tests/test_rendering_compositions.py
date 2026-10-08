@@ -1703,7 +1703,7 @@ class TestRenderingCompositions:
             "loans/application/loan_service.py"]
         assert "1 failed, 1 passed" in served.stdout, served.stdout
         assert "FAILED tests/test_reading_loans_by_loan_id.py::TestReadingLoansByLoanId::test_s_1_b_1" in served.stdout
-        assert "assert 500 == 200" in served.stdout
+        assert "assert 422 == 200" in served.stdout
 
     def test_a_workflow_without_an_engine_is_a_problem_for_each_piece_that_needs_one(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -1828,3 +1828,181 @@ class TestRenderingCompositions:
         assert tested.returncode == 0, tested.stdout
         assert typed.returncode == 0, typed.stdout
         assert '"LOAN_DB_PATH": str(locations / "sqlite_location"),' in (tmp_path / "out" / "conftest.py").read_text()
+
+    def test_a_refusal_renders_its_match_where_the_aggregate_is_built_and_a_service_test_that_it_refuses(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "voyages/application"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        service = (tmp_path / "out" / "voyages" / "application" / "voyage_service.py").read_text()
+        assert (
+            "    def __init__(self, plan_voyage_request: client.PlanVoyageRequest, look_up_harbor_response: ports.LookUpHarborResponse, "
+            "issue_voyage_id_response: ports.IssueVoyageIdResponse) -> None:\n"
+            "        match domain.HarborStanding(look_up_harbor_response.harbor_standing):\n"
+            "            case domain.HarborStanding.UNCHARTED:\n"
+            "                raise errors.invalid(\"uncharted_harbor\", \"a voyage is planned to a charted harbor\", field=\"harbor\")\n"
+            "            case domain.HarborStanding.CHARTED:\n"
+            "                pass\n"
+            "            case _ as never:\n"
+            "                typing.assert_never(never)\n"
+        ) in service
+        service_test = (tmp_path / "out" / "voyages" / "application" / "test_voyage_service.py").read_text()
+        assert "class FakeHarborChartAnsweringUncharted(ports.HarborChart):" in service_test
+        assert "    async def test_plan_voyage_refuses_uncharted_harbor(self) -> None:" in service_test
+        assert "    async def test_get_voyage_refuses_an_unknown_voyage(self) -> None:" in service_test
+
+    def test_a_refusal_that_cannot_be_raised_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        refusal = 'refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "uncharted", message = "a voyage is planned to a charted harbor", field = "harbor" }]'
+        answered: list[tuple[str, ...]] = []
+        for old, new in (
+            (refusal, 'refuses = [{ code = "uncharted_harbor", when = "harbor_depth", is = "uncharted" }]'),
+            (refusal, 'refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "sunk" }]'),
+            (refusal, 'refuses = [{ code = "uncharted_harbor", when = "harbor_name", is = "uncharted" }]'),
+            ('steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]',
+             'steps = ["identity.issue_voyage_id", "repository.save_voyage", "gateway.look_up_harbor"]'),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == "composition.toml":
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ("client operation plan_voyage refuses uncharted_harbor when harbor_depth is answered, and none of its steps answers harbor_depth",),
+            ("client operation plan_voyage refuses uncharted_harbor when harbor_standing is sunk, which HarborStanding does not list",),
+            ("client operation plan_voyage refuses uncharted_harbor when harbor_name is uncharted, and gateway.look_up_harbor answers "
+             "harbor_name as str, not an enum: a refusal matches an enum field a step answers",),
+            ("client operation plan_voyage refuses on harbor_standing, and no step after the one that answers it builds the voyage, "
+             "where a refusal is raised: put that step before the step that builds or loads the voyage",),
+        ]
+        assert not (tmp_path / "out").exists()
+
+    def test_a_fake_and_a_gateway_stub_answer_the_enum_member_no_refusal_names_whatever_the_order(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        composition = tmp_path / "composition"
+        composition.mkdir()
+        for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+            text = found.read_text()
+            if found.name == "implementations.toml":
+                text = text[:text.index("[implementations.HarborChart.harbors.operations.look_up_harbor]")] + \
+                    text[text.index("[implementations.HarborRepository.memory]"):]
+            (composition / found.name).write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=())
+        )
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "voyages", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert 'return ports.LookUpHarborResponse(harbor_name="Hobart", harbor_standing="charted")' in (
+            tmp_path / "out" / "voyages" / "application" / "test_voyage_service.py").read_text()
+        assert '        return ports.LookUpHarborResponse(harbor_name="", harbor_standing="charted")\n' in (
+            tmp_path / "out" / "voyages" / "adapters" / "gateways" / "harbors_harbor_chart.py").read_text()
+
+    def test_a_gateway_that_says_what_it_calls_renders_the_call_to_the_peer_and_tests_both_answers(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "voyages/adapters/gateways", "harbors/application"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        gateway = (tmp_path / "out" / "voyages" / "adapters" / "gateways" / "harbors_harbor_chart.py").read_text()
+        assert (
+            "        try:\n"
+            "            get_harbor_response = await self._harbors_client.get_harbor(harbors_client.GetHarborRequest(harbor_id=look_up_harbor_request.harbor))\n"
+            "        except harbors_client.HarborRejected:\n"
+            "            return ports.LookUpHarborResponse(harbor_name=\"\", harbor_standing=\"uncharted\")\n"
+            "        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, harbor_standing=\"charted\")\n"
+        ) in gateway
+        gateway_test = (tmp_path / "out" / "voyages" / "adapters" / "gateways" / "test_harbors_harbor_chart.py").read_text()
+        assert "class FakeRejectingHarborsClient(harbors_client.HarborsClient):" in gateway_test
+        assert "    async def test_look_up_harbor_answers_its_refused_members_when_harbors_refuses(self) -> None:" in gateway_test
+        assert ('raise client.HarborRejected("unknown_harbor", "no harbor has that harbor_id") from unknown'
+                in (tmp_path / "out" / "harbors" / "application" / "harbor_service.py").read_text())
+
+    def test_a_gateway_call_the_peer_cannot_answer_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        answered: list[tuple[str, ...]] = []
+        for old, new in (
+            ('calls = "get_harbor"', 'calls = "find_harbor"'),
+            ('sends = { harbor_id = "harbor" }', 'sends = { harbor_id = "port" }'),
+            ('answers = { harbor_name = "place_name", harbor_standing = "charted" }', 'answers = { harbor_standing = "charted" }'),
+            ('refused = { harbor_standing = "uncharted" }', 'refused = { harbor_standing = "sunk" }'),
+            ('reaches = "harbors"\n', ''),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == "implementations.toml":
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        at = "[implementations.HarborChart.harbors.operations.look_up_harbor]"
+        assert answered == [
+            (f"{at} calls find_harbor, which context harbors's client does not declare",),
+            (f"{at} sends harbors's harbor_id from port, which look_up_harbor does not take: say sends = "
+             "{ harbor_id = \"<a field look_up_harbor takes>\" }",),
+            (f"{at} answers harbor_name, a str, from harbors's harbor_name, which get_harbor does not answer as a str: say answers = "
+             "{ harbor_name = \"<a field get_harbor answers>\" }, or leave out this operation's calls and write the call by hand",),
+            (f"{at} refused harbor_standing as sunk, which HarborStanding does not list",),
+            ("[implementations.HarborChart.harbors] says which operations it calls and reaches no context: a gateway that calls "
+             "another context's client says reaches = \"<context>\"",),
+        ]
+
+    def test_the_host_test_issues_what_a_step_reads_from_another_context_before_it_calls_the_route(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        host_test = (tmp_path / "out" / "srv" / "http" / "test_main.py").read_text()
+        assert "            (\"POST\", \"/harbors\", b'{\"place_name\": \"Valparaiso\"}', {}),\n" in host_test
+        assert "            (\"POST\", \"/voyages\", b'{\"vessel\": \"Endeavour\", \"harbor\": \"harbor-1\"}', {\"harbor\": \"harbor_id\"}),\n" in host_test
+        assert "        assert answers == [400, 201, 422, 400, 201, 422]\n" in host_test

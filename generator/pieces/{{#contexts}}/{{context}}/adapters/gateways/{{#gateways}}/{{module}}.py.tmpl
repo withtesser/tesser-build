@@ -18,5 +18,19 @@ class {{Gateway}}(ts.Gateway):
 {{#operations}}
 
     async def {{operation}}(self, {{operation}}_request: ports.{{Operation}}Request) -> ports.{{Operation}}Response:
+{{#calls}}
+{{#refusable}}
+        try:
+            {{assign}}await self._{{peer}}_client.{{peer_operation}}({{peer}}_client.{{PeerOperation}}Request({{sent}}))
+        except {{peer}}_client.{{PeerRejected}}:
+            return ports.{{Operation}}Response({{refused}})
+{{/refusable}}
+{{^refusable}}
+        {{assign}}await self._{{peer}}_client.{{peer_operation}}({{peer}}_client.{{PeerOperation}}Request({{sent}}))
+{{/refusable}}
+        return ports.{{Operation}}Response({{answered}})
+{{/calls}}
+{{^calls}}
         return ports.{{Operation}}Response({{minimal}})
+{{/calls}}
 {{/operations}}

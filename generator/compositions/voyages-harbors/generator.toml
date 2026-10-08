@@ -1,0 +1,9 @@
+# 6 GENERATOR — sample values for the generated tests. See ../README.md.
+
+[sample_values]
+voyage_id = ["voyage-1", "voyage-2"]
+vessel = ["Endeavour", "Resolution"]
+harbor = ["harbor-1", "harbor-2"]
+harbor_id = ["harbor-1", "harbor-2"]
+harbor_name = ["Valparaiso", "Hobart"]
+place_name = ["Valparaiso", "Hobart"]

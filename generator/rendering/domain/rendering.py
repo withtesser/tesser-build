@@ -398,6 +398,15 @@ class Target(ts.ValueObject):
     def members(self) -> tuple[Target, ...]:
         return self._members
 
+    def empty(self, pairs: Pairs) -> Text:
+        kind = str(self._kind)
+        if kind == "array":
+            return Text("()")
+        member = pairs.get(str(self._type_text))
+        if kind == "enum" and member is not None:
+            return Text(json.dumps(str(member)))
+        return Text("0" if str(self._type_text) == "int" else '""')
+
 
 class SourceSpec(ts.Spec):
 
@@ -471,11 +480,13 @@ class Sources(ts.Entity):
 
 class AskSpec(ts.Spec):
 
-    def __init__(self, name: str, target_ref: str, allow_empty: bool, occasion: str = "") -> None:
+    def __init__(self, name: str, target_ref: str, allow_empty: bool, occasion: str = "",
+                 guards: tuple[tuple[str, str], ...] = ()) -> None:
         self.name = name
         self.target_ref = target_ref
         self.allow_empty = allow_empty
         self.occasion = occasion
+        self.guards = guards
 
 
 class Ask(ts.Entity):
@@ -485,6 +496,7 @@ class Ask(ts.Entity):
         self._occasion = spec.occasion
         self._target_ref = spec.target_ref
         self._allow_empty = spec.allow_empty
+        self._guards = spec.guards
         self._targets: list[Target] = []
         self._sources = Sources(SourcesSpec(name=spec.name))
 
@@ -516,14 +528,19 @@ class Ask(ts.Entity):
     def sources(self) -> Sources:
         return self._sources
 
+    def guards(self) -> Pairs:
+        return Pairs(self._guards)
+
 
 class MapperDefSpec(ts.Spec):
 
-    def __init__(self, name: str, target: str, params: tuple[tuple[str, str], ...], args: tuple[tuple[str, str], ...]) -> None:
+    def __init__(self, name: str, target: str, params: tuple[tuple[str, str], ...], args: tuple[tuple[str, str], ...],
+                 guards: tuple[tuple[str, str], ...] = ()) -> None:
         self.name = name
         self.target = target
         self.params = params
         self.args = args
+        self.guards = guards
 
 
 class MapperDef(ts.ValueObject):
@@ -532,12 +549,14 @@ class MapperDef(ts.ValueObject):
     _target: Word
     _params: Pairs
     _args: Pairs
+    _guards: Pairs
 
     def __init__(self, spec: MapperDefSpec) -> None:
         object.__setattr__(self, "_name", Word(spec.name))
         object.__setattr__(self, "_target", Word(spec.target))
         object.__setattr__(self, "_params", Pairs(spec.params))
         object.__setattr__(self, "_args", Pairs(spec.args))
+        object.__setattr__(self, "_guards", Pairs(spec.guards))
 
     def name(self) -> Word:
         return self._name
@@ -550,6 +569,9 @@ class MapperDef(ts.ValueObject):
 
     def args(self) -> Pairs:
         return self._args
+
+    def guards(self) -> Pairs:
+        return self._guards
 
 
 class MappedSpec(ts.Spec):
@@ -653,15 +675,25 @@ class Mappers(ts.Entity):
             else:
                 args.append((field, read))
             values.append((field, held))
+        guards: list[tuple[str, str]] = []
+        for guarded, guard in ask.guards():
+            matched = sources.find(Word(guarded))
+            if matched is None:
+                raise ValueError(f"{name} matches {guarded}, and nothing before it in the steps holds one")
+            if matched not in used:
+                used.append(matched)
+            guards.append((str(matched.prefix()) + guarded, str(guard)))
         params: list[tuple[str, str]] = []
         for source in sources.held():
             param = (str(source.expr()), str(source.type_ref()))
             if source in used and param not in params:
                 params.append(param)
-        mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
+        mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args),
+                                             guards=tuple(guards)))
         if any(existing.name() == mapper_def.name() and existing != mapper_def for existing in self._defs) and str(ask.occasion()):
             name = f"{name}For{ask.occasion()}"
-            mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
+            mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args),
+                                                 guards=tuple(guards)))
         for existing in self._defs:
             if existing.name() == mapper_def.name() and existing != mapper_def:
                 raise ValueError(f"two mappers in {self._module} would be named {name}")
@@ -952,16 +984,19 @@ class Readout(ts.ValueObject):
 
 class EchoSpec(ts.Spec):
 
-    def __init__(self, samples: SamplesSpec) -> None:
+    def __init__(self, samples: SamplesSpec, chosen: tuple[tuple[str, str], ...] = ()) -> None:
         self.samples = samples
+        self.chosen = chosen
 
 
 class Echo(ts.ValueObject):
 
     _samples: Samples
+    _chosen: Pairs
 
     def __init__(self, spec: EchoSpec) -> None:
         object.__setattr__(self, "_samples", Samples(spec.samples))
+        object.__setattr__(self, "_chosen", Pairs(spec.chosen))
 
     def of(self, ask: Ask) -> Mapped:
         args: list[tuple[str, str]] = []
@@ -973,7 +1008,8 @@ class Echo(ts.ValueObject):
                 args.append((field, str(found.prefix()) + field))
                 values.append((field, str(found.holds().get(field))))
                 continue
-            sample = self._samples.value(target)
+            chosen = self._chosen.get(str(target.type_text())) if str(target.kind()) == "enum" else None
+            sample = Sample(json.dumps(str(chosen))) if chosen is not None else self._samples.value(target)
             args.append((field, str(sample.literal(target))))
             values.append((field, str(sample)))
         return Mapped(MappedSpec(call=", ".join(f"{field}={expr}" for field, expr in args), values=tuple(values)))
@@ -1085,8 +1121,40 @@ class Model(ts.Entity):
                 else:
                     raise ValueError(f"{spec_name} takes {field} as a {type_text}, which a spec carries only as a list")
             self._domain_targets[spec_name] = targets
+        self._refusals: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {}
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            refuses = operation.get("refuses", [])
+            if not isinstance(refuses, list) or not all(isinstance(refusal, dict) for refusal in refuses):
+                raise ValueError(f"client operation {operation_name} lists refuses as something other than a list of tables "
+                                 f"like {{ code = \"<code>\", when = \"<enum field a step answers>\", is = [\"<member>\"] }}")
+            for refusal in refuses:
+                unknown_keys = sorted(set(refusal) - {"code", "when", "is", "message", "field"})
+                if unknown_keys or not {"code", "when", "is"} <= set(refusal):
+                    raise ValueError(f"client operation {operation_name} has a refusal that is not "
+                                     f"{{ code, when, is }} with an optional message and field: it has {', '.join(sorted(refusal))}")
+                refused = refusal["is"]
+                refused_names = (str(refused),) if isinstance(refused, str) else tuple(str(member) for member in refused)
+                code = str(refusal["code"])
+                message = str(refusal.get("message", code.replace("_", " ")))
+                if not re.fullmatch(r"[ !#-\[\]-~]+", message):
+                    raise ValueError(f"client operation {operation_name} refuses {code} with a message that is not "
+                                     f"printable ASCII free of quotes and backslashes")
+                arguments = json.dumps(message)
+                if "field" in refusal:
+                    if SNAKE.fullmatch(str(refusal["field"])) is None:
+                        raise ValueError(f"client operation {operation_name} refuses {code} on the field "
+                                         f"{str(refusal['field'])!r}, which is not a snake_case name, like loan_id")
+                    arguments += f", field={json.dumps(str(refusal['field']))}"
+                self._refusals.setdefault(str(operation_name), []).append((code, str(refusal["when"]), refused_names, arguments))
+        refused_members = {member for refusals in self._refusals.values() for _, _, members, _ in refusals for member in members}
+        self._success = {
+            name: next((member for member in members if member not in refused_members), members[0])
+            for name, members in self._enums.items() if members
+        }
+        self._chosen = Pairs(tuple(self._success.items()))
         self._echo = {
-            index: Echo(EchoSpec(SamplesSpec(values=self._sample_values, index=index, types=TypesSpec(*self._types_args))))
+            index: Echo(EchoSpec(SamplesSpec(values=self._sample_values, index=index, types=TypesSpec(*self._types_args)),
+                                 chosen=tuple(self._success.items())))
             for index in (0, 1)
         }
         self._readout = Readout(ReadoutSpec(reads=tuple(self._reads), aggregate=self._aggregate, types=TypesSpec(*self._types_args)))
@@ -1121,6 +1189,8 @@ class Model(ts.Entity):
                 named.extend(("snake", str(operation_name), str(field))
                              for field in list(operation.get("request", [])) + list(operation.get("response", [])))
                 named.extend(("snake", f"{operation_name} calls_on", str(outcome)) for outcome in operation.get("calls_on", []))
+        for operation_name, refusals in self._refusals.items():
+            named.extend(("snake", f"client operation {operation_name} refusal code", code) for code, _, _, _ in refusals)
         for signal_name, signal in composition.get("signals", {}).items():
             named.append(("operation", "[signals]", str(signal_name)))
             named.extend(("snake", str(signal_name), str(field)) for field in signal.get("payload", []))
@@ -1387,7 +1457,7 @@ class Model(ts.Entity):
         Orchestrator = self._Orchestrator
         aggregates = str(Word(aggregate).plural())
         blank: dict[str, object] = {"build": [], "port_call": [], "store_call": [], "assign": "", "holder": "",
-                                    "call": "", "argument": "", "repository": ""}
+                                    "call": "", "argument": "", "repository": "", "refuses_unknown": [], "loads_known": [{}]}
         fakes: dict[tuple[str, str], Mapped] = {}
         for (package, name), record in self._messages.items():
             if package not in ("ports", "relays") or not name.endswith("Request"):
@@ -1413,6 +1483,8 @@ class Model(ts.Entity):
         dependencies: list[dict[str, object]] = []
         service_ops: list[dict[str, object]] = []
         service_tests: list[dict[str, object]] = []
+        refusal_tests: list[dict[str, object]] = []
+        refusing_fakes: dict[tuple[str, str], dict[str, object]] = {}
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             occasion = Operation
@@ -1429,6 +1501,10 @@ class Model(ts.Entity):
             built = False
             saved = False
             test_name = f"{operation_name}_answers_from_its_steps"
+            refusals = self._refusals.get(str(operation_name), [])
+            unmatched = list(refusals)
+            pending: list[tuple[str, str]] = []
+            refusing: list[tuple[str, str, str, str]] = []
             for step in operation.get("steps", []):
                 kind, rest = str(step).split(".", 1)
                 if kind in ("identity", "repository", "gateway"):
@@ -1440,7 +1516,9 @@ class Model(ts.Entity):
                     port_response = self._messages[("ports", Step + "Response")]
                     carries = any(str(t.kind()) == "aggregate" for t in port_request.targets())
                     if carries and not built:
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion))
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion,
+                                          guards=tuple(pending)))
+                        pending = []
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
                         for held in sources.held():
@@ -1486,7 +1564,15 @@ class Model(ts.Entity):
                         member_values = tuple((str(m.field()), str(self._samples.value(m))) for m in members)
                         source = Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                           prefix=f"{local}.{loaded[0].field()}.", holds=member_values))
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False, occasion=occasion))
+                        statements[-1] = dict(statements[-1], refuses_unknown=[{}], loads_known=[])
+                        refusal_tests.append({
+                            "name": f"{operation_name}_refuses_an_unknown_{aggregate}", "operation": operation_name,
+                            "Operation": Operation, "code": f"unknown_{aggregate}", "seeds": [], "replaced": {}, "unsaved": [],
+                            "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request_record.targets()),
+                        })
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False, occasion=occasion,
+                                          guards=tuple(pending)))
+                        pending = []
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
                         ask.source(source)
@@ -1515,6 +1601,32 @@ class Model(ts.Entity):
                     elif port_response.targets():
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(fakes[("ports", Step + "Response1")].values()))))
+                        answered_types = {str(t.field()): t for t in port_response.targets()}
+                        for refusal in [refusal for refusal in unmatched if refusal[1] in answered_types]:
+                            code, when, refused_names, message = refusal
+                            unmatched.remove(refusal)
+                            matched_target = answered_types[when]
+                            if str(matched_target.kind()) != "enum":
+                                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
+                                                 f"{', '.join(refused_names)}, and {step} answers {when} as {matched_target.type_text()}, "
+                                                 f"not an enum: a refusal matches an enum field a step answers")
+                            Enum = str(matched_target.type_text())
+                            enum_members = self._enums[Enum]
+                            strangers = [member for member in refused_names if member not in enum_members]
+                            if strangers:
+                                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
+                                                 f"{', '.join(strangers)}, which {Enum} does not list")
+                            if pending and any(guarded == when for guarded, _ in pending):
+                                raise ValueError(f"client operation {operation_name} refuses on {when} twice: write one refusal "
+                                                 f"per field, its is listing every member it refuses")
+                            if set(enum_members) <= set(refused_names):
+                                raise ValueError(f"client operation {operation_name} refuses {code} on every member of {Enum}, "
+                                                 f"so it never answers")
+                            arms = [{"members": [member.upper() for member in refused_names], "code": code, "message": message}] + [
+                                {"members": [member.upper()], "code": "", "message": ""}
+                                for member in enum_members if member not in refused_names]
+                            pending.append((when, json.dumps({"Enum": Enum, "arms": arms})))
+                            refusing.append((port_name, rest, refused_names[0], code))
                 elif kind == "orchestrator":
                     mode, orchestrator_operation = rest.split("_", 1)
                     Step = str(Word(orchestrator_operation).pascal())
@@ -1551,6 +1663,43 @@ class Model(ts.Entity):
                     test_name = f"{operation_name}_{rest}_with_the_{aggregate}_it_built"
                 else:
                     raise ValueError(f"client step {step} is of a kind this renderer does not know: {kind}")
+            for code, when, _, _ in unmatched:
+                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is answered, and none of its "
+                                 f"steps answers {when}")
+            for when, _ in pending:
+                raise ValueError(f"client operation {operation_name} refuses on {when}, and no step after the one that answers "
+                                 f"it builds the {aggregate}, where a refusal is raised: put that step before the step that "
+                                 f"builds or loads the {aggregate}")
+            for refusing_port, refusing_operation, refused_member, code in refusing:
+                Member = str(Word(refused_member).pascal())
+                Refusing = str(Word(refusing_operation).pascal())
+                refusing_request = self._messages[("ports", Refusing + "Request")]
+                refusing_response = self._messages[("ports", Refusing + "Response")]
+                refused_enum = next(str(t.type_text()) for t in refusing_response.targets()
+                                    if str(t.kind()) == "enum" and refused_member in self._enums[str(t.type_text())])
+                echo = Echo(EchoSpec(
+                    SamplesSpec(values=self._sample_values, index=1, types=TypesSpec(*self._types_args)),
+                    chosen=tuple((name, refused_member if name == refused_enum else member) for name, member in self._success.items())))
+                refusing_ask = Ask(AskSpec(name=Refusing + "Response", target_ref=Refusing + "Response", allow_empty=False))
+                for target in refusing_response.targets():
+                    refusing_ask.target(target)
+                refusing_ask.source(Source(SourceSpec(
+                    expr=refusing_operation + "_request", type_ref=Refusing + "Request", kind="plain", prefix=refusing_operation + "_request.",
+                    holds=tuple((str(t.field()), UNKNOWN) for t in refusing_request.targets() if str(t.kind()) != "array"))))
+                refusing_fakes.setdefault((refusing_port, refused_member), {
+                    "Port": refusing_port, "Member": Member, "member": refused_member,
+                    "operations": [
+                        {"operation": op, "Operation": str(Word(op).pascal()),
+                         "fake_response": str(echo.of(refusing_ask).call() if op == refusing_operation
+                                              else fakes[("ports", str(Word(op).pascal()) + "Response1")].call())}
+                        for op in self._port_ops[refusing_port]],
+                })
+                refusal_tests.append({
+                    "name": f"{operation_name}_refuses_{code}", "operation": operation_name, "Operation": Operation,
+                    "code": code, "seeds": list(seeds), "unsaved": [] if seeds else [{}],
+                    "replaced": {f"fake_{Word(refusing_port).snake()}": f"Fake{refusing_port}Answering{Member}()"},
+                    "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request_record.targets()),
+                })
             ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"client.{Operation}Response", allow_empty=False, occasion=occasion))
             for target in response_record.targets():
                 ask.target(target)
@@ -1575,8 +1724,19 @@ class Model(ts.Entity):
                 "Mapper": str(made.name()), "target": str(made.target()),
                 "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                 "args": [{"field": field, "expr": expr} for field, expr in made.args()],
+                "guards": [
+                    {"Enum": str(matched["Enum"]), "subject": subject, "arms": [
+                        {"patterns": " | ".join(f"domain.{matched['Enum']}.{member}" for member in arm["members"]),
+                         "refuse": [{"code": arm["code"], "arguments": arm["message"]}] if arm["code"] else [],
+                         "passes": [] if arm["code"] else [{}]}
+                        for arm in matched["arms"]]}
+                    for subject, matched in ((subject, json.loads(str(guard))) for subject, guard in made.guards())
+                ],
             })
         self._binding["mappers"] = def_frames
+        self._binding["service_guarded"] = [{}] if any(made.guards() for made in mappers.defs()) else []
+        self._refusal_tests = refusal_tests
+        self._binding["refusing_ports"] = list(refusing_fakes.values())
         self._binding["dependencies"] = dependencies
         self._binding["service_operations"] = service_ops
         self._service_tests = service_tests
@@ -1971,6 +2131,26 @@ class Model(ts.Entity):
             dict(test, fake_locals=fake_locals, service=str(Word(self._Aggregate + "Service").snake()), service_args=service_args)
             for test in self._service_tests
         ]
+        aggregates = str(Word(self._aggregate).plural())
+        renamed = {
+            id(test): {local: "fake_" + str(Word(construct.removesuffix("()").removeprefix("Fake")).snake())
+                       for local, construct in typing.cast(dict[str, str], test["replaced"]).items()}
+            for test in self._refusal_tests
+        }
+        self._binding["refusal_tests"] = [
+            {key: bound for key, bound in test.items() if key != "replaced"} | {
+                "fake_locals": [
+                    {"local": renamed[id(test)].get(str(entry["local"]), entry["local"]),
+                     "construct": typing.cast(dict[str, str], test["replaced"]).get(str(entry["local"]), entry["construct"])}
+                    for entry in fake_locals],
+                "service": str(Word(self._Aggregate + "Service").snake()),
+                "service_args": ", ".join(renamed[id(test)].get("fake_" + str(d["dependency"]), "fake_" + str(d["dependency"]))
+                                          for d in (dependencies if isinstance(dependencies, list) else [])),
+                "unsaved": [{"unsaved": f"fake_{store_dependency}.{aggregates}"}] if test["unsaved"] and store_dependency else [],
+            }
+            for test in self._refusal_tests
+        ]
+        self._binding["refusal_tested"] = [{}] if self._refusal_tests else []
 
     def stub(self) -> None:
         Aggregate = self._Aggregate
@@ -2189,20 +2369,34 @@ class Model(ts.Entity):
                     response = self._messages[("ports", Operation + "Response")]
                     request = self._messages[("ports", Operation + "Request")]
                     gateway_operations.append({
-                        "operation": operation, "Operation": Operation,
-                        "minimal": ", ".join(
-                            f"{t.field()}=()" if str(t.kind()) == "array" else f"{t.field()}={'0' if str(t.type_text()) == 'int' else chr(34) * 2}"
-                            for t in response.targets()),
+                        "operation": operation, "Operation": Operation, "calls": [], "call_tests": [],
+                        "minimal": ", ".join(f"{t.field()}={t.empty(self._chosen)}" for t in response.targets()),
                         "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
                     })
                 peer = str(implementation.get("reaches", ""))
+                called = implementation.get("operations", {})
+                if called and not peer:
+                    raise ValueError(f"[implementations.{port_name}.{key}] says which operations it calls and reaches no "
+                                     f"context: a gateway that calls another context's client says reaches = \"<context>\"")
+                for called_operation, call in called.items():
+                    if called_operation not in operations:
+                        raise ValueError(f"[implementations.{port_name}.{key}.operations.{called_operation}] names an "
+                                         f"operation {port_name} does not declare")
+                    unknown_keys = sorted(set(call) - {"calls", "sends", "answers", "refused"})
+                    if unknown_keys or "calls" not in call:
+                        raise ValueError(f"[implementations.{port_name}.{key}.operations.{called_operation}] is not calls "
+                                         f"with optional sends, answers, and refused: it has {', '.join(sorted(call))}")
+                    for gateway_operation in gateway_operations:
+                        if gateway_operation["operation"] == called_operation:
+                            gateway_operation["call"] = dict(call)
                 reaches: list[dict[str, object]] = []
                 if peer:
                     if peer == self._context:
                         raise ValueError(f"[implementations.{port_name}.{key}] reaches {peer}, its own context: a gateway reaches a peer")
                     reaches.append({"peer": peer, "PeerClient": str(Word(peer).pascal()) + "Client", "peer_operations": []})
                 gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations,
-                                 "reaches": reaches, "Port": port_name, "port_param": str(Word(port_name).snake())})
+                                 "reaches": reaches, "Port": port_name, "port_param": str(Word(port_name).snake()),
+                                 "implementation": f"[implementations.{port_name}.{key}]"})
                 port_exprs[port_name] = str(Word(port_name).snake()) if peer else f"gateways.{Gateway}()"
             elif body == "supported" and key == "memory":
                 if port_name not in self._stores:
@@ -2400,7 +2594,6 @@ class Model(ts.Entity):
                     pending.extend(child for child in children if isinstance(child, dict))
         routes: list[dict[str, object]] = []
         probes: list[dict[str, object]] = []
-        answers: list[str] = []
         routed_stories: set[str] = set()
         answered_by: dict[str, dict[str, object]] = {}
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
@@ -2488,23 +2681,26 @@ class Model(ts.Entity):
                 segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
                 for segment in path.split("/")
             )
-            loading = any(
-                step.split(".", 1)[1] in self._port_of and any(
-                    str(t.kind()) == "aggregate"
-                    for t in self._messages[("ports", str(Word(step.split(".", 1)[1]).pascal()) + "Response")].targets()
-                )
-                for step in steps if step.startswith("repository.")
-            )
+            loads_at = [
+                index for index, step in enumerate(steps) if step.startswith("repository.") and step.split(".", 1)[1] in self._port_of
+                and any(str(t.kind()) == "aggregate"
+                        for t in self._messages[("ports", str(Word(step.split(".", 1)[1]).pascal()) + "Response")].targets())
+            ]
+            engine_at = [index for index, step in enumerate(steps) if step.startswith("orchestrator.")]
+            unknown = "422" if loads_at and (not engine_at or loads_at[0] < engine_at[0]) else "500"
+            probe: dict[str, object] = {"operation": operation_name, "method": method, "path": probe_path, "fills": "{}", "issues": []}
             if body:
-                probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
-                answers.append("400")
-                probes.append({"method": method, "path": probe_path, "body": repr(json.dumps(body).encode())})
-                reaches = any(step.startswith("orchestrator.") for step in steps)
-                loads = bool(path_fields) and loading
-                answers.append("500" if reaches or loads else str(status_code))
-            elif path_fields and loading:
-                probes.append({"method": method, "path": probe_path, "body": "None"})
-                answers.append("500")
+                probes.append(dict(probe, body='b"{}"', answer="400"))
+                if path_fields and loads_at:
+                    answer = unknown
+                elif engine_at:
+                    answer = "500"
+                else:
+                    answer = str(status_code)
+                probes.append(dict(probe, body=repr(json.dumps(body).encode()), answer=answer, body_fields=sorted(body),
+                                   issues=[str(t.field()) for t in response.targets()] if answer == str(status_code) else []))
+            elif path_fields and loads_at:
+                probes.append(dict(probe, body="None", answer=unknown))
         self._unserved = {story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories}
         root_tests: list[dict[str, object]] = []
         for story_id in sorted(routed_stories):
@@ -2527,7 +2723,6 @@ class Model(ts.Entity):
         self._binding["root_tier"] = [{}] if root_tests else []
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
-        self._binding["route_probe_answers"] = ", ".join(answers)
 
     def traced(self) -> None:
         pending: list[dict[str, object]] = list(self._story.get("jtbds", []))
@@ -2605,6 +2800,11 @@ class Model(ts.Entity):
                     {"operation": route["operation"], "Operation": route["Operation"], "peer_response_sample": route["peer_response_sample"]}
                     for route in typing.cast(list[dict[str, object]], declared[str(reach["peer"])]._binding["routes"])
                 ]
+        for model in models:
+            for other in models:
+                if other is not model and other not in model._joined:
+                    model.join(other)
+            model.reach()
         bindings = [model._binding for model in ordered]
         locations: list[dict[str, object]] = []
         for binding in bindings:
@@ -2617,12 +2817,142 @@ class Model(ts.Entity):
         root["root_tests"] = [test for binding in bindings for test in typing.cast(list[dict[str, object]], binding["root_tests"])]
         root["root_tier"] = [{}] if root["root_tests"] else []
         root["route_probes"] = [probe for binding in bindings for probe in typing.cast(list[dict[str, object]], binding["route_probes"])]
-        root["route_probe_answers"] = ", ".join(str(binding["route_probe_answers"]) for binding in bindings if binding["route_probe_answers"])
+        root["route_probe_answers"] = ", ".join(str(probe["answer"]) for probe in typing.cast(list[dict[str, object]], root["route_probes"]))
         root["locations"] = locations
         root["located"] = [{}] if locations else []
         root["identity_seeded_any"] = [{}] if any(binding["identity_seeded"] for binding in bindings) else []
         root["reads_environment_any"] = [{}] if any(binding["reads_environment"] for binding in bindings) else []
         self._root = root
+
+    def reach(self) -> None:
+        declared = {model._context: model for model in [self, *self._joined]}
+        called: dict[str, tuple[Model, str, dict[str, str], str]] = {}
+        for gateway in typing.cast(list[dict[str, object]], self._binding["peer_gateways"]):
+            reach = typing.cast(list[dict[str, object]], gateway["reaches"])[0]
+            peer = declared[str(reach["peer"])]
+            where = str(gateway["implementation"])
+            rejecting = False
+            for operation in typing.cast(list[dict[str, object]], gateway["operations"]):
+                if "call" not in operation:
+                    continue
+                call = typing.cast(dict[str, object], operation["call"])
+                operation_name = str(operation["operation"])
+                Operation = str(operation["Operation"])
+                at = f"{where[:-1]}.operations.{operation_name}]"
+                peer_operation = str(call["calls"])
+                if peer_operation not in peer._composition.get("client", {}).get("operations", {}):
+                    raise ValueError(f"{at} calls {peer_operation}, which context {peer._context}'s client does not declare")
+                PeerOperation = str(Word(peer_operation).pascal())
+                peer_request = peer._messages[("client", PeerOperation + "Request")]
+                peer_response = peer._messages[("client", PeerOperation + "Response")]
+                request = self._messages[("ports", Operation + "Request")]
+                response = self._messages[("ports", Operation + "Response")]
+                tables = {key: call.get(key, {}) for key in ("sends", "answers", "refused")}
+                for key, table in tables.items():
+                    if not isinstance(table, dict):
+                        raise ValueError(f"{at} {key} is not a table of fields")
+                sends = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["sends"]).items()}
+                answers = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["answers"]).items()}
+                refused = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["refused"]).items()}
+                ours = {str(t.field()): t for t in request.targets()}
+                theirs = {str(t.field()): t for t in peer_response.targets()}
+                param = operation_name + "_request"
+                local = peer_operation + "_response"
+                sent: list[str] = []
+                for target in peer_request.targets():
+                    field = str(target.field())
+                    source = sends.get(field, field)
+                    if source not in ours:
+                        raise ValueError(f"{at} sends {peer._context}'s {field} from {source}, which {operation_name} does not "
+                                         f"take: say sends = {{ {field} = \"<a field {operation_name} takes>\" }}")
+                    if str(ours[source].kind()) != "scalar" or str(ours[source].type_text()) != str(target.type_text()):
+                        raise ValueError(f"{at} sends {peer._context}'s {field}, a {target.type_text()}, from {source}, a "
+                                         f"{ours[source].type_text()}: a call sends a str or an int as the same type")
+                    sent.append(f"{field}={param}.{source}")
+                strays = sorted(set(sends) - {str(t.field()) for t in peer_request.targets()})
+                if strays:
+                    raise ValueError(f"{at} sends {', '.join(strays)}, which {peer._context}'s {peer_operation} does not take")
+                answered: list[str] = []
+                fallen: list[str] = []
+                checks: list[dict[str, object]] = []
+                refused_checks: list[dict[str, object]] = []
+                reads_peer = False
+                for target in response.targets():
+                    field = str(target.field())
+                    kind = str(target.kind())
+                    if kind == "enum":
+                        Enum = str(target.type_text())
+                        member = answers.get(field, self._success[Enum])
+                        for named, chosen in (("answers", member), ("refused", refused.get(field, member))):
+                            if chosen not in self._enums[Enum]:
+                                raise ValueError(f"{at} {named} {field} as {chosen}, which {Enum} does not list")
+                        answered.append(f"{field}={json.dumps(member)}")
+                        fallen.append(f"{field}={json.dumps(refused.get(field, member))}")
+                        checks.append({"check": f"{operation_name}_response.{field} == {json.dumps(member)}"})
+                        refused_checks.append({"check": f"{operation_name}_response.{field} == {json.dumps(refused.get(field, member))}"})
+                        continue
+                    if field in refused:
+                        raise ValueError(f"{at} refused names {field}, a {target.type_text()}: refused gives an enum field "
+                                         f"its member, and every other field answers empty")
+                    source = answers.get(field, field)
+                    if kind != "scalar" or source not in theirs or str(theirs[source].kind()) != "scalar" or \
+                            str(theirs[source].type_text()) != str(target.type_text()):
+                        raise ValueError(f"{at} answers {field}, a {target.type_text()}, from {peer._context}'s {source}, which "
+                                         f"{peer_operation} does not answer as a {target.type_text()}: say answers = "
+                                         f"{{ {field} = \"<a field {peer_operation} answers>\" }}, or leave out this "
+                                         f"operation's calls and write the call by hand")
+                    answered.append(f"{field}={local}.{source}")
+                    fallen.append(f"{field}={target.empty(self._chosen)}")
+                    reads_peer = True
+                    expected = str(Sample(str(peer._samples.value(theirs[source]))).literal(target))
+                    checks.append({"check": f"{operation_name}_response.{field} == {expected}"})
+                    refused_checks.append({"check": f"{operation_name}_response.{field} == {target.empty(self._chosen)}"})
+                strays = sorted(set(answers) - {str(t.field()) for t in response.targets()})
+                strays += sorted(set(refused) - {str(t.field()) for t in response.targets()})
+                if strays:
+                    raise ValueError(f"{at} names {', '.join(strays)}, which {operation_name} does not answer")
+                refusable = "refused" in call
+                rejecting = rejecting or refusable
+                operation["calls"] = [{
+                    "peer": peer._context, "peer_operation": peer_operation, "PeerOperation": PeerOperation,
+                    "PeerRejected": peer._Aggregate + "Rejected", "sent": ", ".join(sent), "answered": ", ".join(answered),
+                    "assign": f"{local} = " if reads_peer else "",
+                    "refusable": [{"refused": ", ".join(fallen)}] if refusable else [],
+                }]
+                operation["call_tests"] = [{
+                    "checks": checks, "refusal": [{"refused_checks": refused_checks}] if refusable else [],
+                }]
+                loads = any(
+                    str(step).startswith("repository.") and any(
+                        str(t.kind()) == "aggregate"
+                        for t in peer._messages.get(("ports", str(Word(str(step).split(".", 1)[1]).pascal()) + "Response"),
+                                                    Record(RecordSpec(module="", name="", base="", snapshot=False))).targets())
+                    for step in peer._composition["client"]["operations"][peer_operation].get("steps", []))
+                fed = sends.get(peer._identity, peer._identity) if loads and peer._identity in {str(t.field()) for t in peer_request.targets()} else ""
+                called[operation_name] = (peer, fed, refused if refusable else {}, "refusable" if refusable else "")
+            reach["rejecting"] = [{}] if rejecting else []
+            reach["PeerRejected"] = peer._Aggregate + "Rejected"
+        for probe in typing.cast(list[dict[str, object]], self._binding["route_probes"]):
+            if "body_fields" not in probe:
+                continue
+            operation = self._composition["client"]["operations"][str(probe["operation"])]
+            fills: dict[str, str] = {}
+            for step in [str(step) for step in operation.get("steps", [])]:
+                if step.split(".", 1)[1] not in called:
+                    continue
+                peer, fed, refused, catches = called[step.split(".", 1)[1]]
+                if not fed:
+                    continue
+                issued = any(peer._identity in typing.cast(list[str], peer_probe["issues"])
+                             for peer_probe in typing.cast(list[dict[str, object]], peer._binding["route_probes"]))
+                if fed in typing.cast(list[str], probe["body_fields"]) and issued:
+                    fills[fed] = peer._identity
+                elif not catches:
+                    probe["answer"] = "500" if str(probe["answer"]).startswith("2") else probe["answer"]
+                elif any(when in refused and refused[when] in members
+                         for _, when, members, _ in self._refusals.get(str(probe["operation"]), [])):
+                    probe["answer"] = "422" if str(probe["answer"]).startswith("2") else probe["answer"]
+            probe["fills"] = json.dumps(fills)
 
     def scope(self) -> Scope:
         table: list[str] = []

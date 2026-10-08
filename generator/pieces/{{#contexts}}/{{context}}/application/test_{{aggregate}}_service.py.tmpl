@@ -4,6 +4,9 @@ from __future__ import annotations
 import contextlib
 import typing
 
+{{#refusal_tested}}
+import pytest
+{{/refusal_tested}}
 import tesser.testing as ts
 
 import {{context}}.application as application
@@ -29,6 +32,17 @@ class Fake{{Port}}(ports.{{Port}}):
         return ports.{{Operation}}Response({{fake_response}})
 {{/operations}}
 {{/fake_ports}}
+{{#refusing_ports}}
+
+
+@ts.fake
+class Fake{{Port}}Answering{{Member}}(ports.{{Port}}):
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: ports.{{Operation}}Request) -> ports.{{Operation}}Response:
+        return ports.{{Operation}}Response({{fake_response}})
+{{/operations}}
+{{/refusing_ports}}
 {{#fake_stores}}
 
 
@@ -109,3 +123,22 @@ class Test{{Service}}:
         assert {{check}}
 {{/checks}}
 {{/service_tests}}
+{{#refusal_tests}}
+
+    async def test_{{name}}(self) -> None:
+{{#fake_locals}}
+        {{local}} = {{construct}}
+{{/fake_locals}}
+{{#seeds}}
+        {{seed}}
+{{/seeds}}
+        {{service}} = application.{{Service}}({{service_args}})
+
+        with pytest.raises(client.{{Rejected}}) as refused:
+            await {{service}}.{{operation}}(client.{{Operation}}Request({{request_sample}}))
+
+        assert refused.value.code == "{{code}}"
+{{#unsaved}}
+        assert {{unsaved}} == {}
+{{/unsaved}}
+{{/refusal_tests}}

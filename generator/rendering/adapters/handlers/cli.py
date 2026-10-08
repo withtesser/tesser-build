@@ -8,7 +8,7 @@ import protocol
 import rendering.client as client
 
 _RENDER_USAGE: typing.Final[str] = (
-    "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]..."
+    "usage: python -m srv.cli.render [--check] <composition-dir> <out-dir> [--print <rendered-path-or-pattern>...]..."
 )
 
 
@@ -18,7 +18,7 @@ class Handler(ts.Handler):
         self._rendering_client = rendering_client
 
     def render(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:
-        positional, printed = cli_request.take_option("--print", "rendered-path", _RENDER_USAGE)
+        positional, printed = cli_request.take_listed_option("--print", "rendered-path", _RENDER_USAGE, 2)
         positional.no_options(_RENDER_USAGE)
         composition_dir = positional.arg(0, "composition-dir", _RENDER_USAGE)
         out_dir = positional.arg(1, "out-dir", _RENDER_USAGE)

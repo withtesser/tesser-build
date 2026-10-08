@@ -54,6 +54,15 @@ class TestHandler:
             ("tests/test_reading_loans.py",),
         )
 
+    def test_one_print_names_every_path_that_follows_it(self) -> None:
+        fake_rendering_client = FakeRenderingClient(problems=(), written=(), kept=())
+
+        handlers.Handler(fake_rendering_client).render(
+            protocol.CliRequest(args=("compositions/lending", "/tmp/lending", "--print", "a.py", "b.py", "--print", "c.py"))
+        )
+
+        assert fake_rendering_client.asked[0].printed == ("a.py", "b.py", "c.py")
+
     def test_a_rendered_tree_exits_zero_and_lists_what_it_wrote_then_what_it_kept(self) -> None:
         fake_rendering_client = FakeRenderingClient(problems=(), written=(".tesser-root", "lending/client/client.py"), kept=("lending/domain/loan.py",))
 

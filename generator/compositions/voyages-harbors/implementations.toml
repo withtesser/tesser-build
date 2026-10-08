@@ -1,0 +1,30 @@
+# 5 IMPLEMENTATIONS — what satisfies each contract, per environment. See ../README.md.
+
+[implementations.VoyageRepository.memory]
+body = "supported"
+
+[implementations.VoyageIdentityRepository.uuid]
+body = "supported"
+
+# reaches: the gateway is handed the harbors context's client. operations: what
+# each of its operations calls there, so the call is rendered rather than stubbed.
+[implementations.HarborChart.harbors]
+class = "HarborsHarborChart"
+body = "agent"
+reaches = "harbors"
+
+[implementations.HarborChart.harbors.operations.look_up_harbor]
+calls = "get_harbor"                                              # the harbors client's operation
+sends = { harbor_id = "harbor" }                                  # its harbor_id is our harbor
+answers = { harbor_name = "place_name", harbor_standing = "charted" }
+refused = { harbor_standing = "uncharted" }                       # when harbors refuses (a harbor_id it does not hold)
+
+[implementations.HarborRepository.memory]
+body = "supported"
+
+[implementations.HarborIdentityRepository.uuid]
+body = "supported"
+
+[environments.gate]
+implementations = { VoyageRepository = "memory", VoyageIdentityRepository = "uuid", HarborChart = "harbors", HarborRepository = "memory", HarborIdentityRepository = "uuid" }
+hosts = ["http"]

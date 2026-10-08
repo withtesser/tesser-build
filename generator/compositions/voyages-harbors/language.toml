@@ -1,0 +1,39 @@
+# 1 LANGUAGE — the words of the voyages and harbors contexts. See ../README.md.
+
+context = "voyages"
+
+[[terms]]
+term = "voyage"
+means = "One vessel's planned passage to one harbor."
+
+[[terms]]
+term = "plan"
+means = "Put a voyage on record: a vessel bound for a harbor."
+
+[[terms]]
+term = "vessel"
+means = "The ship making the voyage, by its name."
+
+[[terms]]
+term = "harbor"
+means = "Where a voyage is bound. On a voyage, the harbor is the harbor_id it was charted with."
+
+[[terms]]
+term = "harbor chart"
+means = "The harbors context's record of every harbor: its harbor_id and its place name. Voyages asks it for a harbor's name and keeps none of the chart itself."
+
+[[terms]]
+term = "chart"
+means = "Put a harbor on the harbor chart, which gives it a harbor_id."
+
+[[terms]]
+term = "place name"
+means = "What a harbor is called on the chart."
+
+[[terms]]
+term = "charted"
+means = "A harbor the harbor chart holds; a voyage is planned only to a charted harbor."
+
+[[terms]]
+term = "uncharted"
+means = "A harbor_id the harbor chart does not hold."

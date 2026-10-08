@@ -18,6 +18,17 @@ class Fake{{PeerClient}}({{peer}}_client.{{PeerClient}}):
     async def {{operation}}(self, {{operation}}_request: {{peer}}_client.{{Operation}}Request) -> {{peer}}_client.{{Operation}}Response:
         return {{peer}}_client.{{Operation}}Response({{peer_response_sample}})
 {{/peer_operations}}
+{{#rejecting}}
+
+
+@ts.fake
+class FakeRejecting{{PeerClient}}({{peer}}_client.{{PeerClient}}):
+{{#peer_operations}}
+
+    async def {{operation}}(self, {{operation}}_request: {{peer}}_client.{{Operation}}Request) -> {{peer}}_client.{{Operation}}Response:
+        raise {{peer}}_client.{{PeerRejected}}("refused", "{{peer}} refuses it")
+{{/peer_operations}}
+{{/rejecting}}
 {{/reaches}}
 
 
@@ -28,4 +39,22 @@ class Test{{Gateway}}:
         {{operation}}_response = await gateways.{{Gateway}}({{#reaches}}Fake{{PeerClient}}(){{/reaches}}).{{operation}}(ports.{{Operation}}Request({{request_sample}}))
 
         assert isinstance({{operation}}_response, ports.{{Operation}}Response)
+{{#call_tests}}
+
+    async def test_{{operation}}_answers_what_{{#reaches}}{{peer}}{{/reaches}}_answers(self) -> None:
+        {{operation}}_response = await gateways.{{Gateway}}({{#reaches}}Fake{{PeerClient}}(){{/reaches}}).{{operation}}(ports.{{Operation}}Request({{request_sample}}))
+
+{{#checks}}
+        assert {{check}}
+{{/checks}}
+{{#refusal}}
+
+    async def test_{{operation}}_answers_its_refused_members_when_{{#reaches}}{{peer}}{{/reaches}}_refuses(self) -> None:
+        {{operation}}_response = await gateways.{{Gateway}}({{#reaches}}FakeRejecting{{PeerClient}}(){{/reaches}}).{{operation}}(ports.{{Operation}}Request({{request_sample}}))
+
+{{#refused_checks}}
+        assert {{check}}
+{{/refused_checks}}
+{{/refusal}}
+{{/call_tests}}
 {{/operations}}
