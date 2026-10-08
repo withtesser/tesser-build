@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import typing
 
 import tesser.adapters as ts
 
@@ -16,13 +17,20 @@ class HttpHandler(ts.Handler):
 {{#routes}}
 
     async def {{operation}}(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
-        {{operation}}_response = await self._{{context}}_client.{{operation}}(
-            client.{{Operation}}Request(
+        try:
+            {{operation}}_response = await self._{{context}}_client.{{operation}}(
+                client.{{Operation}}Request(
 {{#inputs}}
-                {{field}}=http_request.{{reader}}("{{field}}"),
+                    {{field}}=http_request.{{reader}}("{{field}}"),
 {{/inputs}}
+                )
             )
-        )
+        except client.ERRORS as error:
+            match error:
+                case client.{{Rejected}}():
+                    return protocol.HttpResponse.problem(422, error.message)
+                case _ as never:
+                    typing.assert_never(never)
         return protocol.HttpResponse(
             status_code={{status}},
             body=json.dumps(

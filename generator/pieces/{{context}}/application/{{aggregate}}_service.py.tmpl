@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import tesser.application as ts
+{{#service_refuses}}
+import tesser.errors as errors
+{{/service_refuses}}
 
 {{#service_imports}}
 import {{context}}.{{module}} as {{alias}}
@@ -36,7 +39,10 @@ class {{Service}}(ts.ApplicationService):
     async def {{operation}}(self, {{operation}}_request: client.{{Operation}}Request) -> client.{{Operation}}Response:
 {{#statements}}
 {{#build}}
-        {{aggregate}} = domain.{{Aggregate}}({{argument}})
+        try:
+            {{aggregate}} = domain.{{Aggregate}}({{argument}})
+        except errors.DomainError as domain_error:
+            raise client.{{Rejected}}(domain_error.code, domain_error.message) from domain_error
 {{/build}}
 {{#port_call}}
         {{assign}}await self._{{holder}}.{{call}}({{argument}})

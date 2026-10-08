@@ -433,6 +433,14 @@ an `int` field answers 400 unless it is an optionally negative run of at most
 18 ASCII digits (`--2`, `+2`, `1_0`, and the empty string are all 400).
 Two operations may call the same port operation; each gets its own mapper.
 
+**A refusal answers 422.** The domain refuses by raising `tesser.errors`'s
+`invalid(code, message)` (or `not_found`, `conflict`) where the aggregate is
+built, in its constructor or a value object it builds. The service builds the
+aggregate inside `try` / `except errors.DomainError` and raises the client's
+`<Aggregate>Rejected(code, message)` from it (declared in `client.py` with
+the `ERRORS` tuple), and the HTTP handler answers it with 422 and
+`{"detail": "<message>"}`, so nothing a refusal crosses needs a hand edit.
+
 **Steps**, in order:
 
 - `identity.<operation>` / `repository.<operation>` / `gateway.<operation>`:
@@ -648,6 +656,7 @@ inactivity timeout, about a minute.
 `<Aggregate>Orchestrator` and its `<Aggregate>OrchestratorRelay`,
 `<Aggregate>OrchestratorSignalRelay` and a `<SIGNAL>_PROMISE` constant,
 `<Key>Actions` and its `<Key>ActionsRelay` and `<Key>ApplicationClient`,
+`<Aggregate>Rejected` and `ERRORS` in the client,
 `<Operation>Request` / `<Operation>Response` for every operation, the engine
 containers (one per class of actions, named `<Key>Actions`, and the workflow,
 named `<Aggregate>Orchestrator`), `Restate<Operation>` for each activity and the

@@ -822,6 +822,37 @@ class TestRenderingCompositions:
         assert reading.read_text() == edited
         assert "tests/test_reading_loans_by_loan_id.py" in render_composition_response.kept
 
+    def test_a_refusal_the_domain_raises_answers_422_with_its_message(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "library-direct"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        loan = tmp_path / "out" / "loans" / "domain" / "loan.py"
+        loan.write_text(loan.read_text().replace("import tesser.domain as ts\n", "import tesser.domain as ts\nimport tesser.errors as errors\n").replace(
+            "        self._borrower = spec.borrower\n",
+            "        if not spec.borrower.strip():\n            raise errors.invalid(\"blank_borrower\", \"a loan needs a borrower\")\n"
+            "        self._borrower = spec.borrower\n",
+        ))
+        (tmp_path / "out" / "tests" / "test_refusing.py").write_text(
+            "import json\nimport urllib.error as urllib_error\nimport urllib.request as urllib_request\n\n\n"
+            "class TestRefusing:\n\n    def test_a_blank_borrower_is_refused(self, host: str) -> None:\n"
+            "        request = urllib_request.Request(f\"{host}/loans\", data=b'{\"borrower\": \" \", \"title\": \"Beloved\"}', "
+            "headers={\"Content-Type\": \"application/json\"}, method=\"POST\")\n"
+            "        try:\n            urllib_request.urlopen(request, timeout=30)\n            status, body = 201, b\"\"\n"
+            "        except urllib_error.HTTPError as error:\n            status, body = error.code, error.read()\n"
+            "        assert (status, json.loads(body)) == (422, {\"detail\": \"a loan needs a borrower\"})\n"
+        )
+
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_refusing.py", "loans/adapters/handlers", "loans/client"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

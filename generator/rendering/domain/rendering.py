@@ -1160,6 +1160,7 @@ class Model(ts.Entity):
             "App": str(Word(self._app).pascal()), "Aggregate": self._Aggregate, "aggregate": self._aggregate,
             "aggregates": str(Word(self._aggregate).plural()), "identity": self._identity,
             "ClientClass": str(Word(self._context).pascal()) + "Client", "Service": self._Aggregate + "Service",
+            "Rejected": self._Aggregate + "Rejected", "rejected": self._aggregate + "_rejected",
         }
         self._frames: dict[tuple[str, str], dict[str, object]] = {}
 
@@ -1535,6 +1536,9 @@ class Model(ts.Entity):
                                   ("client", "client"), ("domain", "domain"))
             if alias in aliases
         ]
+        self._binding["service_refuses"] = [{}] if any(
+            statement["build"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
+        ) else []
 
     def actions(self) -> None:
         Aggregate = self._Aggregate
@@ -1863,7 +1867,8 @@ class Model(ts.Entity):
         ]
         self._binding["client_exports"] = [
             {"name": name}
-            for name in sorted([str(r["Record"]) for r in client_records] + [str(self._binding["ClientClass"])])
+            for name in sorted([str(r["Record"]) for r in client_records]
+                               + [str(self._binding["ClientClass"]), str(self._binding["Rejected"]), "ERRORS"])
         ]
         fake_ports: list[dict[str, object]] = []
         fake_stores: list[dict[str, object]] = []
