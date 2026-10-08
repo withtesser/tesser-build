@@ -4882,7 +4882,8 @@ class Declaration(ts.ValueObject):
                     relative,
                     1,
                     "TB045",
-                    "is a symlinked directory; a declared tree is walked in "
+                    "is a symlinked directory — replace it with the directory it points to; "
+                    "a declared tree is walked in "
                     "full, and a symlink escapes the walk",
                 ))
             )
