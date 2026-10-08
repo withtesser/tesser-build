@@ -1279,6 +1279,10 @@ class Model(ts.Entity):
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
                 raise ValueError(f"{where} names {name!r}, which is not a {description}")
         domain_nouns = {str(code_name) for term in language.get("terms", []) for code_name in term.get("code_names", [])}
+        self._language_words = {str(Word(name).snake()) for name in domain_nouns} | {
+            re.sub(r"[^a-z0-9]+", "_", str(spelling).lower()).strip("_")
+            for term in language.get("terms", []) for spelling in (term.get("term"), term.get("short")) if spelling
+        }
         for term in language.get("terms", []):
             for spelling in (term.get("term"), term.get("short")):
                 if spelling:
@@ -2809,23 +2813,26 @@ class Model(ts.Entity):
                 if isinstance(children, list):
                     pending.extend(child for child in children if isinstance(child, dict))
         text = "\n".join(prose)
-        pieces: list[tuple[str, str]] = []
-        for enum, members in self._enums.items():
-            pieces.extend((f"enum {enum} value {member}", member) for member in members)
+        pieces: list[tuple[str, str, bool]] = [
+            (f"enum {enum} value {member}", member, True) for enum, members in self._enums.items() for member in members
+        ]
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             for side in ("request", "response"):
                 pieces.extend((f"client operation {operation_name} {side} field {str(field).split(':', 1)[0].strip()}",
-                               str(field).split(":", 1)[0].strip())
+                               str(field).split(":", 1)[0].strip(), False)
                               for field in operation.get(side, []))
-        pieces.extend((f"aggregate read {field}", field) for field, _ in self._reads)
+        pieces.extend((f"aggregate read {field}", field, False) for field, _ in self._reads)
         for signal_name, signal in self._composition.get("signals", {}).items():
-            pieces.extend((f"signal {signal_name} payload field {field}", str(field)) for field in signal.get("payload", []))
+            pieces.extend((f"signal {signal_name} payload field {field}", str(field), False) for field in signal.get("payload", []))
         for command, table in self._commands.items():
-            pieces.extend((f"command {command} outcome {outcome}", str(outcome)) for outcome in list(table.get("outcomes", []))[1:])
+            pieces.extend((f"command {command} outcome {outcome}", str(outcome), False) for outcome in list(table.get("outcomes", []))[1:])
         untraced = [
+            f"{piece} is named by no story and is no term in language.toml: write it in a story's given, when, or then, "
+            f"define it as a term in language.toml, or remove it from the composition" if termed else
             f"{piece} is named by no story: write it in a story's given, when, or then, or remove it from the composition"
-            for piece, name in pieces
-            if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
+            for piece, name, termed in pieces
+            if not (termed and name.lower() in self._language_words)
+            and re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
         ]
         if untraced:
             raise ValueError(*untraced)

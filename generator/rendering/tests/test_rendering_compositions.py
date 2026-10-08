@@ -1468,7 +1468,7 @@ class TestRenderingCompositions:
             client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
         )
 
-        assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story: write it in a story's given, when, or then, or remove it from the composition",)
+        assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",)
 
     def test_a_client_request_and_response_field_no_story_names_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -1575,8 +1575,8 @@ class TestRenderingCompositions:
         )
 
         assert render_composition_response.problems == (
-            "enum LoanState value lapsed is named by no story: write it in a story's given, when, or then, or remove it from the composition",
-            "enum LoanState value open is named by no story: write it in a story's given, when, or then, or remove it from the composition",
+            "enum LoanState value lapsed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",
+            "enum LoanState value open is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",
             "command renew_loan outcome refused is named by no story: write it in a story's given, when, or then, or remove it from the composition",
         )
 
@@ -1599,7 +1599,90 @@ class TestRenderingCompositions:
             client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
         )
 
-        assert render_composition_response.problems == ("enum LoanState value loan_i is named by no story: write it in a story's given, when, or then, or remove it from the composition",)
+        assert render_composition_response.problems == ("enum LoanState value loan_i is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",)
+
+    def test_an_enum_value_a_language_term_defines_needs_no_story(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["overdue_notice", "lapsed"]\n\n[aggregate.reads]')],
+            'language.toml': [('[[terms]]\nterm = "borrower"', '[[terms]]\nterm = "overdue notice"\nmeans = "The notice a borrower gets when a loan runs past its due date."\n\n[[terms]]\nterm = "borrower"')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",)
+
+    def test_an_enum_value_a_language_code_name_defines_needs_no_story(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["notice_sender"]\n\n[aggregate.reads]')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+
+    def test_an_enum_value_a_story_names_needs_no_language_term(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["lapsed"]\n\n[aggregate.reads]')],
+            'story.toml': [('then = "the loan is on record and I can read it back"', 'then = "the loan is on record and I can read it back, even once lapsed"')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+
+    def test_a_language_term_does_not_trace_a_piece_that_is_not_an_enum_value(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            'composition.toml': [('[aggregate.reads]\nloan_id = "str"', '[aggregate.reads]\nloan_id = "str"\nshelf = "str"')],
+            'language.toml': [('[[terms]]\nterm = "borrower"', '[[terms]]\nterm = "shelf"\nmeans = "Where a lent book is kept when it is not lent."\n\n[[terms]]\nterm = "borrower"')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ("aggregate read shelf is named by no story: write it in a story's given, when, or then, or remove it from the composition",)
 
     def test_the_scope_out_list_does_not_name_a_piece_for_a_story(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -1620,7 +1703,7 @@ class TestRenderingCompositions:
             client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
         )
 
-        assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story: write it in a story's given, when, or then, or remove it from the composition",)
+        assert render_composition_response.problems == ("enum LoanState value lapsed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition",)
 
     def test_a_domain_stub_answers_the_first_listed_outcome_which_is_the_success_outcome(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

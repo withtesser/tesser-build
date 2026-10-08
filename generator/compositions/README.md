@@ -433,7 +433,8 @@ reader can see has to have a story behind it, or it is scope creep, so the
 renderer checks the pieces below against `story.toml` and refuses (writes
 nothing) when one is untraced:
 
-- every value of every enum in `[enums]`;
+- every value of every enum in `[enums]`, unless `language.toml` defines it
+  (see below);
 - every field in each `[client.operations.*]` `request` and `response`;
 - every field in `[aggregate.reads]`;
 - every field in each `[signals.*]` `payload`;
@@ -449,13 +450,31 @@ is prose about non-goals). Case does not matter, and the name's underscores
 may be written as spaces (`awaiting_story_acceptance` is named by "awaiting
 story acceptance"); `loan` is not named by `loan_id`. Ports, port, action,
 and relay fields, `[shapes]`, `[messages]`, and `[aggregate.spec]` fields are
-not checked. Every untraced piece is one problem, all reported together:
+not checked.
+
+An enum value is also traced when `language.toml` defines it: a term's `term`
+or `short` written with underscores for spaces, or one of its `code_names` in
+snake_case. The language is the source of the domain's words, so an enum
+member keeps its domain name instead of being bent to match a story's
+wording. With `charted` and `uncharted` defined in the voyages language,
+
+```toml
+[enums]
+HarborStanding = ["uncharted", "charted"]
+```
+
+needs no story to say either word; a member that is neither in a story nor a
+term is still refused. Only enum values take this route: a field, a read, a
+payload field, or an outcome is traced by a story alone.
+
+Every untraced piece is one problem, all reported together:
 
 ```
-render: enum JtbdStatus value stories_decided is named by no story: write it in a story's given, when, or then, or remove it from the composition
+render: enum HarborStanding value unsurveyed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition
 ```
 
-The fix is to write the piece in a story, or to remove it from the composition.
+The fix is to write the piece in a story, to define an enum value as a term in
+`language.toml`, or to remove the piece from the composition.
 
 ### `[interfaces.http]` (required)
 
