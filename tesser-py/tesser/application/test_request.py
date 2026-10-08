@@ -1,6 +1,5 @@
 import pytest
 
-import tesser.adapters.mapper as adapters_mapper
 import tesser.application.mapper as application_mapper
 import tesser.application.request as request
 
@@ -85,7 +84,7 @@ def test_a_mapper_output_equals_the_request_it_maps_to() -> None:
             self.id = id
             self.name = name
 
-    class MapToMember(adapters_mapper.Mapper, Member):
+    class MapToMember(application_mapper.Mapper, Member):
         def __init__(self, row: dict[str, str]) -> None:
             super().__init__(row["id"], row["name"])
 
@@ -111,7 +110,7 @@ def test_a_mapper_output_never_equals_an_unrelated_request_with_the_same_fields(
         def __init__(self, id: str) -> None:
             self.id = id
 
-    class MapToMember(adapters_mapper.Mapper, Member):
+    class MapToMember(application_mapper.Mapper, Member):
         def __init__(self, id: str) -> None:
             super().__init__(id)
 
