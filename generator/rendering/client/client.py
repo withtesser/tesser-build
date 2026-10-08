@@ -23,10 +23,16 @@ class PrintedFile(ts.Response):
 class RenderCompositionResponse(ts.Response):
 
     def __init__(
-        self, problems: tuple[str, ...], written: tuple[str, ...], kept: tuple[str, ...], printed: tuple[PrintedFile, ...]
+        self,
+        problems: tuple[str, ...],
+        written: tuple[str, ...],
+        removed: tuple[str, ...],
+        kept: tuple[str, ...],
+        printed: tuple[PrintedFile, ...],
     ) -> None:
         self.problems = problems
         self.written = written
+        self.removed = removed
         self.kept = kept
         self.printed = printed
 

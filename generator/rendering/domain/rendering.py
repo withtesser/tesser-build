@@ -2912,6 +2912,12 @@ class RenderedTree(ts.AggregateRoot):
                 kept.append(Text(path))
             kept.extend(Text(f"{path}: {name}, written by hand, which the composition now renders differently")
                         for name in merge.conflicts())
+        rendered_paths = {str(rendered_file.path()) for rendered_file in rendered}
+        removed: list[Text] = []
+        for path in sorted(records):
+            if rendered and path not in rendered_paths and path in existing:
+                removed.append(Text(path))
+                drift.append(Text(f"{path} is no longer rendered"))
         if composed:
             written.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=composed + "".join(f"{line}\n" for line in recorded))))
         on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
@@ -2931,6 +2937,7 @@ class RenderedTree(ts.AggregateRoot):
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
+        self._removed = () if found else tuple(removed)
         self._drift = tuple(drift) if rendered else ()
 
     @property
@@ -2948,6 +2955,9 @@ class RenderedTree(ts.AggregateRoot):
 
     def kept(self) -> tuple[Text, ...]:
         return self._kept
+
+    def removed(self) -> tuple[Text, ...]:
+        return self._removed
 
     def printed(self) -> tuple[RenderedFile, ...]:
         return self._printed

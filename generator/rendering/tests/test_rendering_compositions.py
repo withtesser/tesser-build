@@ -853,6 +853,68 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert tested.returncode == 0, tested.stdout
 
+    def test_a_store_the_composition_no_longer_renders_is_removed_when_it_renders_again(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library-direct" / f"{name}.toml").read_text())
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(
+            composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=(),
+        )
+        rendering.client.render_composition(render_composition_request)
+        for name, old, new in (
+            ("implementations", "[implementations.LoanRepository.memory]\nbody = \"supported\"",
+             "[implementations.LoanRepository.sqlite]\nclass = \"SqliteLoanStore\"\nbody = \"agent\""),
+            ("implementations", 'LoanRepository = "memory"', 'LoanRepository = "sqlite"'),
+            ("infra", "[storage.memory]", "[storage.sqlite]\nlocation_variable = \"LIBRARY_DB_PATH\""),
+        ):
+            text = (tmp_path / "composition" / f"{name}.toml").read_text()
+            assert old in text
+            (tmp_path / "composition" / f"{name}.toml").write_text(text.replace(old, new, 1))
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+        check_composition_response = rendering.client.check_composition(
+            client.CheckCompositionRequest(composition_dir=str(tmp_path / "composition"), tree_dir=str(tmp_path / "out")),
+        )
+
+        assert render_composition_response.problems == ()
+        assert render_composition_response.removed == (
+            "loans/adapters/repositories/memory_loan_repository.py", "loans/adapters/repositories/test_memory_loan_repository.py",
+        )
+        assert not (tmp_path / "out" / "loans" / "adapters" / "repositories" / "memory_loan_repository.py").exists()
+        assert (tmp_path / "out" / "loans" / "adapters" / "repositories" / "sqlite_loan_store.py").is_file()
+        assert check_composition_response.drifted == ()
+
+    def test_a_root_test_whose_route_the_composition_no_longer_serves_is_removed_with_what_its_author_wrote(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library-direct" / f"{name}.toml").read_text())
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(
+            composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=(),
+        )
+        rendering.client.render_composition(render_composition_request)
+        reading = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
+        reading.write_text(reading.read_text().replace('loan_id: str = "loan-1"', 'loan_id: str = "loan-2"'))
+        story = (tmp_path / "composition" / "story.toml").read_text()
+        (tmp_path / "composition" / "story.toml").write_text(story.split('[[jtbds.stories.jtbds]]\nid = "j-1-b"', 1)[0])
+        composition = (tmp_path / "composition" / "composition.toml").read_text()
+        (tmp_path / "composition" / "composition.toml").write_text(
+            composition.replace('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1"]').replace(
+                composition[composition.index("[client.operations.get_loan]"):composition.index("[ports.NoticeSender]")], ""
+            )
+        )
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+
+        assert render_composition_response.problems == ()
+        assert render_composition_response.removed == ("tests/test_reading_loans_by_loan_id.py",)
+        assert not reading.exists()
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

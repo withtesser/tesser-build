@@ -31,6 +31,7 @@ class Handler(ts.Handler):
             return protocol.CliResponse(1, stdout="", stderr=lines)
         return protocol.CliResponse.ok(
             "\n".join(render_composition_response.written)
+            + "".join(f"\nremoved {path}" for path in render_composition_response.removed)
             + "".join(f"\nkept {path}" for path in render_composition_response.kept)
             + "".join(
                 f"\n\n--- {printed_file.path}\n{printed_file.text.removesuffix('\n')}"

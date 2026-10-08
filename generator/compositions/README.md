@@ -8,8 +8,9 @@ cd generator
 PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...
 ```
 
-It prints the path of every file it wrote, one per line (then `kept <path>` for
-each file in which it kept something written by hand, below), and exits 0; or it prints every problem
+It prints the path of every file it wrote, one per line (then `removed <path>`
+for each file it removed, and `kept <path>` for each file in which it kept
+something written by hand, below), and exits 0; or it prints every problem
 on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
 (repeatable) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
@@ -27,6 +28,10 @@ tree follows its composition:
 - a file it renders is merged definition by definition (below, "Writing by
   hand in a rendered tree"): what the composition renders follows it, and what
   was written by hand stays;
+- a file the last render wrote (`.tesser-rendered` records it) that the
+  composition no longer renders is removed, with whatever was written in it by
+  hand (git keeps it), and so is every directory that leaves empty: the store a
+  storage change replaced, the root test of a route no story has any more;
 - a file where a rendered one goes that carries no mark, was not rendered there
   before, and differs, is a problem;
 - a Python file that does not parse is a problem, since nothing in it can be
@@ -75,7 +80,8 @@ PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check <composition-dir> <t
 
 renders in memory, writes nothing, and exits 1 naming what a render would
 change or would meet: a rendered file that is missing or has lost its generated
-mark, and per definition (`<path>: <Class.method> ...`) one the file lacks
+mark, a file the last render wrote that the composition no longer renders
+(`is no longer rendered`), and per definition (`<path>: <Class.method> ...`) one the file lacks
 (`is missing`), an untouched one the composition now renders differently
 (`differs from what the composition renders`), an untouched one it no longer
 renders (`is no longer rendered`), and one edited by hand that the composition

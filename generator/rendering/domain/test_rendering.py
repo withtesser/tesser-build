@@ -448,3 +448,14 @@ class TestRenderedTree:
             "# pragma: tesser-agent-owned; x\nimport enum\nimport json\n\n\nclass Loan:\n\n"
             "    def lend(self) -> str:\n        return json.dumps(\"lent\")\n\n    def extend(self) -> str:\n        return \"\"\n"
         ]
+
+    def test_a_file_the_last_render_wrote_and_this_one_does_not_is_removed_and_is_drift(self) -> None:
+        pieces = (("routes.txt.tmpl", "{{#routes}}\n{{method}} {{path}}\n{{/routes}}"), ("{{context}}/old.py.tmpl", "# pragma: tesser-generated; x\nOLD = 1\n"))
+        first = domain.RenderedTree(rendered_tree_spec(pieces=pieces))
+        written = tuple((str(rendered_file.path()), str(rendered_file.content())) for rendered_file in first.files())
+
+        rendered_tree = domain.RenderedTree(rendered_tree_spec(pieces=pieces[:1], target="occupied", existing=written))
+
+        assert [str(text) for text in rendered_tree.removed()] == ["lending/old.py"]
+        assert [str(text) for text in rendered_tree.drift()] == ["lending/old.py is no longer rendered"]
+        assert "lending/old.py" not in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
