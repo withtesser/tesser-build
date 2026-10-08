@@ -467,7 +467,7 @@ class TestRenaming:
     def test_a_renamed_word_is_replaced_in_every_spelling_where_it_is_a_whole_segment(self) -> None:
         renaming = domain.Renaming(domain.RenamingSpec(
             before=(("context", "lending"), ("aggregate", "loan"), ("identity", "loan_id")),
-            after=(("context", "lending"), ("aggregate", "checkout"), ("identity", "checkout_id")),
+            after=(("context", "lending"), ("aggregate", "rental"), ("identity", "rental_id")),
         ))
 
         text = renaming.apply(
@@ -475,6 +475,6 @@ class TestRenaming:
         )
 
         assert str(text) == (
-            "lending/domain/checkout.py MapToCheckoutSpec(checkout_id) checkouts Checkouts CHECKOUT_ID test_a_checkout_is_read "
-            "Loaner loaned saloon \"checkout-1\""
+            "lending/domain/rental.py MapToRentalSpec(rental_id) rentals Rentals RENTAL_ID test_a_rental_is_read "
+            "Loaner loaned saloon \"rental-1\""
         )

@@ -935,7 +935,7 @@ class TestRenderingCompositions:
         reading.write_text(reading.read_text().replace('loan_id: str = "loan-1"', 'loan_id: str = "loan-2"'))
         for document in (tmp_path / "composition").iterdir():
             document.write_text(
-                document.read_text().replace("Loans", "Checkouts").replace("loans", "checkouts").replace("Loan", "Checkout").replace("loan", "checkout")
+                document.read_text().replace("Loans", "Rentals").replace("loans", "rentals").replace("Loan", "Rental").replace("loan", "rental")
             )
 
         render_composition_response = rendering.client.render_composition(render_composition_request)
@@ -943,7 +943,7 @@ class TestRenderingCompositions:
             client.CheckCompositionRequest(composition_dir=str(tmp_path / "composition"), tree_dir=str(tmp_path / "out")),
         )
         tested = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "checkouts"],
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "rentals"],
             cwd=tmp_path / "out", capture_output=True, text=True, check=False,
             env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
         )
@@ -951,12 +951,12 @@ class TestRenderingCompositions:
         assert render_composition_response.problems == ()
         assert {"loans/domain/loan.py", "tests/test_reading_loans_by_loan_id.py"} <= set(render_composition_response.removed)
         assert render_composition_response.kept == (
-            "checkouts/domain/checkout.py: what was written by hand in loans/domain/loan.py",
-            "tests/test_reading_checkouts_by_checkout_id.py: what was written by hand in tests/test_reading_loans_by_loan_id.py",
+            "rentals/domain/rental.py: what was written by hand in loans/domain/loan.py",
+            "tests/test_reading_rentals_by_rental_id.py: what was written by hand in tests/test_reading_loans_by_loan_id.py",
         )
-        assert 'raise errors.invalid("blank_borrower", "a checkout needs a borrower")' in (
-            tmp_path / "out" / "checkouts" / "domain" / "checkout.py").read_text()
-        assert 'checkout_id: str = "checkout-2"' in (tmp_path / "out" / "tests" / "test_reading_checkouts_by_checkout_id.py").read_text()
+        assert 'raise errors.invalid("blank_borrower", "a rental needs a borrower")' in (
+            tmp_path / "out" / "rentals" / "domain" / "rental.py").read_text()
+        assert 'rental_id: str = "rental-2"' in (tmp_path / "out" / "tests" / "test_reading_rentals_by_rental_id.py").read_text()
         assert not (tmp_path / "out" / "loans").exists()
         assert tested.returncode == 0, tested.stdout
         assert check_composition_response.drifted == ()
