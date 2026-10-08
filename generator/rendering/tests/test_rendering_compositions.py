@@ -392,6 +392,54 @@ class TestRenderingCompositions:
             "(when: 'I POST them as JSON to /loans'; then: 'I get back 201 with its loan_id')",
         )
 
+    def test_a_story_states_its_route_and_status_with_punctuation_around_them(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [
+                ('when = "I POST them as JSON to /loans"', 'when = "I POST them as JSON (to /loans)."'),
+                ('then = "I get back 201 with its loan_id"', 'then = "I get back 201, with its loan_id."'),
+                ('when = "I GET /loans/{loan_id}"', 'when = "I GET /loans/{loan_id}, by its loan_id."'),
+                ('then = "I get back 200 with its borrower and title"', 'then = "I get back (200) with its borrower and title."'),
+            ],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == ()
+
+    def test_a_path_the_story_states_only_inside_a_longer_path_is_not_stated(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [('when = "I POST them as JSON to /loans"', 'when = "I POST them as JSON to /loans/new."')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "s-1-a-1 is POST /loans answering 201, and its own when and then do not say so "
+            "(when: 'I POST them as JSON to /loans/new.'; then: 'I get back 201 with its loan_id')",
+        )
+
     def test_a_class_of_actions_named_for_its_port_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

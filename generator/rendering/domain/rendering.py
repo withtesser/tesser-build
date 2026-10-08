@@ -2358,7 +2358,12 @@ class Model(ts.Entity):
                                  f"{method} {path}, and HTTP reaches only one of them")
             when = str(story.get("when", ""))
             then = str(story.get("then", ""))
-            if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
+            said = (
+                re.search(rf"(?<![A-Za-z]){method}(?![A-Za-z])", when),
+                re.search(rf"(?<![A-Za-z0-9_/{{}}-]){re.escape(path)}(?![A-Za-z0-9_/{{}}-])", when),
+                re.search(rf"(?<![0-9]){status_code}(?![0-9])", then),
+            )
+            if not all(said):
                 raise ValueError(f"{routed[0]} is {method} {path} answering {status_code}, and its own when and then "
                                  f"do not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)

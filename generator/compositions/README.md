@@ -215,8 +215,10 @@ an HTTP route serves carries its `route` — the method (`GET`, `POST`, `PUT`,
 parameters — and its `status`, the 2xx it answers with. The `given`, `when`,
 and `then` stay prose, and the prose must state the route word for word: the
 method and the path are words of the `when` (`I GET /loans/{loan_id}`) and the
-status is a word of the `then` (`I get back 200 ...`). A level-2 story with a
-route that no client operation serves is a problem.
+status is a word of the `then` (`I get back 200 ...`). Punctuation around a
+word is fine (`(GET /loans/{loan_id}).`, `200,`), but a path stated only inside
+a longer one is not stated (`/loans/new` does not state `/loans`). A level-2
+story with a route that no client operation serves is a problem.
 
 A level-2 story's `given` is prose: it says in words how the story is reached
 (`I have created a loan with POST /loans`). The renderer never reads it for
