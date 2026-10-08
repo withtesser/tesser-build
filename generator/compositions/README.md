@@ -67,6 +67,21 @@ of its own when you can (a method beside the rendered ones, a class of your
 own), because an edited rendered definition stops following the composition;
 to hand one back to the composition, delete it and render again.
 
+**Renaming a term.** `.tesser-rendered` also records the context, the
+aggregate, and its identity (its `names` line). When a render names any of them
+differently, each file the last render wrote whose path, with the old names
+spelled as the new, is a file this render writes and the tree lacks
+(`loans/domain/loan.py` as `checkouts/domain/checkout.py`,
+`tests/test_reading_loans_by_loan_id.py` as
+`tests/test_reading_checkouts_by_checkout_id.py`) hands what was written in it
+by hand to that file, with the old names spelled as the new wherever they are a
+whole word or a whole segment of a name (`Loan`, `LoanSpec`, `loans`,
+`loan_id`, `LOAN_ID`, `"loan-1"`; never `Loaner`), and is removed; the render
+says `kept <new path>: what was written by hand in <old path>`. Nothing else is
+carried by a rename: to rename an agent-owned class (a gateway, a store), move
+its file and rename the class by hand (`git mv`) before rendering, and the
+render merges into the moved file.
+
 A file rendered before the renderer kept records (its `.tesser-rendered` has
 only its first line) is rendered over if it carries the generated mark, and
 keeps every definition that differs if it carries the agent-owned mark; that

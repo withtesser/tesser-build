@@ -192,6 +192,7 @@ class TestRenderedTree:
             "lending/domain/loan.txt": "# pragma: tesser-agent-owned; x\nLoan by loan_id\n",
             "routes.txt": "POST /loans 201\nGET /loans/{loan_id} 200\n",
             ".tesser-rendered": "compositions/lending\n"
+            "names\tcontext=lending\taggregate=loan\tidentity=loan_id\n"
             "88e210352514d935\tlending/domain/loan.txt\t*\n"
             "0777370abdd2d0c8\tlending/ports/loan_identity_repository.txt\t*\n"
             "f4438a30af16da24\tlending/ports/loan_repository.txt\t*\n"
@@ -459,3 +460,21 @@ class TestRenderedTree:
         assert [str(text) for text in rendered_tree.removed()] == ["lending/old.py"]
         assert [str(text) for text in rendered_tree.drift()] == ["lending/old.py is no longer rendered"]
         assert "lending/old.py" not in [str(rendered_file.path()) for rendered_file in rendered_tree.files()]
+
+
+class TestRenaming:
+
+    def test_a_renamed_word_is_replaced_in_every_spelling_where_it_is_a_whole_segment(self) -> None:
+        renaming = domain.Renaming(domain.RenamingSpec(
+            before=(("context", "lending"), ("aggregate", "loan"), ("identity", "loan_id")),
+            after=(("context", "lending"), ("aggregate", "checkout"), ("identity", "checkout_id")),
+        ))
+
+        text = renaming.apply(
+            "lending/domain/loan.py MapToLoanSpec(loan_id) loans Loans LOAN_ID test_a_loan_is_read Loaner loaned saloon \"loan-1\""
+        )
+
+        assert str(text) == (
+            "lending/domain/checkout.py MapToCheckoutSpec(checkout_id) checkouts Checkouts CHECKOUT_ID test_a_checkout_is_read "
+            "Loaner loaned saloon \"checkout-1\""
+        )

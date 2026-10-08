@@ -2721,7 +2721,7 @@ class Merge(ts.Entity):
             last = max((statement.end_lineno or 0) for statement in statements) if statements else head
             layouts.append(("".join(lines[:head]), levels[0], "".join(lines[last:])))
         head_text, module_rows, tail = layouts[0]
-        self._recorded = tuple(
+        self._recorded = (Text(f"{Digest(spec.rendered)}\t{spec.path}\t{WHOLE}"),) + tuple(
             Text(f"{Digest(text)}\t{spec.path}\t{key}")
             for row_key, _, _, row_text, members, _ in module_rows
             for key, text in [(row_key, row_text), *((member_key, member_text) for member_key, _, _, member_text in members)]
@@ -2762,6 +2762,51 @@ class Merge(ts.Entity):
 
     def recorded(self) -> tuple[Text, ...]:
         return self._recorded
+
+
+class RenamingSpec(ts.Spec):
+
+    def __init__(self, before: tuple[tuple[str, str], ...], after: tuple[tuple[str, str], ...]) -> None:
+        self.before = before
+        self.after = after
+
+
+class Renaming(ts.ValueObject):
+
+    _pairs: Pairs
+
+    def __init__(self, spec: RenamingSpec) -> None:
+        after = dict(spec.after)
+        pairs: dict[str, str] = {}
+        for role, old in spec.before:
+            new = after.get(role, old)
+            if new == old or not SNAKE.fullmatch(old) or not SNAKE.fullmatch(new):
+                continue
+            for spell in (Word.plural, Word.pascal, Word.upper):
+                pairs[str(spell(Word(old)))] = str(spell(Word(new)))
+            pairs[str(Word(old).plural().pascal())] = str(Word(new).plural().pascal())
+            pairs[str(Word(old).plural().upper())] = str(Word(new).plural().upper())
+            pairs[old] = new
+        object.__setattr__(self, "_pairs", Pairs(tuple(sorted(pairs.items(), key=str, reverse=True))))
+
+    def apply(self, text: str) -> Text:
+        olds = sorted((old for old, _ in self._pairs), key=len, reverse=True)
+        if not olds:
+            return Text(text)
+        pattern = re.compile("|".join(
+            f"(?<![A-Z0-9]){re.escape(old)}(?![A-Z0-9])" if old.isupper()
+            else f"(?<![A-Z]){re.escape(old)}(?![a-z])" if old[:1].isupper()
+            else f"(?<![a-z0-9]){re.escape(old)}(?![a-z0-9])"
+            for old in olds
+        ))
+        pieces: list[str] = []
+        position = 0
+        for match in pattern.finditer(text):
+            pieces.append(text[position : match.start()])
+            pieces.append(str(self._pairs.get(match.group(0))))
+            position = match.end()
+        pieces.append(text[position:])
+        return Text("".join(pieces))
 
 
 class RenderedFileSpec(ts.Spec):
@@ -2847,7 +2892,8 @@ class RenderedTree(ts.AggregateRoot):
                             path=str(template.unguarded().render(placed)),
                             content=str(Template(text).render(placed)),
                         )))
-                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\n")))
+                named = "\t".join(f"{role}={scope.value(role)}" for role in ("context", "aggregate", "identity"))
+                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\nnames\t{named}\n")))
             except KeyError as missing:
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:
@@ -2862,10 +2908,26 @@ class RenderedTree(ts.AggregateRoot):
         self._faults = tuple(found)
         existing = dict(spec.existing)
         records: dict[str, list[tuple[str, str]]] = {}
-        for line in existing.get(RENDERED_FROM, "").splitlines()[1:]:
+        before: list[tuple[str, str]] = []
+        after: list[tuple[str, str]] = []
+        for source, line in [("existing", line) for line in existing.get(RENDERED_FROM, "").splitlines()[1:]] + [
+            ("rendered", line) for rendered_file in rendered if str(rendered_file.path()) == RENDERED_FROM
+            for line in str(rendered_file.content()).splitlines()[1:]
+        ]:
             fields = line.split("\t")
-            if len(fields) == 3:
+            if fields[0] == "names":
+                (before if source == "existing" else after).extend(
+                    (field.split("=", 1)[0], field.split("=", 1)[1]) for field in fields[1:] if "=" in field
+                )
+            elif len(fields) == 3 and source == "existing":
                 records.setdefault(fields[1], []).append((fields[2], fields[0]))
+        renaming = Renaming(RenamingSpec(before=tuple(before), after=tuple(after)))
+        rendered_paths = {str(rendered_file.path()) for rendered_file in rendered}
+        carried = {
+            str(renaming.apply(path)): path for path in records
+            if path not in rendered_paths and path in existing and str(renaming.apply(path)) in rendered_paths
+            and str(renaming.apply(path)) not in existing
+        }
         written: list[RenderedFile] = []
         kept: list[Text] = []
         drift: list[Text] = []
@@ -2882,7 +2944,32 @@ class RenderedTree(ts.AggregateRoot):
                     drift.append(Text(f"{path} differs from what the composition renders"))
                 continue
             current = existing.get(path)
-            if current is None or path in records:
+            path_records = tuple(records.get(path, []))
+            origin = carried.get(path)
+            if origin is not None:
+                current = str(renaming.apply(existing[origin]))
+                if not path.endswith(".py"):
+                    path_records = ((WHOLE, str(Digest(content))),) if str(Digest(existing[origin])) != dict(records[origin]).get(WHOLE) else (
+                        (WHOLE, str(Digest(current))),)
+                else:
+                    try:
+                        shown = [
+                            [tuple(str(line).split("\t")) for line in Merge(MergeSpec(
+                                path=path, rendered=text, existing=text, records=(), mode=RECORDED,
+                            )).recorded()]
+                            for text in (existing[origin], current, content)
+                        ]
+                    except ValueError as unparsed:
+                        found.append(Text(f"{origin} does not parse ({unparsed}), so the render cannot carry what is written in it by hand"))
+                        continue
+                    last = dict(records[origin])
+                    fresh = {row[2]: row[0] for row in shown[2]}
+                    path_records = tuple(
+                        (moved[2], moved[0]) if last.get(old[2]) == old[0] else (moved[2], fresh[moved[2]])
+                        for old, moved in zip(shown[0], shown[1]) if last.get(old[2]) == old[0] or moved[2] in fresh
+                    )
+                mode = RECORDED
+            elif current is None or path in records:
                 mode = RECORDED
             elif not current.startswith((GENERATED_MARKER, AGENT_MARKER)) and current != content and not content.startswith(AGENT_MARKER):
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
@@ -2895,7 +2982,7 @@ class RenderedTree(ts.AggregateRoot):
             try:
                 merge = Merge(MergeSpec(
                     path=path, rendered=content, existing=content if current is None else current,
-                    records=tuple(records.get(path, [])), mode=mode,
+                    records=path_records, mode=mode,
                 ))
             except ValueError as unparsed:
                 found.append(Text(f"{path} does not parse ({unparsed}), so the render cannot keep what is written in it by hand"))
@@ -2909,10 +2996,9 @@ class RenderedTree(ts.AggregateRoot):
                 drift.append(Text(f"{path} has lost its generated mark"))
             drift.extend(merge.drift())
             if merge.kept():
-                kept.append(Text(path))
+                kept.append(Text(path if origin is None else f"{path}: what was written by hand in {origin}"))
             kept.extend(Text(f"{path}: {name}, written by hand, which the composition now renders differently")
                         for name in merge.conflicts())
-        rendered_paths = {str(rendered_file.path()) for rendered_file in rendered}
         removed: list[Text] = []
         for path in sorted(records):
             if rendered and path not in rendered_paths and path in existing:

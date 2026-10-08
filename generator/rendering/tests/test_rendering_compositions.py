@@ -915,6 +915,52 @@ class TestRenderingCompositions:
         assert render_composition_response.removed == ("tests/test_reading_loans_by_loan_id.py",)
         assert not reading.exists()
 
+    def test_a_renamed_term_carries_what_was_written_by_hand_to_the_files_named_for_the_new_term(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text((tree / "compositions" / "library-direct" / f"{name}.toml").read_text())
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_request = client.RenderCompositionRequest(
+            composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=(),
+        )
+        rendering.client.render_composition(render_composition_request)
+        loan = tmp_path / "out" / "loans" / "domain" / "loan.py"
+        loan.write_text(loan.read_text().replace("import tesser.domain as ts\n", "import tesser.domain as ts\nimport tesser.errors as errors\n").replace(
+            "        self._borrower = spec.borrower\n",
+            "        if not spec.borrower.strip():\n            raise errors.invalid(\"blank_borrower\", \"a loan needs a borrower\")\n"
+            "        self._borrower = spec.borrower\n",
+        ))
+        reading = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
+        reading.write_text(reading.read_text().replace('loan_id: str = "loan-1"', 'loan_id: str = "loan-2"'))
+        for document in (tmp_path / "composition").iterdir():
+            document.write_text(
+                document.read_text().replace("Loans", "Checkouts").replace("loans", "checkouts").replace("Loan", "Checkout").replace("loan", "checkout")
+            )
+
+        render_composition_response = rendering.client.render_composition(render_composition_request)
+        check_composition_response = rendering.client.check_composition(
+            client.CheckCompositionRequest(composition_dir=str(tmp_path / "composition"), tree_dir=str(tmp_path / "out")),
+        )
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "checkouts"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert {"loans/domain/loan.py", "tests/test_reading_loans_by_loan_id.py"} <= set(render_composition_response.removed)
+        assert render_composition_response.kept == (
+            "checkouts/domain/checkout.py: what was written by hand in loans/domain/loan.py",
+            "tests/test_reading_checkouts_by_checkout_id.py: what was written by hand in tests/test_reading_loans_by_loan_id.py",
+        )
+        assert 'raise errors.invalid("blank_borrower", "a checkout needs a borrower")' in (
+            tmp_path / "out" / "checkouts" / "domain" / "checkout.py").read_text()
+        assert 'checkout_id: str = "checkout-2"' in (tmp_path / "out" / "tests" / "test_reading_checkouts_by_checkout_id.py").read_text()
+        assert not (tmp_path / "out" / "loans").exists()
+        assert tested.returncode == 0, tested.stdout
+        assert check_composition_response.drifted == ()
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
