@@ -4486,7 +4486,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns {target_name}, whose constructor the analyzer cannot read; "
+                    f"{where} returns {target_name}, whose constructor the analyzer cannot read — "
+                    "return a spec or DTO declared in the tree; "
                     "a helper mirrors a constructor declared in the tree",
                 )))
             elif kind == "relay":
@@ -4494,7 +4495,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns a relay record; a relay record carries domain objects, "
+                    f"{where} returns a relay record — build the relay record in the test itself; "
+                    "a relay record carries domain objects, "
                     "and a test builds its domain objects itself",
                 )))
             elif kind == "data":
@@ -4502,7 +4504,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns no construction data; a helper builds a spec or a DTO",
+                    f"{where} returns no construction data — inline it into the tests that call it, "
+                    "or make it build one spec or DTO; a helper builds a spec or a DTO",
                 )))
             elif kind == "through":
                 found.append(Violation(ViolationSpec(
@@ -4517,28 +4520,32 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} is async; a helper or assembly returns its construction, never a coroutine",
+                    f"{where} is async — make it a plain def; "
+                    "a helper or assembly returns its construction, never a coroutine",
                 )))
             elif kind == "assembly_control":
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} has control flow; an assembly puts parts together without branching or looping",
+                    f"{where} has control flow — move the branch or loop into the test, one assembly per shape; "
+                    "an assembly puts parts together without branching or looping",
                 )))
             elif kind == "assembly_call":
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} calls {param} in the code under test; an assembly builds a test input and runs nothing",
+                    f"{where} calls {param} in the code under test — call it in the test and hand the "
+                    "assembly only the parts; an assembly builds a test input and runs nothing",
                 )))
             else:
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} has control flow; a helper only constructs",
+                    f"{where} has control flow — move the branch into the test, one helper call per shape; "
+                    "a helper only constructs",
                 )))
         object.__setattr__(self, "_found", tuple(found))
 

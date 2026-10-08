@@ -5632,7 +5632,7 @@ def test_helper_rules_are_flagged() -> None:
     )
     assert any(
         "bad_builder" in f
-        and "returns no construction data; a helper builds a spec or a DTO" in f
+        and "returns no construction data — inline it into the tests that call it, or make it build one spec or DTO; a helper builds a spec or a DTO" in f
         for f in findings
     )
     assert any(
@@ -5784,7 +5784,7 @@ def test_a_relay_record_has_no_helper_and_a_default_never_builds_a_domain_object
                )
     helper = [f for f in findings if "test_thing_relay_helpers" in f and "TB073" in f]
     assert any(
-        "keep_thing_request returns a relay record; a relay record carries domain objects, "
+        "keep_thing_request returns a relay record — build the relay record in the test itself; a relay record carries domain objects, "
         "and a test builds its domain objects itself" in f
         for f in helper
     ), helper
@@ -5850,12 +5850,12 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
     assembly = [f for f in findings if "test_assemblies" in f and "TB073" in f]
     assert not any("test_assemblies.joined" in f for f in assembly), assembly
     assert any(
-        "test_assemblies.branching has control flow; an assembly puts parts together without branching or looping"
+        "test_assemblies.branching has control flow — move the branch or loop into the test, one assembly per shape; an assembly puts parts together without branching or looping"
         in f
         for f in assembly
     ), assembly
     assert any(
-        "test_assemblies.running calls thing.Thing in the code under test; "
+        "test_assemblies.running calls thing.Thing in the code under test — call it in the test and hand the assembly only the parts; "
         "an assembly builds a test input and runs nothing" in f
         for f in assembly
     ), assembly
@@ -5863,7 +5863,7 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
         "test_assemblies.undefaulted parameter 'text' has no default" in f for f in assembly
     ), assembly
     assert sum(
-        "test_assemblies.looping has control flow; an assembly puts parts together" in f for f in assembly
+        "test_assemblies.looping has control flow — move the branch or loop into the test, one assembly per shape; an assembly puts parts together" in f for f in assembly
     ) == 2, assembly
     assert any("test_assemblies.through_a_method calls thing.Thing.parse in the code under test" in f for f in assembly), assembly
     assert sum("test_assemblies.guarded has control flow" in f for f in assembly) == 2, assembly
@@ -5871,7 +5871,7 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
     assert not any("test_assemblies.from_a_field" in f for f in assembly), assembly
     assert any("test_assemblies.yielding has control flow" in f for f in assembly), assembly
     assert any(
-        "test_assemblies.awaited is async; a helper or assembly returns its construction, never a coroutine" in f
+        "test_assemblies.awaited is async — make it a plain def; a helper or assembly returns its construction, never a coroutine" in f
         for f in assembly
     ), assembly
     assert not any("TB071" in f and "test_assemblies" in f for f in findings), findings
@@ -6001,7 +6001,7 @@ def test_a_helper_whose_constructor_the_analyzer_cannot_read_is_flagged() -> Non
                )
     helper = [f for f in findings if "test_unread_helpers" in f and "TB073" in f]
     assert any(
-        "test_unread_helpers.local_request returns LocalRequest, whose constructor the analyzer cannot read; "
+        "test_unread_helpers.local_request returns LocalRequest, whose constructor the analyzer cannot read — return a spec or DTO declared in the tree; "
         "a helper mirrors a constructor declared in the tree" in f
         for f in helper
     ), helper
