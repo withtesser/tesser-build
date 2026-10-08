@@ -1780,13 +1780,14 @@ class ImportEdge(ts.ValueObject):
 class TesserImportSpec(ts.Spec):
 
     def __init__(
-        self, target: str, lineno: int, as_ts: bool, from_form: bool, bare: bool = False
+        self, target: str, lineno: int, as_ts: bool, from_form: bool, bare: bool = False, local: str = ""
     ) -> None:
         self.target = target
         self.lineno = lineno
         self.as_ts = as_ts
         self.from_form = from_form
         self.bare = bare
+        self.local = local
 
 
 class TesserImport(ts.ValueObject):
@@ -1794,10 +1795,12 @@ class TesserImport(ts.ValueObject):
     _target: Target
     _lineno: Line
     _form: ImportForm
+    _local: Text | None
 
     def __init__(self, spec: TesserImportSpec) -> None:
         object.__setattr__(self, "_target", Target(spec.target))
         object.__setattr__(self, "_lineno", Line(spec.lineno))
+        object.__setattr__(self, "_local", Text(spec.local) if spec.local else None)
         object.__setattr__(
             self,
             "_form",
@@ -7833,6 +7836,7 @@ class TesserImportPolicy(ts.ValueObject):
                             lineno,
                             "TB050",
                             f"{module_name} imports {target} without the ts alias; {once_clause}",
+                            rename=None if imp._local is None else (str(imp._local), "ts"),
                         ))
                     )
         if absent_clause is not None and not seen_any:
@@ -8274,6 +8278,7 @@ class Module(ts.Entity):
                                     alias.asname == "ts",
                                     False,
                                     alias.asname is None,
+                                    alias.asname or alias.name,
                                 ))
                             )
                         else:
@@ -16156,7 +16161,7 @@ class Codebase(ts.AggregateRoot):
 
 FIX_PASSES: typing.Final[int] = 8
 
-FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB053", "TB085"})
+FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB050", "TB053", "TB085"})
 
 
 class FindingSpec(ts.Spec):

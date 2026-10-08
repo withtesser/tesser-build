@@ -23590,3 +23590,33 @@ def test_a_fixing_unquotes_an_annotation_its_module_already_defers() -> None:
     )))
     rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
     assert "    tag_spec: domain.TagSpec = domain.TagSpec('a')\n" in rewritten["mod/domain/test_tag.py"]
+
+
+def test_a_fixing_aliases_a_module_s_own_tesser_package_as_ts() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/labels.py",
+            "mod.domain.labels",
+            "import tesser.domain as tesser_domain\n"
+            "class Label(tesser_domain.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+        (
+            "mod/domain/stamps.py",
+            "mod.domain.stamps",
+            "import tesser.domain\n"
+            "class Stamp(tesser.domain.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["mod/domain/labels.py"].startswith(
+        "import tesser.domain as ts\nclass Label(ts.ValueObject):\n"
+    )
+    assert rewritten["mod/domain/stamps.py"].startswith(
+        "import tesser.domain as ts\nclass Stamp(ts.ValueObject):\n"
+    )
