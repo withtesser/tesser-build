@@ -44,6 +44,7 @@ HOLE_NAMES: typing.Final[dict[str, str]] = {
     "node.name": "⟨class⟩",
     "member.name": "⟨method⟩",
     "sibling": "⟨method⟩",
+    "base": "⟨module⟩",
     "inner.name": "⟨class⟩",
     "type(node).__name__": "⟨node⟩",
     "target": "⟨import⟩",

@@ -10409,7 +10409,7 @@ def test_an_implementation_module_carries_exactly_one_sibling_test() -> None:
         ))).violations()
                )
     assert any(
-        "shop.domain.money has no sibling test file; an implementation "
+        "shop.domain.money has no sibling test file — add test_money.py beside it; an implementation "
         "module carries exactly one test_<module>.py beside it" in f
         for f in findings
     )
@@ -10450,7 +10450,7 @@ def test_a_sibling_test_names_the_module_beside_it() -> None:
         ))).violations()
                )
     assert any(
-        "shop.domain.test_ghost pairs with no implementation module; a sibling "
+        "shop.domain.test_ghost pairs with no implementation module — name it test_<module>.py for the module it tests, or move its tests beside that module; a sibling "
         "test file is named test_<module>.py for the module beside it" in f
         for f in findings
     )

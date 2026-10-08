@@ -14157,7 +14157,7 @@ class Module(ts.Entity):
                         self._path,
                         1,
                         "TB074",
-                        f"{module_name} has no sibling test file; an implementation "
+                        f"{module_name} has no sibling test file — add test_{base}.py beside it; an implementation "
                         "module carries exactly one test_<module>.py beside it",
                     ))
                 )
@@ -14169,7 +14169,8 @@ class Module(ts.Entity):
                         self._path,
                         1,
                         "TB074",
-                        f"{module_name} pairs with no implementation module; a sibling "
+                        f"{module_name} pairs with no implementation module — name it test_<module>.py for the "
+                        "module it tests, or move its tests beside that module; a sibling "
                         "test file is named test_<module>.py for the module beside it",
                     ))
                 )
