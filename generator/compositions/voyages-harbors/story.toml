@@ -43,6 +43,30 @@ given = "a harbor that is uncharted"
 when = "I plan a voyage to it"
 then = "the plan is refused with 422, and nothing is put on record"
 
+[[jtbds.stories]]
+id = "s-4"
+given = "a voyage that is planned"
+when = "its vessel sails and I depart the voyage"
+then = "the voyage stays on record, and its stage is departed from then on"
+
+[[jtbds.stories.jtbds]]
+id = "j-4-a"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-4-a-1"
+given = "I have planned a voyage with POST /voyages"
+when = "I POST to /voyages/{voyage_id}/departure"
+then = "I get back 200 with its voyage_id and stage"
+route = "POST /voyages/{voyage_id}/departure"
+status = 200
+
+[[jtbds.stories]]
+id = "s-5"
+given = "a voyage that has already departed"
+when = "I depart it again"
+then = "the departure is refused with 422, and the voyage is not changed"
+
 [[jtbds]]
 id = "j-chart"
 level = 1

@@ -37,6 +37,19 @@ class {{Spec}}(ts.Spec):
         pass
 {{/no_fields}}
 {{/domain_specs}}
+{{#values}}
+
+
+class {{Value}}(ts.ValueObject):
+
+    _value: {{primitive}}
+
+    def __init__(self, value: {{primitive}}) -> None:
+        object.__setattr__(self, "_value", value)
+
+    def {{reader}}(self) -> {{primitive}}:
+        return serialization.{{canonical}}(self._value)
+{{/values}}
 {{#stub_text}}
 
 

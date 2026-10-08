@@ -403,6 +403,19 @@ class Target(ts.ValueObject):
     def members(self) -> tuple[Target, ...]:
         return self._members
 
+    def fit(self, sample: Sample) -> Sample:
+        value = json.loads(str(sample))
+        type_text = str(self._type_text)
+        if type_text == "int" and isinstance(value, str) and re.fullmatch(r"-?[0-9]{1,18}", value):
+            return Sample(json.dumps(int(value)))
+        if type_text == "str" and isinstance(value, int) and not isinstance(value, bool):
+            return Sample(json.dumps(str(value)))
+        if (type_text == "int" and not (isinstance(value, int) and not isinstance(value, bool))) or \
+                (type_text == "str" and not isinstance(value, str)):
+            raise ValueError(f"generator.toml samples {self._field} as {json.dumps(value)}, and {self._field} is a {type_text} "
+                             f"there: write a sample that is a {type_text}")
+        return sample
+
     def empty(self, pairs: Pairs) -> Text:
         kind = str(self._kind)
         if kind == "array":
@@ -640,10 +653,14 @@ class Mappers(ts.Entity):
                     values.append((field, "[]"))
                     continue
                 raise ValueError(f"{name} needs {field}, and nothing before it in the steps holds one")
+            held = str(found.holds().get(field))
+            if str(found.kind()) == "initial":
+                args.append((field, str(Sample(held).literal(target))))
+                values.append((field, held))
+                continue
             if found not in used:
                 used.append(found)
             read = str(found.prefix()) + field
-            held = str(found.holds().get(field))
             reads_aggregate = str(found.kind()) == "aggregate"
             if kind == "aggregate":
                 if not reads_aggregate:
@@ -738,6 +755,8 @@ class Sample(ts.ValueObject):
             return Text(f"domain.{target.type_text()}.{str(value).upper()}")
         if str(target.kind()) == "outcome":
             return Text(f"{package}.{target.type_text()}.{str(value).upper()}")
+        if str(target.kind()) == "scalar":
+            return Text(str(target.fit(self)))
         return Text(json.dumps(value))
 
 
@@ -764,13 +783,12 @@ class Samples(ts.ValueObject):
         values = json.loads(str(self._values))
         index = int(str(self._index))
         field = str(target.field())
-        if field in values:
-            listed = values[field]
-            return Sample(json.dumps(listed[index % len(listed)]))
         array = str(target.kind()) == "array"
-        wanted = list(target.element()) if array else [(field, str(target.type_text()))]
         found: dict[str, object] = {}
-        for wanted_field, wanted_type in wanted:
+        if field in values:
+            found[field] = values[field][index % len(values[field])]
+        wanted = list(target.element()) if array else [(field, str(target.type_text()))]
+        for wanted_field, wanted_type in wanted if field not in found else []:
             if wanted_field in values:
                 listed = values[wanted_field]
                 found[wanted_field] = listed[index % len(listed)]
@@ -791,7 +809,16 @@ class Samples(ts.ValueObject):
             if not nested:
                 raise ValueError(f"generator.toml gives no sample value for {wanted_field}, and no sample holds one")
             found[wanted_field] = nested[index % len(nested)]
-        return Sample(json.dumps([found] if array else found[field]))
+        chosen = found[field] if field in found else [found] if array else found[field]
+        if not array:
+            return target.fit(Sample(json.dumps(chosen)))
+        element_types = dict(target.element())
+        return Sample(json.dumps([
+            {key: json.loads(str(Target(TargetSpec(field=key, type_text=element_types.get(key, ""), kind="scalar", package="",
+                                                   record="", element=(), members=())).fit(Sample(json.dumps(item_value)))))
+             for key, item_value in item.items()} if isinstance(item, dict) else item
+            for item in (chosen if isinstance(chosen, list) else [])
+        ]))
 
 
 class FieldAskSpec(ts.Spec):
@@ -1116,6 +1143,65 @@ class Model(ts.Entity):
             tuple((name, tuple(members)) for name, members in self._outcome_enums.items()),
         )
         self._types = Types(TypesSpec(*self._types_args))
+        initial = aggregate_table.get("initial", {})
+        if not isinstance(initial, dict):
+            raise ValueError("[aggregate.initial] is not a table of spec fields and the value each starts as")
+        self._initial: dict[str, object] = {}
+        spec_types = dict(self._spec_fields)
+        for field, value in initial.items():
+            type_text = spec_types.get(str(field))
+            if type_text is None:
+                raise ValueError(f"[aggregate.initial] names {field}, which [aggregate.spec] does not hold: an initial value is "
+                                 f"what a spec field of a new {self._Aggregate} starts as")
+            kind = str(self._types.kind(type_text))
+            fits = (
+                (kind == "enum" and isinstance(value, str) and value in self._enums.get(type_text, []))
+                or (type_text == "str" and isinstance(value, str))
+                or (type_text == "int" and isinstance(value, int) and not isinstance(value, bool))
+            )
+            if not fits:
+                wanted = f"one of {', '.join(self._enums[type_text])}" if kind == "enum" else f"a {type_text}"
+                raise ValueError(f"[aggregate.initial] starts {field} as {value!r}, and {field} is a {type_text}: write {wanted}")
+            self._initial[str(field)] = value
+        self._checks: dict[str, list[tuple[str, str]]] = {}
+        self._values: dict[str, str] = {}
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            checks = operation.get("checks", {})
+            if not isinstance(checks, dict):
+                raise ValueError(f"client operation {operation_name} lists checks as something other than a table of request "
+                                 f"fields and the domain value each must make, like {{ days = \"Days\" }}")
+            request_types = {}
+            for listed in operation.get("request", []):
+                field, _, annotation = (part.strip() for part in str(listed).partition(":"))
+                request_types[field] = annotation or dict(self._spec_fields).get(field) or self._read_types.get(field, "")
+            for field, value_name in checks.items():
+                value_name = str(value_name)
+                if str(field) not in request_types:
+                    raise ValueError(f"client operation {operation_name} checks {field}, which its request does not take")
+                type_text = request_types[str(field)]
+                if type_text not in PRIMITIVE_TYPES:
+                    raise ValueError(f"client operation {operation_name} checks {field}, a {type_text or 'field with no type'}, "
+                                     f"and a domain value a request field must make holds a str or an int")
+                if PASCAL.fullmatch(value_name) is None or keyword.iskeyword(value_name):
+                    raise ValueError(f"client operation {operation_name} checks {field} as {value_name!r}, which is not a "
+                                     f"PascalCase name, like Days")
+                taken = {self._Aggregate, self._Aggregate + "Spec", "Text", "Number", *self._enums, *self._shapes} | {
+                    str(Word(str(command)).pascal()) + suffix for command in self._commands for suffix in ("Spec", "Outcome")}
+                if value_name in taken:
+                    raise ValueError(f"client operation {operation_name} checks {field} as {value_name}, a name the domain "
+                                     f"already gives to something else")
+                if self._values.setdefault(value_name, type_text) != type_text:
+                    raise ValueError(f"{value_name} is checked on a {self._values[value_name]} and on a {type_text}: a domain "
+                                     f"value holds one type")
+                self._checks.setdefault(str(operation_name), []).append((str(field), value_name))
+        self._draft: object = aggregate_table.get("draft_identity")
+        identity_type = spec_types.get(self._identity)
+        if self._draft is not None and not (
+            (identity_type == "str" and isinstance(self._draft, str))
+            or (identity_type == "int" and isinstance(self._draft, int) and not isinstance(self._draft, bool))
+        ):
+            raise ValueError(f"[aggregate] draft_identity is {self._draft!r}, and the identity {self._identity} is a {identity_type}: "
+                             f"write a {identity_type} the domain accepts as an identity")
         for sampled_field, sampled in dict(self._generator.get("sample_values", {})).items():
             if isinstance(sampled, list) and not sampled:
                 raise ValueError(f"generator.toml lists no sample values for {sampled_field}")
@@ -1525,7 +1611,8 @@ class Model(ts.Entity):
         Orchestrator = self._Orchestrator
         aggregates = str(Word(aggregate).plural())
         blank: dict[str, object] = {"build": [], "port_call": [], "store_call": [], "assign": "", "holder": "",
-                                    "call": "", "argument": "", "repository": "", "refuses_unknown": [], "loads_known": [{}]}
+                                    "call": "", "argument": "", "repository": "", "refuses_unknown": [], "loads_known": [{}],
+                                    "command": [], "arms": [], "draft": [], "check": [], "checked": []}
         fakes: dict[tuple[str, str], Mapped] = {}
         for (package, name), record in self._messages.items():
             if package not in ("ports", "relays") or not name.endswith("Request"):
@@ -1564,6 +1651,10 @@ class Model(ts.Entity):
                 prefix=operation_name + "_request.",
                 holds=tuple((str(t.field()), str(self._samples.value(t))) for t in request_record.targets()))))
             statements: list[dict[str, object]] = []
+            if str(operation_name) in self._checks:
+                statements.append(dict(blank, check=[{}], checked=[
+                    {"Value": value_name, "expr": f"{operation_name}_request.{field}"}
+                    for field, value_name in self._checks[str(operation_name)]]))
             checks: list[dict[str, object]] = []
             seeds: list[dict[str, object]] = []
             built = False
@@ -1583,12 +1674,33 @@ class Model(ts.Entity):
                     port_request = self._messages[("ports", Step + "Request")]
                     port_response = self._messages[("ports", Step + "Response")]
                     carries = any(str(t.kind()) == "aggregate" for t in port_request.targets())
+                    if self._draft is not None and not built and identity in {str(t.field()) for t in port_response.targets()}:
+                        ask = Ask(AskSpec(name=f"MapToDraft{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True,
+                                          occasion=occasion, guards=tuple(pending)))
+                        pending = []
+                        for target in self._domain_targets[Aggregate + "Spec"]:
+                            ask.target(target)
+                        ask.source(Source(SourceSpec(
+                            expr="initial", type_ref="initial", kind="initial", prefix="",
+                            holds=tuple((field, json.dumps(value)) for field, value in [*self._initial.items(), (identity, self._draft)]))))
+                        for held in sources.held():
+                            ask.source(held)
+                        try:
+                            drafted = mappers.map(ask)
+                        except ValueError as unheld:
+                            raise ValueError(f"{unheld}: with a draft_identity, client operation {operation_name} builds a draft "
+                                             f"{aggregate} before {step} issues its {identity}, from what the steps before {step} "
+                                             f"hold, so put the steps that answer it before {step}") from unheld
+                        statements.append(dict(blank, draft=[{}], argument=str(drafted.call())))
                     if carries and not built:
                         ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion,
                                           guards=tuple(pending)))
                         pending = []
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
+                        if self._initial:
+                            ask.source(Source(SourceSpec(expr="initial", type_ref="initial", kind="initial", prefix="",
+                                                         holds=tuple((field, json.dumps(value)) for field, value in self._initial.items()))))
                         for held in sources.held():
                             ask.source(held)
                         mapped = mappers.map(ask)
@@ -1699,6 +1811,38 @@ class Model(ts.Entity):
                                 for member in enum_members if member not in refused_names]
                             pending.append((OUTCOME_FIELD, json.dumps({"Outcome": Outcome, "when": when, "source": local, "arms": arms})))
                             refusing.append((port_name, rest, refused_names[0], code))
+                elif kind == "aggregate":
+                    if rest not in self._commands:
+                        raise ValueError(f"step {step} names {rest}, which [aggregate.commands] does not declare")
+                    if not built:
+                        raise ValueError(f"step {step} applies {rest} to the {aggregate}, and no step before it builds or loads "
+                                         f"one: put it after the step that loads the {aggregate}")
+                    if any(statement["command"] for statement in statements):
+                        raise ValueError(f"client operation {operation_name} applies two commands, and a service method "
+                                         f"decides once: apply one, or make one command of the two")
+                    Command = str(Word(rest).pascal())
+                    if self._domain_targets[Command + "Spec"]:
+                        ask = Ask(AskSpec(name=f"MapTo{Command}Spec", target_ref=f"domain.{Command}Spec", allow_empty=True,
+                                          occasion=occasion))
+                        for target in self._domain_targets[Command + "Spec"]:
+                            ask.target(target)
+                        for held in sources.held():
+                            ask.source(held)
+                        argument = str(mappers.map(ask).call())
+                    else:
+                        argument = f"domain.{Command}Spec()"
+                    outcomes = [str(outcome) for outcome in self._commands[rest].get("outcomes", [])]
+                    statements.append(dict(blank, command=[{}], call=rest, argument=argument, arms=[
+                        {"Outcome": Command + "Outcome", "MEMBER": outcome.upper(),
+                         "refuse": [{"code": outcome, "message": json.dumps(outcome.replace("_", " "))}] if index else [],
+                         "passes": [] if index else [{}]}
+                        for index, outcome in enumerate(outcomes)
+                    ]))
+                    before = next(held for held in reversed(sources.held()) if str(held.kind()) == "aggregate")
+                    sources.hold(Source(SourceSpec(expr=aggregate, type_ref=f"domain.{Aggregate}", kind="aggregate",
+                                                   prefix=aggregate + ".",
+                                                   holds=tuple((field, value if field == identity else UNKNOWN)
+                                                               for field, value in before.holds()))))
                 elif kind == "orchestrator":
                     mode, orchestrator_operation = rest.split("_", 1)
                     Step = str(Word(orchestrator_operation).pascal())
@@ -1805,7 +1949,9 @@ class Model(ts.Entity):
                 ],
             })
         self._binding["mappers"] = def_frames
-        self._binding["service_guarded"] = [{}] if any(made.guards() for made in mappers.defs()) else []
+        self._binding["service_guarded"] = [{}] if any(made.guards() for made in mappers.defs()) or any(
+            statement["command"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
+        ) else []
         self._refusal_tests = refusal_tests
         self._binding["refusing_ports"] = list(refusing_fakes.values())
         self._binding["dependencies"] = dependencies
@@ -1822,7 +1968,7 @@ class Model(ts.Entity):
             if alias in aliases
         ]
         self._binding["service_refuses"] = [{}] if any(
-            statement["build"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
+            statement["build"] or statement["command"] or statement["draft"] or statement["check"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
         ) else []
 
     def actions(self) -> None:
@@ -2292,6 +2438,12 @@ class Model(ts.Entity):
                                     "expected": str(self._samples.value(Target(TargetSpec(
                                         field=field, type_text=type_text, kind=kind, package="domain", record="",
                                         element=(), members=()))))})
+            elif kind == "enum" and read_type == type_text:
+                stored.append({"field": field, "stored_expr": f"spec.{field}"})
+                stored_names.add(field)
+                sample = self._samples.value(Target(TargetSpec(field=field, type_text=type_text, kind=kind, package="domain",
+                                                               record="", element=(), members=())))
+                read_checks.append({"actual": f"str({aggregate}.{field})", "expected": json.dumps(str(json.loads(str(sample))))})
             elif kind == "array" and read_type is not None and str(types.kind(read_type)) == "array":
                 view = str(types.element(read_type))
                 element = str(types.element(type_text))
@@ -2315,12 +2467,17 @@ class Model(ts.Entity):
                 view_reads = ", ".join(f"{entry['cast']}({var}.{entry['field']})" for entry in view_fields)
                 expected = ", ".join("(" + ", ".join(json.dumps(item[str(entry["field"])]) for entry in view_fields) + ",)" for item in sample)
                 read_checks.append({"actual": f"[({view_reads},) for {var} in {aggregate}.{field}]", "expected": f"[{expected}]"})
-        if self._identity not in stored_names or spec_types.get(self._identity) != "str":
-            raise ValueError(f"the aggregate's identity {self._identity} is a str its spec holds and it reads")
+        if self._identity not in stored_names or spec_types.get(self._identity) not in PRIMITIVE_TYPES:
+            raise ValueError(f"the aggregate's identity {self._identity} is a str or an int its spec holds and it reads")
+        if self._engine_declared and spec_types[self._identity] != "str":
+            raise ValueError(f"the aggregate's identity {self._identity} is an int, and a workflow on the engine is keyed by "
+                             f"text: with an engine, the identity is a str")
         reads: list[dict[str, object]] = []
         for read, read_type in self._reads:
             kind = str(types.kind(read_type))
-            if read in stored_names:
+            if read in stored_names and kind == "enum":
+                reads.append({"read": read, "read_type": "Text", "read_expr": f"Text(self._{read}.value)"})
+            elif read in stored_names:
                 reads.append({"read": read, "read_type": f"tuple[{types.element(read_type)}, ...]" if kind == "array" else read_type,
                               "read_expr": f"self._{read}"})
             elif kind == "enum":
@@ -2332,14 +2489,25 @@ class Model(ts.Entity):
                 reads.append({"read": read, "read_type": "int", "read_expr": "0"})
             else:
                 reads.append({"read": read, "read_type": "Text", "read_expr": 'Text("")'})
+        self._binding["values"] = [
+            {"Value": name, "primitive": type_text, "reader": "__int__" if type_text == "int" else "__str__",
+             "canonical": "canonical_int" if type_text == "int" else "canonical_str", "value_snake": str(Word(name).snake()),
+             "cast": type_text,
+             "value_sample": str(self._samples.value(Target(TargetSpec(
+                 field=next(field for checks in self._checks.values() for field, checked in checks if checked == name),
+                 type_text=type_text, kind="scalar", package="domain", record="", element=(), members=()))).literal(Target(TargetSpec(
+                 field=name, type_text=type_text, kind="scalar", package="domain", record="", element=(), members=()))))}
+            for name, type_text in self._values.items()
+        ]
         self._binding["views"] = views
         self._binding["stored"] = stored
         self._binding["reads"] = reads
-        self._binding["identity_type"] = "str"
+        self._binding["identity_type"] = spec_types[self._identity]
         self._binding["stub_text"] = [{}] if "Text" in leaves or any(r["read_type"] == "Text" for r in reads) else []
         self._binding["stub_number"] = [{}] if "Number" in leaves else []
-        self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] else []
+        self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] or self._values else []
         exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._domain_enums) | {str(c["Outcome"]) for c in commands}
+        exports |= set(self._values)
         self._binding["domain_exports"] = [{"name": name} for name in sorted(exports)]
         spec_parts = []
         bare_parts = []
@@ -2492,6 +2660,9 @@ class Model(ts.Entity):
                 if issue_response is None or issue_request is None or issue_request.targets() or \
                         [str(t.kind()) for t in issue_response.targets()] != ["scalar"]:
                     raise ValueError(f"{port_name} is uuid, which renders one operation that takes nothing and issues one id")
+                if str(issue_response.targets()[0].type_text()) != "str":
+                    raise ValueError(f"{port_name} is uuid, which issues text, and {Operation}Response answers "
+                                     f"{issue_response.targets()[0].field()} as an int: implement it with body = \"agent\"")
                 uuid_repositories.append({
                     "module": "uuid_" + str(Word(port_name).snake()), "Repository": "Uuid" + port_name,
                     "repository": str(Word("Uuid" + port_name).snake()), "issue": operations[0], "Issue": Operation,
@@ -2754,7 +2925,7 @@ class Model(ts.Entity):
             steps = [str(step) for step in operation.get("steps", [])]
             integers = {str(t.field()) for t in request.targets() if str(t.type_text()) == "int"}
             probe_path = "/".join(
-                segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
+                segment if not PATH_FIELD.fullmatch(segment) else "-1" if segment[1:-1] in integers else "never-issued"
                 for segment in path.split("/")
             )
             loads_at = [

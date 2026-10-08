@@ -56,12 +56,43 @@ class {{Service}}(ts.ApplicationService):
 
     async def {{operation}}(self, {{operation}}_request: client.{{Operation}}Request) -> client.{{Operation}}Response:
 {{#statements}}
+{{#check}}
+        try:
+{{#checked}}
+            domain.{{Value}}({{expr}})
+{{/checked}}
+        except errors.DomainError as domain_error:
+            raise client.{{Rejected}}(domain_error.code, domain_error.message) from domain_error
+{{/check}}
+{{#draft}}
+        try:
+            domain.{{Aggregate}}({{argument}})
+        except errors.DomainError as domain_error:
+            raise client.{{Rejected}}(domain_error.code, domain_error.message) from domain_error
+{{/draft}}
 {{#build}}
         try:
             {{aggregate}} = domain.{{Aggregate}}({{argument}})
         except errors.DomainError as domain_error:
             raise client.{{Rejected}}(domain_error.code, domain_error.message) from domain_error
 {{/build}}
+{{#command}}
+        try:
+            match {{aggregate}}.{{call}}({{argument}}):
+{{#arms}}
+                case domain.{{Outcome}}.{{MEMBER}}:
+{{#passes}}
+                    pass
+{{/passes}}
+{{#refuse}}
+                    raise client.{{Rejected}}("{{code}}", {{message}})
+{{/refuse}}
+{{/arms}}
+                case _ as never:
+                    typing.assert_never(never)
+        except errors.DomainError as domain_error:
+            raise client.{{Rejected}}(domain_error.code, domain_error.message) from domain_error
+{{/command}}
 {{#port_call}}
         {{assign}}await self._{{holder}}.{{call}}({{argument}})
 {{/port_call}}

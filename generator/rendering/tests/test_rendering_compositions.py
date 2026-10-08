@@ -2135,8 +2135,9 @@ class TestRenderingCompositions:
         assert tested.returncode == 0, tested.stdout
         host_test = (tmp_path / "out" / "srv" / "http" / "test_main.py").read_text()
         assert "            (\"POST\", \"/harbors\", b'{\"place_name\": \"Valparaiso\"}', {}),\n" in host_test
-        assert "            (\"POST\", \"/voyages\", b'{\"vessel\": \"Endeavour\", \"harbor\": \"harbor-1\"}', {\"harbor\": \"harbor_id\"}),\n" in host_test
-        assert "        assert answers == [400, 201, 422, 400, 201, 422]\n" in host_test
+        assert "            (\"GET\", \"/harbors/-1\", None, {}),\n" in host_test
+        assert "            (\"POST\", \"/voyages\", b'{\"vessel\": \"Endeavour\", \"harbor\": 1}', {\"harbor\": \"harbor_id\"}),\n" in host_test
+        assert "        assert answers == [400, 201, 422, 400, 201, 422, 422]\n" in host_test
 
     def test_a_root_test_takes_a_fixture_that_issues_what_its_route_looks_up_in_another_context(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
@@ -2155,14 +2156,14 @@ class TestRenderingCompositions:
         assert tested.returncode == 0, tested.stdout
         assert (
             "@pytest.fixture\n"
-            "def issued_harbor_id(host: str) -> str:\n"
+            "def issued_harbor_id(host: str) -> int:\n"
             "    answer = httpx.post(f\"{host}/harbors\", json={\"place_name\": \"Valparaiso\"}, timeout=DEADLINE_SECONDS)\n"
             "    answer.raise_for_status()\n"
-            "    return str(answer.json()[\"harbor_id\"])\n"
+            "    return int(answer.json()[\"harbor_id\"])\n"
         ) in (tmp_path / "out" / "conftest.py").read_text()
         submitting = (tmp_path / "out" / "tests" / "test_submitting_voyages.py").read_text()
         assert "import json\n" in submitting
-        assert "    def test_s_1_a_1(self, host: str, issued_harbor_id: str) -> None:\n" in submitting
+        assert "    def test_s_1_a_1(self, host: str, issued_harbor_id: int) -> None:\n" in submitting
         assert 'f"{host}/voyages", data=json.dumps({"vessel": "Endeavour", "harbor": issued_harbor_id}).encode(),' in submitting
         reading = (tmp_path / "out" / "tests" / "test_reading_voyages_by_voyage_id.py").read_text()
         assert "    def test_s_1_b_1(self, host: str) -> None:\n" in reading
@@ -2181,15 +2182,15 @@ class TestRenderingCompositions:
             "    def test_s_1_b_1(self, host: str) -> None:\n        voyage_id: str = \"voyage-1\"\n",
             "    def test_s_1_b_1(self, host: str) -> None:\n"
             "        planning = urllib_request.Request(\n"
-            "            f\"{host}/voyages\", data=b'{\"vessel\": \"Endeavour\", \"harbor\": \"harbor-1\"}', "
+            "            f\"{host}/voyages\", data=b'{\"vessel\": \"Endeavour\", \"harbor\": 1}', "
             "headers={\"Content-Type\": \"application/json\"}, method=\"POST\"\n"
             "        )\n"
             "        with urllib_request.urlopen(planning, timeout=30) as planned:\n"
             "            voyage_id: str = planned.headers[\"Location\"]\n"
             "\n"
-            "    def test_s_2(self, host: str, issued_harbor_id: str) -> None:\n"
+            "    def test_s_2(self, host: str, issued_harbor_id: int) -> None:\n"
             "        planning = urllib_request.Request(\n"
-            "            f\"{host}/voyages\", data=issued_harbor_id.encode(), headers={\"Content-Type\": \"application/json\"}, method=\"POST\"\n"
+            "            f\"{host}/voyages\", data=str(issued_harbor_id).encode(), headers={\"Content-Type\": \"application/json\"}, method=\"POST\"\n"
             "        )\n"
             "\n"
             "    def test_s_3(self, host: str) -> None:\n"
@@ -2204,4 +2205,245 @@ class TestRenderingCompositions:
             "tests/test_reading_voyages_by_voyage_id.py: TestReadingVoyagesByVoyageId.test_s_1_b_1, written by hand, calls POST "
             "/voyages and does not take the issued_harbor_id fixture: take it, and send it as harbor, which POST /voyages looks "
             "up in another context",
+        ]
+
+    def test_a_new_aggregate_starts_with_its_initial_value_and_a_step_applies_a_command_to_the_one_it_loads(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "voyages"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        service = (tmp_path / "out" / "voyages" / "application" / "voyage_service.py").read_text()
+        assert "            stage=domain.VoyageStage.PLANNED,\n" in service
+        assert "            stage=domain.VoyageStage(load_voyage_response.voyage.stage),\n" in service
+        assert (
+            "        try:\n"
+            "            match voyage.depart_voyage(domain.DepartVoyageSpec()):\n"
+            "                case domain.DepartVoyageOutcome.DEPARTED:\n"
+            "                    pass\n"
+            "                case domain.DepartVoyageOutcome.ALREADY_DEPARTED:\n"
+            "                    raise client.VoyageRejected(\"already_departed\", \"already departed\")\n"
+            "                case _ as never:\n"
+            "                    typing.assert_never(never)\n"
+            "        except errors.DomainError as domain_error:\n"
+            "            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error\n"
+            "        async with self._voyage_store.transaction() as voyage_repository:\n"
+            "            await voyage_repository.save_voyage(MapToSaveVoyageRequest(voyage))\n"
+        ) in service
+        stub = (tmp_path / "out" / "voyages" / "domain" / "voyage.py").read_text()
+        assert "        self._stage = spec.stage\n" in stub
+        assert "        return Text(self._stage.value)\n" in stub
+        service_test = (tmp_path / "out" / "voyages" / "application" / "test_voyage_service.py").read_text()
+        assert '        assert depart_voyage_response.stage in ("planned", "departed")\n' in service_test
+
+    def test_an_initial_value_or_a_command_step_that_cannot_be_rendered_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        departing = 'steps = ["repository.load_voyage", "aggregate.depart_voyage", "repository.save_voyage"]'
+        answered: list[tuple[str, ...]] = []
+        for old, new in (
+            ('[aggregate.initial]\nstage = "planned"', '[aggregate.initial]\nstage = "sunk"'),
+            ('[aggregate.initial]\nstage = "planned"', '[aggregate.initial]\nberth = "planned"'),
+            (departing, 'steps = ["aggregate.depart_voyage", "repository.load_voyage", "repository.save_voyage"]'),
+            (departing, 'steps = ["repository.load_voyage", "aggregate.depart_voyage", "aggregate.depart_voyage", "repository.save_voyage"]'),
+            (departing, 'steps = ["repository.load_voyage", "aggregate.dock_voyage", "repository.save_voyage"]'),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == "composition.toml":
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ("[aggregate.initial] starts stage as 'sunk', and stage is a VoyageStage: write one of planned, departed",),
+            ("[aggregate.initial] names berth, which [aggregate.spec] does not hold: an initial value is what a spec field of a "
+             "new Voyage starts as",),
+            ("step aggregate.depart_voyage applies depart_voyage to the voyage, and no step before it builds or loads one: put it "
+             "after the step that loads the voyage",),
+            ("client operation depart_voyage applies two commands, and a service method decides once: apply one, or make one "
+             "command of the two",),
+            ("step aggregate.dock_voyage names dock_voyage, which [aggregate.commands] does not declare",),
+        ]
+        assert not (tmp_path / "out").exists()
+
+    def test_an_int_identity_crosses_every_layer_as_an_int_and_the_tests_sample_it_as_one(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "harbors", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "harbors", "voyages", "srv", "tests", "conftest.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        out = tmp_path / "out" / "harbors"
+        assert "    def identity(self) -> int:\n" in (out / "domain" / "harbor.py").read_text()
+        assert "        self._harbors: dict[int, ports.Harbor] = {}\n" in (out / "adapters" / "repositories" / "memory_harbor_repository.py").read_text()
+        assert "    def __init__(self, harbor_id: int) -> None:\n" in (out / "client" / "client.py").read_text()
+        assert 'harbor_id=http_request.integer_path_param("harbor_id"),' in (out / "adapters" / "handlers" / "http.py").read_text()
+        assert "        fake_harbor_store.harbors[1] = ports.Harbor(harbor_id=1, place_name=\"Valparaiso\")\n" in (
+            out / "application" / "test_harbor_service.py").read_text()
+        assert "        harbor_id: int = 1\n" in (tmp_path / "out" / "tests" / "test_reading_harbors_by_harbor_id.py").read_text()
+
+    def test_an_int_identity_a_uuid_issues_or_a_sample_of_another_type_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        answered: list[tuple[str, ...]] = []
+        for name, old, new in (
+            ("implementations.toml", 'HarborIdentityRepository = "ledger"', 'HarborIdentityRepository = "uuid"'),
+            ("generator.toml", "harbor_id = [1, 2]", 'harbor_id = ["harbor-1", "harbor-2"]'),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == name:
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                if found.name == "implementations.toml":
+                    text += "\n[implementations.HarborIdentityRepository.uuid]\nbody = \"supported\"\n"
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ('HarborIdentityRepository is uuid, which issues text, and IssueHarborIdResponse answers harbor_id as an int: '
+             'implement it with body = "agent"',),
+            ('generator.toml samples harbor_id as "harbor-1", and harbor_id is a int there: write a sample that is a int',),
+        ]
+
+    def test_a_draft_identity_builds_a_draft_before_the_identity_is_issued(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+
+        assert render_composition_response.problems == ()
+        service = (tmp_path / "out" / "harbors" / "application" / "harbor_service.py").read_text()
+        assert (
+            "    async def chart_harbor(self, chart_harbor_request: client.ChartHarborRequest) -> client.ChartHarborResponse:\n"
+            "        try:\n"
+            "            domain.Harbor(MapToDraftHarborSpec(chart_harbor_request))\n"
+            "        except errors.DomainError as domain_error:\n"
+            "            raise client.HarborRejected(domain_error.code, domain_error.message) from domain_error\n"
+            "        issue_harbor_id_response = await self._harbor_identity_repository.issue_harbor_id(ports.IssueHarborIdRequest())\n"
+        ) in service
+        assert "            harbor_id=0,\n" in service
+
+    def test_a_draft_identity_of_another_type_or_before_what_the_draft_needs_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        answered: list[tuple[str, ...]] = []
+        for name, old, new in (
+            ("composition.harbors.toml", "draft_identity = 0", 'draft_identity = "draft"'),
+            ("composition.toml", 'identity = "voyage_id"\n', 'identity = "voyage_id"\ndraft_identity = "draft"\n'),
+        ):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == name:
+                    assert old in text
+                    text = text.replace(old, new, 1)
+                if found.name == "composition.toml" and name == "composition.toml":
+                    text = text.replace('steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]',
+                                        'steps = ["identity.issue_voyage_id", "gateway.look_up_harbor", "repository.save_voyage"]', 1)
+                    text = text.replace('stage = "VoyageStage"\n', 'stage = "VoyageStage"\nharbor_name = "str"\n')
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ("[aggregate] draft_identity is 'draft', and the identity harbor_id is a int: write a int the domain accepts as an "
+             "identity",),
+            ("MapToDraftVoyageSpec needs harbor_name, and nothing before it in the steps holds one: with a draft_identity, client "
+             "operation plan_voyage builds a draft voyage before identity.issue_voyage_id issues its voyage_id, from what the steps "
+             "before identity.issue_voyage_id hold, so put the steps that answer it before identity.issue_voyage_id",),
+        ]
+
+    def test_a_request_field_an_operation_checks_is_made_into_its_domain_value_before_any_step(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "voyages-harbors"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+
+        assert render_composition_response.problems == ()
+        out = tmp_path / "out" / "voyages" / "domain"
+        assert (
+            "    async def plan_voyage(self, plan_voyage_request: client.PlanVoyageRequest) -> client.PlanVoyageResponse:\n"
+            "        try:\n"
+            "            domain.Vessel(plan_voyage_request.vessel)\n"
+            "        except errors.DomainError as domain_error:\n"
+            "            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error\n"
+            "        look_up_harbor_response = await self._harbor_chart.look_up_harbor(MapToLookUpHarborRequest(plan_voyage_request))\n"
+        ) in (tmp_path / "out" / "voyages" / "application" / "voyage_service.py").read_text()
+        assert (
+            "class Vessel(ts.ValueObject):\n"
+            "\n"
+            "    _value: str\n"
+            "\n"
+            "    def __init__(self, value: str) -> None:\n"
+            "        object.__setattr__(self, \"_value\", value)\n"
+            "\n"
+            "    def __str__(self) -> str:\n"
+            "        return serialization.canonical_str(self._value)\n"
+        ) in (out / "voyage.py").read_text()
+        assert "from voyages.domain.voyage import Vessel as Vessel\n" in (out / "__init__.py").read_text()
+        assert '        vessel = domain.Vessel("Endeavour")\n' in (out / "test_voyage.py").read_text()
+
+    def test_a_check_on_a_field_the_request_lacks_or_with_a_name_the_domain_holds_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        answered: list[tuple[str, ...]] = []
+        for new in ('checks = { berth = "Berth" }', 'checks = { vessel = "Voyage" }', 'checks = { harbor = "Vessel", vessel = "Vessel" }'):
+            composition = tmp_path / str(len(answered))
+            composition.mkdir()
+            for found in (tree / "compositions" / "voyages-harbors").glob("*.toml"):
+                text = found.read_text()
+                if found.name == "composition.toml":
+                    assert 'checks = { vessel = "Vessel" }' in text
+                    text = text.replace('checks = { vessel = "Vessel" }', new, 1)
+                (composition / found.name).write_text(text)
+            answered.append(rendering.client.render_composition(client.RenderCompositionRequest(
+                composition_dir=str(composition), out_dir=str(tmp_path / "out"), printed=(),
+            )).problems)
+
+        assert answered == [
+            ("client operation plan_voyage checks berth, which its request does not take",),
+            ("client operation plan_voyage checks vessel as Voyage, a name the domain already gives to something else",),
+            ("Vessel is checked on a int and on a str: a domain value holds one type",),
         ]

@@ -156,7 +156,12 @@ the same app with no engine: its service calls the ports itself,
 (below, "Several contexts in one app"), and `voyages-harbors/` is two contexts
 whose gateway call is rendered and whose client operation refuses on what the
 gateway answers (below, "Refusing on what a step answers" and "What a gateway
-calls").
+calls"); its voyage starts in a stage and changes it by a command applied to the
+loaded voyage ("A new aggregate's initial values" and "Applying a command to the
+aggregate"), its harbor_id is a whole number issued in turn ("An int
+identity" and "Refusing before an identity is issued"), and planning a voyage
+checks the vessel before it asks the harbor chart ("Checking a request field
+before any step").
 
 ## Which file answers which question
 
@@ -380,7 +385,7 @@ context = "loans"                     # required: the context package, snake_cas
 ```toml
 [aggregate]
 name = "Loan"                         # required, PascalCase
-identity = "loan_id"                  # required: a str field of both the spec and the reads
+identity = "loan_id"                  # required: a str or int field of both the spec and the reads
 
 [aggregate.spec]                      # required: what it is built from, when submitted and when loaded
 loan_id = "str"
@@ -401,13 +406,121 @@ one method per command taking `<Command>Spec` (its `takes`) and answering
 `<Command>Outcome`
 (a command with `takes = {}` gets a `<Command>Spec` whose constructor is a
 single `pass`),
-and one read per `[aggregate.reads]` entry. Everything else in the domain
-(value objects, validation, how a read is computed) is the agent's.
+and one read per `[aggregate.reads]` entry, and a value object for each domain
+value a client operation checks (below, "Checking a request field before any
+step"). Everything else in the domain (value objects, validation, how a read is
+computed, what a command does) is the agent's. `[aggregate]` may also carry
+`draft_identity` (below, "Refusing before an identity is issued"), and
+`[aggregate.initial]` the values a new aggregate starts with (below, "A new
+aggregate's initial values"). The stub keeps each spec field
+whose read has the same type (an enum field as its member, read as its value)
+and answers it from what it keeps.
 
 The aggregate is saved by reading it back: a port record of the aggregate
 holds the spec's fields, filled from the reads of the same name, so every spec
 field needs a read of the same name.
 A list read's shape must hold every field it reads from the spec shape's.
+
+**An int identity.** The identity is a `str` or an `int`, and it is the same
+type everywhere it crosses: the domain's `identity`, the store's records and
+the dict that keys them, the client's requests and responses, the HTTP route
+(an `int` `{harbor_id}` is read with `integer_path_param`, so a path that is
+not a whole number answers 400), the issued fixture of a root test, and every
+sample. A `uuid` implementation issues text, so it cannot issue an `int`
+identity: implement that identity port with `body = "agent"` (a ledger that
+issues each number in turn, say). An identity keys the engine's workflow, so a
+composition with an `[engine]` keeps a `str` identity.
+
+```toml
+# composition.harbors.toml
+[aggregate]
+name = "Harbor"
+identity = "harbor_id"
+
+[aggregate.spec]
+harbor_id = "int"
+place_name = "str"
+
+# implementations.toml
+[implementations.HarborIdentityRepository.ledger]
+class = "LedgerHarborIdentityRepository"
+body = "agent"
+```
+
+### A new aggregate's initial values
+
+A spec field no request carries and no step answers, such as the stage a
+voyage starts in, has nothing to build a new aggregate from. Give it the
+value a new aggregate starts with:
+
+```toml
+[aggregate.spec]
+voyage_id = "str"
+vessel = "str"
+stage = "VoyageStage"
+
+[aggregate.initial]
+stage = "planned"                     # a member of the enum, or a str or an int literal for those types
+
+[enums]
+VoyageStage = ["planned", "departed"]
+```
+
+The mapper that builds a new aggregate fills the field with it
+(`stage=domain.VoyageStage.PLANNED`) when nothing the steps hold has a value of
+that name; one that rebuilds a loaded aggregate takes the stored value
+(`stage=domain.VoyageStage(load_voyage_response.voyage.stage)`), and the port
+record carries it like any other spec field. A field `[aggregate.spec]` does
+not hold, or a value of another type or not among the enum's members, is a
+problem.
+
+### Applying a command to the aggregate
+
+A step `aggregate.<command>` applies a command of `[aggregate.commands]` to
+the aggregate the steps before it built or loaded, so an operation changes a
+loaded aggregate by the domain's rule rather than by rebuilding it from
+different fields:
+
+```toml
+[aggregate.commands.depart_voyage]
+takes = {}
+outcomes = ["departed", "already_departed"]   # the first is the success outcome
+
+[client.operations.depart_voyage]             # POST /voyages/{voyage_id}/departure
+request = ["voyage_id"]
+response = ["voyage_id", "stage"]
+steps = ["repository.load_voyage", "aggregate.depart_voyage", "repository.save_voyage"]
+```
+
+The command's method is the domain's (agent-owned: its stub answers the success
+outcome and changes nothing), so what it does and when it refuses is written
+there: it changes what the aggregate keeps (`self._stage =
+VoyageStage.DEPARTED`) and answers an outcome, or raises `errors.invalid` like
+a constructor. The service renders the plumbing: it builds `<Command>Spec` from
+what the method holds (a mapper `MapTo<Command>Spec`, or `<Command>Spec()` for
+`takes = {}`), and matches the outcome where the command is called:
+
+```python
+        try:
+            match voyage.depart_voyage(domain.DepartVoyageSpec()):
+                case domain.DepartVoyageOutcome.DEPARTED:
+                    pass
+                case domain.DepartVoyageOutcome.ALREADY_DEPARTED:
+                    raise client.VoyageRejected("already_departed", "already departed")
+                case _ as never:
+                    typing.assert_never(never)
+        except errors.DomainError as domain_error:
+            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error
+```
+
+So every outcome but the first refuses with 422, its code the outcome and its
+message the outcome's words, and so does a refusal the command raises (its own
+code and message), before anything is saved. After the step, every read but
+the identity is what the command left, so the steps after it (the save, the
+answer) read the aggregate again, and the service test checks only what the
+command cannot have changed. A step naming no command of `[aggregate.commands]`,
+one with no aggregate built or loaded before it, and a second command step in
+one operation (a service method decides once) are problems.
 
 ### `[shapes.<Name>]`, `[messages.<Name>]`, `[enums]` (optional)
 
@@ -522,6 +635,68 @@ so the route answers 422, and the service test checks it
 (`test_<operation>_refuses_an_unknown_<aggregate>`). A gateway that reaches
 this context sees the refusal as the client's `<Aggregate>Rejected`.
 
+**Refusing before an identity is issued.** An operation that issues an
+identity and then builds a new aggregate issues it before the domain can
+refuse, so a refused aggregate uses one up: harmless for a UUID, a gap for an
+identity issued in turn. With `draft_identity` on `[aggregate]`, the operation
+first builds a draft of the aggregate, with that identity, right before the
+step that answers the identity, and refuses there; only an aggregate the
+domain accepts is issued an identity and built again with it:
+
+```toml
+[aggregate]
+name = "Harbor"
+identity = "harbor_id"
+draft_identity = 0                    # an identity of the identity's type that the domain accepts
+```
+
+```python
+    async def chart_harbor(self, chart_harbor_request: client.ChartHarborRequest) -> client.ChartHarborResponse:
+        try:
+            domain.Harbor(MapToDraftHarborSpec(chart_harbor_request))
+        except errors.DomainError as domain_error:
+            raise client.HarborRejected(domain_error.code, domain_error.message) from domain_error
+        issue_harbor_id_response = await self._harbor_identity_repository.issue_harbor_id(ports.IssueHarborIdRequest())
+        ...
+```
+
+The draft is built from what the steps before the identity step hold, so a
+field a later step answers (a gateway's) is a problem until that step comes
+before the identity step. The draft value is the composition's, because only
+the domain knows which identity it accepts (one that refuses an empty
+identity needs a draft that is not empty); without `draft_identity` the
+identity is issued first, as before.
+
+**Checking a request field before any step.** An operation that builds no
+aggregate (a read that asks a gateway, say), or that asks a gateway before it
+builds one, refuses nothing the domain would until the aggregate is built.
+`checks` names, per request field, the domain value it must make:
+
+```toml
+[client.operations.plan_voyage]
+request = ["vessel", "harbor"]
+steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
+checks = { vessel = "Vessel" }        # <request field> = "<domain value>"
+```
+
+The service makes each one first, inside the same `try` that turns a domain
+refusal into 422:
+
+```python
+        try:
+            domain.Vessel(plan_voyage_request.vessel)
+        except errors.DomainError as domain_error:
+            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error
+```
+
+and the domain stub gets the value object, holding the field's type (`str` or
+`int`) and exported from the domain package, with a domain test that it holds
+what it is made from. The stub never refuses; the value's rule (and using it
+in the aggregate, if it belongs there too) is the domain's. A field the request
+does not take, a field that is not a `str` or an `int`, a name the domain
+already uses (the aggregate, a spec, an enum, an outcome), and one value
+checked on two types are problems.
+
 **An enum a port answers is the response's outcome.** A port operation's
 response field typed with an enum (`harbor_standing: HarborStanding`, below) is
 that response's answer, the thing its caller matches, so it renders the way
@@ -610,6 +785,9 @@ loads the aggregate.
   names the aggregate, the aggregate is built first from what the earlier
   steps hold (the request, the answers so far), with any list field empty. If
   its response is the aggregate, the aggregate is rebuilt from it.
+- `aggregate.<command>`: apply that command to the aggregate built or loaded
+  before it, refusing on every outcome but its first (above, "Applying a
+  command to the aggregate").
 - `orchestrator.run_<operation>`: run the orchestrator operation and wait for
   its answer.
 - `orchestrator.start_<operation>`: start it and answer at once; its answer is
@@ -623,7 +801,8 @@ first: the answers of the steps before it, then the aggregate's reads once it
 is built, then the request. An aggregate rebuilt from a load takes the fields
 the earlier steps hold (the request, say) over the loaded ones, so a load then a
 save writes what the operation was given. A field nothing holds is a problem, except a list
-field of the aggregate's spec, which starts empty.
+field of the aggregate's spec, which starts empty, and a field
+`[aggregate.initial]` gives a value, which a new aggregate starts with.
 
 ### `[orchestrator.operations.<operation>]` — the workflow (exactly one with an engine, none without)
 
@@ -762,7 +941,8 @@ The implementation types:
 - `memory`, `body = "supported"`: a store port only, on `[storage.memory]`;
   an in-memory store, rendered in full.
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
-  and answers one field; issues version-4 UUIDs from a seed, rendered in full.
+  and answers one field; issues version-4 UUIDs from a seed, rendered in full. A UUID is text, so the
+  field it answers is a `str` (an `int` identity is issued by an agent's class).
 - any key with `body = "agent"` and a `class` on a gateway port: a stub gateway
   of that class, agent-owned (below). With `reaches = "<context>"`, naming
   another context of the composition, the gateway is handed that context's
@@ -894,17 +1074,17 @@ sample through the peer's issuing route and answers the identity it issued
 
 ```python
 @pytest.fixture
-def issued_harbor_id(host: str) -> str:
+def issued_harbor_id(host: str) -> int:
     answer = httpx.post(f"{host}/harbors", json={"place_name": "Valparaiso"}, timeout=DEADLINE_SECONDS)
     answer.raise_for_status()
-    return str(answer.json()["harbor_id"])
+    return int(answer.json()["harbor_id"])
 ```
 
 The skeleton of a route whose step looks that identity up takes the fixture
 and sends it in place of the sample, so it answers its status as rendered:
 
 ```python
-    def test_s_1_a_1(self, host: str, issued_harbor_id: str) -> None:
+    def test_s_1_a_1(self, host: str, issued_harbor_id: int) -> None:
         request = urllib_request.Request(
             f"{host}/voyages", data=json.dumps({"vessel": "Endeavour", "harbor": issued_harbor_id}).encode(), ...
         )
@@ -940,6 +1120,14 @@ or inside a listed list of tables (a shape's field found in another sample),
 or an enum (its members are used). A list field with no sample is built from
 its shape's fields. A field listed with no values (`borrower = []`) is a
 problem, since there is nothing to pick from.
+
+A sample takes the type of the field it fills where it is used, so one sample
+serves a field that is a `str` in one message and an `int` in another (an
+annotation such as `"harbor_id: int"` on a client response): a whole number
+written as text (`"7"`) fills an `int` as `7`, and an `int` fills a `str` as
+its digits (`"7"`). A sample that cannot be the field's type (`"harbor-1"` for
+an `int`) is a problem naming the field, so no rendered test compares an `int`
+with text.
 
 ## What is rendered, and who owns it
 

@@ -11,7 +11,7 @@ import {{context}}.application.ports as ports
 
 class {{Repository}}(ts.Repository):
 
-    def __init__(self, {{aggregates}}: dict[str, ports.{{Record}}]) -> None:
+    def __init__(self, {{aggregates}}: dict[{{identity_type}}, ports.{{Record}}]) -> None:
         self._{{aggregates}} = {{aggregates}}
 
     async def {{save}}(self, {{save}}_request: ports.{{Save}}Request) -> ports.{{Save}}Response:
@@ -30,7 +30,7 @@ class {{Repository}}(ts.Repository):
 class {{Store}}(ts.Repository):
 
     def __init__(self) -> None:
-        self._{{aggregates}}: dict[str, ports.{{Record}}] = {}
+        self._{{aggregates}}: dict[{{identity_type}}, ports.{{Record}}] = {}
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> typing.AsyncIterator[ports.{{Port}}]:

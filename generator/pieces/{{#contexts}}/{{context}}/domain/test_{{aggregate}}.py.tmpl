@@ -23,6 +23,13 @@ class Test{{Aggregate}}:
 
         assert isinstance({{command}}_outcome, domain.{{Outcome}})
 {{/commands}}
+{{#values}}
+
+    def test_{{value_snake}}_holds_the_value_it_is_made_from(self) -> None:
+        {{value_snake}} = domain.{{Value}}({{value_sample}})
+
+        assert {{cast}}({{value_snake}}) == {{value_sample}}
+{{/values}}
 {{#enum_reads}}
 
     def test_a_{{aggregate}}_reads_its_{{read}}_as_one_of_its_values(self) -> None:

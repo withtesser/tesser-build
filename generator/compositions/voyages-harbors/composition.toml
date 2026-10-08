@@ -6,7 +6,11 @@
 # through the same port. harbor_standing is what look_up_harbor answers, so it
 # renders as LookUpHarborResponse.outcome, a LookUpHarborOutcome declared in the
 # port's module; every key here and in implementations.toml still names it
-# harbor_standing.
+# harbor_standing. plan_voyage checks the vessel as the domain's Vessel before
+# it asks the chart (checks). A voyage starts planned ([aggregate.initial]),
+# and depart_voyage applies the depart_voyage command to the voyage it loads
+# (the aggregate.depart_voyage step), which answers already_departed for a
+# voyage that has departed.
 
 context = "voyages"
 
@@ -17,21 +21,31 @@ identity = "voyage_id"
 [aggregate.spec]
 voyage_id = "str"
 vessel = "str"
-harbor = "str"
+harbor = "int"
+stage = "VoyageStage"
+
+[aggregate.initial]
+stage = "planned"
+
+[aggregate.commands.depart_voyage]
+takes = {}
+outcomes = ["departed", "already_departed"]
 
 [aggregate.reads]
 voyage_id = "str"
 vessel = "str"
-harbor = "str"
+harbor = "int"
+stage = "VoyageStage"
 
 [interfaces.http]
-serves = ["s-1-a-1", "s-1-b-1"]
+serves = ["s-1-a-1", "s-1-b-1", "s-4-a-1"]
 
 [client.operations.plan_voyage]
 request = ["vessel", "harbor"]
 response = ["voyage_id"]
 steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
 refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "uncharted", message = "a voyage is planned to a charted harbor", field = "harbor" }]
+checks = { vessel = "Vessel" }
 serves = ["s-1", "s-2", "s-1-a-1"]
 
 [client.operations.get_voyage]
@@ -40,7 +54,14 @@ response = ["voyage_id", "vessel", "harbor", "harbor_name"]
 steps = ["repository.load_voyage", "gateway.look_up_harbor"]
 serves = ["s-1", "s-1-b-1"]
 
+[client.operations.depart_voyage]
+request = ["voyage_id"]
+response = ["voyage_id", "stage"]
+steps = ["repository.load_voyage", "aggregate.depart_voyage", "repository.save_voyage"]
+serves = ["s-4", "s-5", "s-4-a-1"]
+
 [enums]
+VoyageStage = ["planned", "departed"]
 HarborStanding = ["uncharted", "charted"]     # the refused member is listed first: a fake answers the one no refusal names
 
 [ports.HarborChart]

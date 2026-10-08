@@ -49,7 +49,7 @@ class Fake{{Port}}Answering{{Member}}(ports.{{Port}}):
 @ts.fake
 class Fake{{Port}}(ports.{{Port}}):
 
-    def __init__(self, {{aggregates}}: dict[str, ports.{{Record}}]) -> None:
+    def __init__(self, {{aggregates}}: dict[{{identity_type}}, ports.{{Record}}]) -> None:
         self._{{aggregates}} = {{aggregates}}
 
     async def {{save}}(self, {{save}}_request: ports.{{Save}}Request) -> ports.{{Save}}Response:
@@ -69,7 +69,7 @@ class Fake{{Port}}(ports.{{Port}}):
 class Fake{{Store}}(ports.{{Store}}):
 
     def __init__(self) -> None:
-        self.{{aggregates}}: dict[str, ports.{{Record}}] = {}
+        self.{{aggregates}}: dict[{{identity_type}}, ports.{{Record}}] = {}
 
     @contextlib.asynccontextmanager
     async def transaction(self) -> typing.AsyncIterator[ports.{{Port}}]:
@@ -81,7 +81,7 @@ class Fake{{Store}}(ports.{{Store}}):
 @ts.fake
 class Fake{{Relay}}(relays.{{Relay}}):
 
-    def __init__(self{{#watches_store}}, {{aggregates}}: dict[str, ports.{{Record}}]{{/watches_store}}{{#journaled}}, journal: list[str]{{/journaled}}) -> None:
+    def __init__(self{{#watches_store}}, {{aggregates}}: dict[{{identity_type}}, ports.{{Record}}]{{/watches_store}}{{#journaled}}, journal: list[str]{{/journaled}}) -> None:
 {{#watches_store}}
         self._{{aggregates}} = {{aggregates}}
         self.saved_when_received: list[bool] = []

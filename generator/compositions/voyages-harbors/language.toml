@@ -16,7 +16,15 @@ means = "The ship making the voyage, by its name."
 
 [[terms]]
 term = "harbor"
-means = "Where a voyage is bound. On a voyage, the harbor is the harbor_id it was charted with."
+means = "Where a voyage is bound. On a voyage, the harbor is the harbor_id it was charted with, a whole number the chart's ledger issues in turn."
+
+[[terms]]
+term = "stage"
+means = "How far a voyage has come: planned until its vessel sails, departed from then on."
+
+[[terms]]
+term = "depart"
+means = "Record that a planned voyage's vessel has sailed. A voyage departs once."
 
 [[terms]]
 term = "harbor chart"

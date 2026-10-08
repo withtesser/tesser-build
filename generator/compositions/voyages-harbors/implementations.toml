@@ -22,9 +22,10 @@ refused = { harbor_standing = "uncharted" }                       # when harbors
 [implementations.HarborRepository.memory]
 body = "supported"
 
-[implementations.HarborIdentityRepository.uuid]
-body = "supported"
+[implementations.HarborIdentityRepository.ledger]       # a uuid issues text, and a harbor_id is a whole number
+class = "LedgerHarborIdentityRepository"
+body = "agent"
 
 [environments.gate]
-implementations = { VoyageRepository = "memory", VoyageIdentityRepository = "uuid", HarborChart = "harbors", HarborRepository = "memory", HarborIdentityRepository = "uuid" }
+implementations = { VoyageRepository = "memory", VoyageIdentityRepository = "uuid", HarborChart = "harbors", HarborRepository = "memory", HarborIdentityRepository = "ledger" }
 hosts = ["http"]
