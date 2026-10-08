@@ -18704,7 +18704,7 @@ def test_a_call_the_analyzer_cannot_read_is_a_finding() -> None:
         ))).violations()
     )
     assert any(
-        "mod.domain.test_tag.test_widen names wider from a call it cannot read; a name "
+        "mod.domain.test_tag.test_widen names wider from a call it cannot read — annotate the return of the function or method it calls with the class it hands back; a name "
         "is derived from the class it carries, in snake_case, read through the "
         "annotation of the parameter, the constructor, or the field, parameter, or "
         "module function a call is made on, because a name the analyzer cannot check "

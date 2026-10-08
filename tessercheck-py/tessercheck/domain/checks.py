@@ -10605,7 +10605,8 @@ class Module(ts.Entity):
                         lineno,
                         "TB085",
                         f"{module_name}.{fn.name} names {actual} from a call it cannot "
-                        "read; a name is derived from the class it carries, in "
+                        "read — annotate the return of the function or method it calls with "
+                        "the class it hands back; a name is derived from the class it carries, in "
                         "snake_case, read through the annotation of the parameter, the "
                         "constructor, or the field, parameter, or module function a call "
                         "is made on, because a name the analyzer cannot check is a name "
