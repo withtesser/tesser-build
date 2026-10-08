@@ -1007,11 +1007,15 @@ class CampaignRepository(ts.Port, typing.Protocol):
   `Request`/`Response` (a port DTO and a client DTO alike) are equal when
   they are the same concrete type with equal fields, and hash the same way,
   so a nested record or a tuple of records compares through; a subclass may
-  not redefine `__eq__`/`__hash__`. A test that wants "the reloaded save
-  request equals the original" writes `loaded == original`; it never
-  projects both to a tuple first (maintainer ruling 2026-08-30). The
-  protocol tier's `tesser.srv` request/response is a `Record` — equal by
-  value too, but unhashable.
+  not redefine `__eq__`/`__hash__`. A mapper counts as the type it maps to:
+  `MapToMember(row) == ports.Member("m1", "Ada")` when the fields match, so a
+  service test compares the service's answer with the plain DTO it expects.
+  Two unrelated DTOs with the same fields stay unequal. A test that wants
+  "the reloaded save request equals the original" writes `loaded ==
+  original`; it never projects both to a tuple first (maintainer ruling
+  2026-08-30). The protocol tier's `tesser.srv` request/response is a
+  `Record` — equal by value too, the same mapper rule included, but
+  unhashable.
 - **A multi-outcome answer is an enum outcome plus payload; a collection is a
   tuple.** Where cardinality *is* the answer (list-all), the tuple alone says
   it — no outcome enum. The enum is a plain `enum.Enum`, never `StrEnum`/

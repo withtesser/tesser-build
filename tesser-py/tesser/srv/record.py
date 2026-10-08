@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import tesser.do_not_use_mapping as mapping
+
 _NOT_A_FIELD = ("ClassVar", "Final")
 
 
@@ -58,7 +60,7 @@ class Record:
             object.__setattr__(self, name, value)
 
     def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
+        if mapping.mapped_type(type(self)) is not mapping.mapped_type(type(other)):
             return NotImplemented
         return self.__dict__ == other.__dict__
 

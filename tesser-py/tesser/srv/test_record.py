@@ -3,6 +3,7 @@ import typing
 
 import pytest
 
+import tesser.adapters.mapper as adapters_mapper
 import tesser.srv
 
 
@@ -312,3 +313,35 @@ def test_a_derived_field_uses_the_valueobject_idiom() -> None:
     assert reply.size == 3
     with pytest.raises(AttributeError):
         reply.size = 0
+
+
+def test_a_mapper_output_equals_the_record_it_maps_to() -> None:
+    class MapToReply(adapters_mapper.Mapper, Reply):
+
+        def __init__(self, code: str) -> None:
+            super().__init__(int(code), b"ok")
+
+    assert MapToReply("200") == Reply(200, b"ok")
+    assert Reply(200, b"ok") == MapToReply("200")
+    assert MapToReply("404") != Reply(200, b"ok")
+
+
+def test_a_mapper_output_never_equals_an_unrelated_record_with_the_same_fields() -> None:
+    class OtherReply(tesser.srv.Response):
+
+        def __init__(self, status: int, body: bytes = b"") -> None:
+            super().__init__(status=status, body=body)
+
+        status: int
+        body: bytes
+
+    class MapToReply(adapters_mapper.Mapper, Reply):
+
+        def __init__(self, code: str) -> None:
+            super().__init__(int(code), b"ok")
+
+    class SpecialReply(Reply):
+        pass
+
+    assert MapToReply("200") != OtherReply(200, b"ok")
+    assert SpecialReply(200, b"ok") != Reply(200, b"ok")

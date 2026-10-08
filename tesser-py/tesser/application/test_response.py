@@ -1,5 +1,7 @@
 import pytest
 
+import tesser.adapters.mapper as adapters_mapper
+import tesser.application.mapper as application_mapper
 import tesser.application.response as response
 
 
@@ -75,3 +77,47 @@ def test_a_response_subclass_may_not_redefine_equality_or_hashing() -> None:
         class BadHash(response.Response):
             def __hash__(self) -> int:
                 return 0
+
+
+def test_a_mapper_output_equals_the_response_it_maps_to() -> None:
+    class Member(response.Response):
+        def __init__(self, id: str, name: str) -> None:
+            self.id = id
+            self.name = name
+
+    class MapToMember(adapters_mapper.Mapper, Member):
+        def __init__(self, row: dict[str, str]) -> None:
+            super().__init__(row["id"], row["name"])
+
+    class MapToMemberFromPair(application_mapper.Mapper, Member):
+        def __init__(self, pair: tuple[str, str]) -> None:
+            super().__init__(pair[0], pair[1])
+
+    mapped = MapToMember({"id": "m1", "name": "Ada"})
+    assert mapped == Member("m1", "Ada")
+    assert Member("m1", "Ada") == mapped
+    assert mapped == MapToMemberFromPair(("m1", "Ada"))
+    assert mapped != Member("m1", "Grace")
+    assert hash(mapped) == hash(Member("m1", "Ada"))
+    assert {mapped, Member("m1", "Ada")} == {Member("m1", "Ada")}
+
+
+def test_a_mapper_output_never_equals_an_unrelated_response_with_the_same_fields() -> None:
+    class Member(response.Response):
+        def __init__(self, id: str) -> None:
+            self.id = id
+
+    class Guest(response.Response):
+        def __init__(self, id: str) -> None:
+            self.id = id
+
+    class MapToMember(adapters_mapper.Mapper, Member):
+        def __init__(self, id: str) -> None:
+            super().__init__(id)
+
+    class Special(Member):
+        pass
+
+    assert MapToMember("m1") != Guest("m1")
+    assert Guest("m1") != MapToMember("m1")
+    assert Special("m1") != Member("m1")
