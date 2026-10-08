@@ -1,13 +1,17 @@
 # pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
+{{#restate_engine}}
 import json
+{{/restate_engine}}
 import os
 {{#located}}
 import pathlib
 {{/located}}
 import signal
+{{#restate_engine}}
 import socket
+{{/restate_engine}}
 import subprocess
 import sys
 import time
@@ -16,6 +20,7 @@ import urllib.request as urllib_request
 
 
 class TestHttpHost:
+{{#restate_engine}}
 
     def test_the_mounted_restate_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow(
         self, free_port: int{{#located}}, tmp_path: pathlib.Path{{/located}}
@@ -59,15 +64,20 @@ class TestHttpHost:
             "{{container}}": [{{handler_names}}],
 {{/containers}}
         }
+{{/restate_engine}}
 
     def test_the_routes_answer_by_the_failure_they_meet(self, free_port: int{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
         port = free_port
+{{#restate_engine}}
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
+{{/restate_engine}}
         env = dict(
             os.environ,
+{{#restate_engine}}
             {{engine_url_variable}}=f"http://127.0.0.1:{unreachable}",
+{{/restate_engine}}
 {{#locations}}
             {{location_variable}}=str(tmp_path / "{{location_attr}}"),
 {{/locations}}

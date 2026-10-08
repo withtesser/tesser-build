@@ -1,0 +1,15 @@
+# 5 IMPLEMENTATIONS — what satisfies each contract, per environment. See ../README.md.
+
+[implementations.NoticeSender.printed]
+class = "PrintedNoticeSender"
+body = "agent"
+
+[implementations.LoanRepository.memory]
+body = "supported"
+
+[implementations.LoanIdentityRepository.uuid]
+body = "supported"
+
+[environments.gate]
+implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
+hosts = ["http"]

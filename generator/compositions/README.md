@@ -62,10 +62,11 @@ names (`adapters`, `app`, `application`, `client`, `component`, `config`,
 
 Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
-`mypy --strict`, and a plain `pytest` from its root, which starts the engines
-and the host the tests take (Docker required); it passes when every failure is
-a root-test skeleton red at its placeholder. `library/` is the small
-worked example.
+`mypy --strict`, and a plain `pytest` from its root, which starts the host the
+tests take and, when `infra.toml` declares an engine, the engines (Docker
+required); it passes when every failure is a root-test skeleton red at its
+placeholder. `library/` is the small worked example, and `library-direct/` is
+the same app with no engine: its service calls the ports itself.
 
 ## Which file answers which question
 
@@ -204,7 +205,9 @@ Beside the skeletons the renderer writes an empty generated
 `host` fixture the skeletons take: it starts a private Restate engine, serves
 `srv.http.main` with the engine's URL, a fresh temporary path for every storage
 `location_variable`, and a free port in the `listen_port_variable`, registers
-the host's `engine_path` with the engine, and yields the host's address. A
+the host's `engine_path` with the engine, and yields the host's address. With
+no engine it starts none: it serves `srv.http.main` with the same variables
+less the engine's URL, and yields the address once the host answers. A
 runner that already serves a host passes its address instead:
 `pytest tests --host http://127.0.0.1:<port>` (`docs/design-test-tiers.md`,
 "The tests own their infrastructure"). The address is an argument, not a
@@ -223,7 +226,7 @@ app = "story_drafting"                    # required: the app, snake_case
 language = "python"
 version = "3.12"
 
-[engine.restate]                          # required, and the only engine
+[engine.restate]                          # optional, and the only engine
 body = "supported"                        # informational
 engine_path = "/restate"                  # required: where the Restate endpoint is mounted
 engine_url_variable = "RESTATE_URL"       # required: the variable the app reads the engine's URL from
@@ -239,6 +242,16 @@ location_variable = "JTBD_DB_PATH"        # the variable that names its location
 [variables]                               # informational: what each variable is
 JTBD_DB_PATH = "the path of the SQLite database file"
 ```
+
+**Without an engine.** An `infra.toml` with no `[engine]` table renders a
+request/response app: each client operation's steps call the ports in turn and
+the operation answers when they are done. Nothing runs on an engine, so the
+composition declares no `[orchestrator]`, `[actions]`, or `[signals]`, no step
+is an `orchestrator.` step, and no environment names an `engine`; each of these
+is a problem that says so. The tree has no `activities/`, `workflows/`,
+`dispatchers/`, `relays/`, `orchestrators/`, or `application/client/`, the host
+mounts no engine endpoint, the app reads no engine URL, and the tests take no
+engine fixture and need no Docker (`library-direct/`).
 
 The engine names one variable, the one the app reads its URL from. The tests
 never read the environment: they take the engine's URL, its admin URL and the
@@ -378,8 +391,9 @@ Two operations may call the same port operation; each gets its own mapper.
 
 **Steps**, in order:
 
-- `identity.<operation>` / `repository.<operation>`: call that port
-  operation (looked up by operation name across `[ports]`). If its request
+- `identity.<operation>` / `repository.<operation>` / `gateway.<operation>`:
+  call that port operation (looked up by operation name across `[ports]`; the
+  prefix is not checked against the port's kind). If its request
   names the aggregate, the aggregate is built first from what the earlier
   steps hold (the request, the answers so far), with any list field empty. If
   its response is the aggregate, the aggregate is rebuilt from it.
@@ -398,7 +412,7 @@ the earlier steps hold (the request, say) over the loaded ones, so a load then a
 save writes what the operation was given. A field nothing holds is a problem, except a list
 field of the aggregate's spec, which starts empty.
 
-### `[orchestrator.operations.<operation>]` — the workflow (exactly one)
+### `[orchestrator.operations.<operation>]` — the workflow (exactly one with an engine, none without)
 
 ```toml
 [orchestrator.operations.arrange_loan]
@@ -495,7 +509,7 @@ body = "agent"
 
 [environments.gate]                       # [environments.<name>], at least one
 implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
-engine = "restate"                        # the engine infra.toml declares
+engine = "restate"                        # the engine infra.toml declares; left out when it declares none
 hosts = ["http"]                          # the host infra.toml declares
 ```
 
@@ -576,7 +590,9 @@ HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
 Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
 generated `conftest.py` and `__init__.py`),
 `pyproject.toml`, `requirements-dev.txt`, `conftest.py`, and `.tesser-root`.
-Every module has its sibling test.
+Every module has its sibling test. A tree with no engine has the same pieces
+less `relays/`, `client/`, `orchestrators/`, `activities/`, `workflows/`, and
+`dispatchers/`, and its host mounts no engine endpoint.
 
 A gate that serves `srv/http/main.py` for the root tier stops it with SIGINT
 and kills it if it has not exited two seconds later: a Restate endpoint
@@ -604,18 +620,21 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    say them word for word; a story whose given needs calls first says in its
    `given`, in words, how it is reached.
 3. `infra.toml`: `app`; `[runtime]`; `[engine.restate]` with its
-   `engine_path` and `engine_url_variable`; `[hosts.http]` with its listen port
+   `engine_path` and `engine_url_variable`, or no `[engine]` for a
+   request/response app; `[hosts.http]` with its listen port
    variable; a `[storage.<name>]` for each storage (every one but `memory`
    with its `location_variable`); `[variables]`.
 4. `composition.toml`: `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
-   serving it and its steps in order; exactly one orchestrator operation whose request holds
-   the identity; its actions (one port each, each named for the term it acts
-   on, never for its port) and any signal; every port.
+   serving it and its steps in order; with an engine, exactly one
+   orchestrator operation whose request holds the identity, its actions (one
+   port each, each named for the term it acts on, never for its port), and any
+   signal; every port.
 5. `implementations.toml`: an implementation for every port, a store's named
    for a storage `infra.toml` declares; an environment.
 6. `generator.toml`: two sample values for every field.
 7. Render into a fresh directory and run the gate on it (the tests start
-   their own engines and host, and give every storage a fresh location); then
+   their own host, and engines when there is an engine, and give every storage
+   a fresh location); then
    write each root test's given and then where its skeleton's placeholders
    stand.

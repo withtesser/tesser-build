@@ -999,6 +999,7 @@ class Model(ts.Entity):
         self._aggregate = str(Word(self._Aggregate).snake())
         self._identity = str(aggregate_table["identity"])
         self._Orchestrator = self._Aggregate + "Orchestrator"
+        self._engine_declared = bool(self._infra.get("engine", {}))
         self._spec_fields = [(str(field), str(type_text)) for field, type_text in aggregate_table["spec"].items()]
         self._reads = [(str(field), str(type_text)) for field, type_text in aggregate_table["reads"].items()]
         self._read_types = dict(self._reads)
@@ -1173,8 +1174,18 @@ class Model(ts.Entity):
                                      f"ports exports one {Operation}Request and one {Operation}Response, so one port declares it")
                 self._port_of[operation_name] = port_name
                 self._port_ops[port_name].append(operation_name)
-        for step in [step for operation in composition.get("client", {}).get("operations", {}).values()
-                     for step in operation.get("steps", [])]:
+        client_steps = [str(step) for operation in composition.get("client", {}).get("operations", {}).values()
+                        for step in operation.get("steps", [])]
+        if not self._engine_declared:
+            unrun = [f"composition.toml declares [{section}], which runs on a durable-execution engine, and infra.toml declares "
+                     f"no [engine]: without one, a client operation's steps call its ports directly"
+                     for section in ("orchestrator", "actions", "signals") if composition.get(section)]
+            unrun.extend(f"step {step} runs the orchestrator, and infra.toml declares no [engine] to run it: without one, a "
+                         f"client operation's steps call its ports directly"
+                         for step in client_steps if step.split(".", 1)[0] == "orchestrator")
+            if unrun:
+                raise ValueError(*unrun)
+        for step in client_steps:
             kind, rest = str(step).split(".", 1)
             if kind != "orchestrator":
                 continue
@@ -1184,11 +1195,12 @@ class Model(ts.Entity):
             modes = self._orchestrator_modes.setdefault(operation_name, [])
             if mode not in modes:
                 modes.append(mode)
-        relay_module = str(Word(self._Orchestrator).snake()) + "_relay"
-        self._relay_ops[self._Orchestrator + "Relay"] = []
         orchestrator_operations = composition.get("orchestrator", {}).get("operations", {})
-        if len(orchestrator_operations) != 1:
-            raise ValueError("the composition declares one orchestrator operation, because a workflow keeps one main")
+        if self._engine_declared:
+            self._relay_ops[self._Orchestrator + "Relay"] = []
+            if len(orchestrator_operations) != 1:
+                raise ValueError("the composition declares one orchestrator operation, because a workflow keeps one main")
+        relay_module = str(Word(self._Orchestrator).snake()) + "_relay"
         for operation_name, operation in orchestrator_operations.items():
             Operation = str(Word(operation_name).pascal())
             declared.append(("relays", relay_module, Operation + "Request", "Request", list(operation["request"]), True, self._Orchestrator, False))
@@ -1360,7 +1372,7 @@ class Model(ts.Entity):
             test_name = f"{operation_name}_answers_from_its_steps"
             for step in operation.get("steps", []):
                 kind, rest = str(step).split(".", 1)
-                if kind in ("identity", "repository"):
+                if kind in ("identity", "repository", "gateway"):
                     if rest not in self._port_of:
                         raise ValueError(f"step {step} names {rest}, which no port declares")
                     port_name = self._port_of[rest]
@@ -1385,8 +1397,10 @@ class Model(ts.Entity):
                             ask.target(target)
                         for held in sources.held():
                             ask.source(held)
-                        argument = str(mappers.map(ask).call())
+                        port_mapped = mappers.map(ask)
+                        argument = str(port_mapped.call())
                     else:
+                        port_mapped = Mapped(MappedSpec(call="", values=()))
                         argument = f"ports.{Step}Request()"
                     local = rest + "_response"
                     assign = f"{local} = " if port_response.targets() else ""
@@ -1399,6 +1413,11 @@ class Model(ts.Entity):
                         holder = str(Word(port_name).snake())
                         dependency = {"dependency": holder, "dependency_type": f"ports.{port_name}"}
                         statements.append(dict(blank, port_call=[{}], holder=holder, assign=assign, call=rest, argument=argument))
+                        pairs = port_mapped.values()
+                        if port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
+                            reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
+                            expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
+                            checks.append({"check": f"[({reads},) for received in fake_{holder}.{rest}_requests] == [({expected},)]"})
                     if dependency not in dependencies:
                         dependencies.append(dependency)
                     saved = saved or carries
@@ -2010,14 +2029,13 @@ class Model(ts.Entity):
 
     def engine(self) -> None:
         implementations = self._implementations
-        identity = self._identity
         Orchestrator = self._Orchestrator
         infra = self._infra
         engines = infra.get("engine", {})
-        if list(engines) != ["restate"]:
+        if self._engine_declared and list(engines) != ["restate"]:
             raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
-        engine = engines["restate"]
-        for key in ("engine_url_variable", "engine_path"):
+        engine = engines.get("restate", {})
+        for key in ("engine_url_variable", "engine_path") if self._engine_declared else ():
             if key not in engine:
                 raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
@@ -2025,7 +2043,7 @@ class Model(ts.Entity):
             if key in engine:
                 raise ValueError(f"[engine.restate] names {key}, which nothing reads: the tests take the engine's admin URL "
                                  f"and callback host from the root conftest's fixtures, so infra.toml names no variable for them")
-        self._binding["restate_engine"] = [{}]
+        self._binding["restate_engine"] = [{}] if self._engine_declared else []
         chosen: dict[str, str] = {}
         if not implementations.get("environments"):
             raise ValueError("implementations.toml declares no [environments]")
@@ -2037,8 +2055,11 @@ class Model(ts.Entity):
                 if chosen.setdefault(str(port_name), str(implementation)) != str(implementation):
                     raise ValueError(f"{port_name} is {chosen[str(port_name)]} in one environment and {implementation} in "
                                      f"{environment_name}, which needs a selector variable this renderer does not render")
-            if environment.get("engine") != "restate":
+            if self._engine_declared and environment.get("engine") != "restate":
                 raise ValueError(f"environment {environment_name} runs no restate engine")
+            if not self._engine_declared and "engine" in environment:
+                raise ValueError(f"environment {environment_name} runs the {environment['engine']} engine, and infra.toml declares "
+                                 f"no [engine]")
             if list(environment.get("hosts", [])) != ["http"]:
                 raise ValueError(f"environment {environment_name} serves hosts other than http, the one this renderer renders")
         host = infra.get("hosts", {}).get("http")
@@ -2140,6 +2161,38 @@ class Model(ts.Entity):
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
         self._binding["identity_seeded"] = [{}] if seeded else []
+        self._binding["configured"] = [{}] if self._engine_declared or seeded or locations else []
+        self._binding["reads_environment"] = [{}] if self._engine_declared or locations else []
+        self._port_exprs = port_exprs
+        service_args: list[dict[str, object]] = []
+        service_dependencies = self._binding.get("dependencies", [])
+        for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
+            type_name = str(dependency["dependency_type"]).split(".", 1)[1]
+            if type_name == Orchestrator + "Relay":
+                workflow_local = str(Word("Restate" + str(Word(self._orchestration[0]).pascal())).snake())
+                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.engine_url, {workflow_local})"})
+            elif type_name in port_exprs:
+                service_args.append({"expr": port_exprs[type_name]})
+            else:
+                service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
+        self._binding["service_args"] = service_args
+        imported = {"activities", "workflows"} if self._engine_declared else set()
+        if self._relay_ops.get(Orchestrator + "Relay"):
+            imported.add("dispatchers")
+        if gateways:
+            imported.add("gateways")
+        if memory_repositories or uuid_repositories or agent_stores:
+            imported.add("repositories")
+        self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
+
+    def restate(self) -> None:
+        if not self._engine_declared:
+            for name in ("activities", "application_clients", "first_activity", "containers", "workflows", "http_dispatchers"):
+                self._binding[name] = []
+            return
+        identity = self._identity
+        Orchestrator = self._Orchestrator
+        port_exprs = self._port_exprs
         operation_name, steps = self._orchestration
         activities: list[dict[str, object]] = []
         used: list[str] = []
@@ -2250,25 +2303,6 @@ class Model(ts.Entity):
             workflow, module="restate_http_" + str(Word(Orchestrator).snake()) + "_relay",
             Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods, run_methods=run_methods,
         )] if start_methods or run_methods else []
-        service_args: list[dict[str, object]] = []
-        service_dependencies = self._binding.get("dependencies", [])
-        for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
-            type_name = str(dependency["dependency_type"]).split(".", 1)[1]
-            if type_name == Orchestrator + "Relay":
-                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.engine_url, {workflow['workflow_local']})"})
-            elif type_name in port_exprs:
-                service_args.append({"expr": port_exprs[type_name]})
-            else:
-                service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
-        self._binding["service_args"] = service_args
-        imported = {"activities", "workflows"}
-        if start_methods or run_methods:
-            imported.add("dispatchers")
-        if gateways:
-            imported.add("gateways")
-        if memory_repositories or uuid_repositories or agent_stores:
-            imported.add("repositories")
-        self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
 
     def routes(self) -> None:
         served = [str(story) for story in self._composition.get("interfaces", {}).get("http", {}).get("serves", [])]
@@ -2526,6 +2560,7 @@ class RenderedTree(ts.AggregateRoot):
                 model.publish()
                 model.stub()
                 model.engine()
+                model.restate()
                 model.routes()
                 model.traced()
                 scope = model.scope()

@@ -197,14 +197,22 @@ the renderer derives, what it renders, and which rendered files are the
 agent's.
 
 `infra.toml` holds what the app runs on and what an operator must provide: the
-app, the runtime, the engine (with `engine_path` and `engine_url_variable`; an
-`admin_variable` or `callback_host_variable` is a problem, since the tests take
-the engine's admin URL and callback host as fixtures), the host,
+app, the runtime, the engine if there is one (with `engine_path` and
+`engine_url_variable`; an `admin_variable` or `callback_host_variable` is a
+problem, since the tests take the engine's admin URL and callback host as
+fixtures), the host,
 each storage (`[storage.<name>]`, with the `location_variable` that locates it,
 for every storage but `memory`), and the variables. `implementations.toml`
 holds only the port-level mapping (`[implementations]` and `[environments]`);
 one that still carries `app`, `[engine]`, `[hosts]`, or `[variables]` is a
 problem saying they moved.
+
+An `infra.toml` with no `[engine]` renders a request/response app: the
+service's steps call the identity port, the repository, and any gateway
+(`gateway.<operation>`) in turn, and the tree has no workflow, actions, relays,
+dispatchers, engine endpoint, or engine fixtures. Such a composition declares
+no `[orchestrator]`, `[actions]`, or `[signals]`, and its environments name no
+`engine` (`compositions/library-direct/`).
 
 A port in `implementations.toml` with `body = "agent"` and a `class` renders an
 agent-owned stub: a gateway for a gateway port, and, for a store port (one that
@@ -232,7 +240,7 @@ skeleton is named for its method and every path segment, a parameter as
 writes: the story's given (how the host reaches it, and any path value the
 route needs) and its then. It takes the served host's address as the `host`
 fixture, which the rendered root `conftest.py` answers: it serves
-`srv.http.main` on a private engine of its own, or answers pytest's `--host`
+`srv.http.main` (on a private engine of its own when there is an engine), or answers pytest's `--host`
 option (`pytest tests --host <url>`) when a runner already serves one. A story file with `reached_by` is a problem: the
 key is no longer part of the format. A path parameter for an `int` field answers
 400 unless it is an integer (an optional `-` and at most 18 ASCII digits). A
@@ -245,15 +253,17 @@ A rendered tree owns its test infrastructure (`docs/design-test-tiers.md`,
 every tier with nothing served beforehand and nothing read from the
 environment. The rendered root `conftest.py` holds session fixtures a test asks
 for by name: `engine_url`, `engine_admin_url` and `engine_callback_host` (a
-private Restate engine, started through `restate.harness` on first use),
-`free_port`, and, in a tree with root tests, `host` (a second private engine
-and `srv.http.main` registered with it, run with the engine URL, every storage
-`location_variable` (a fresh temporary path) and the `listen_port_variable`
-that `infra.toml` names). A watchdog child per engine and host cleans up if
+private Restate engine, started through `restate.harness` on first use; only
+when there is an engine), `free_port`, and, in a tree with root tests, `host`
+(a second private engine and `srv.http.main` registered with it, run with the
+engine URL, every storage `location_variable` (a fresh temporary path) and the
+`listen_port_variable` that `infra.toml` names; with no engine, `srv.http.main`
+alone, once it answers). A watchdog child per engine and host cleans up if
 pytest is killed. The app's `EnvConfigRepository` takes the environment it
 reads (`load()` passes `os.environ`), so its test hands it a dict.
 
 Every composition in `compositions/` is gated: `scripts/verify
 generator` renders each one and runs the rendered tree's tessercheck,
-`mypy --strict`, and a plain `pytest` (Docker required), passing when every
-failure is a root-test skeleton red at its placeholder.
+`mypy --strict`, and a plain `pytest` (Docker required when there is an
+engine), passing when every failure is a root-test skeleton red at its
+placeholder.

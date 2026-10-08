@@ -1,46 +1,62 @@
 # pragma: tesser-generated; regenerate from the composition, never edit by hand
 from __future__ import annotations
 
+{{#restate_engine}}
 import typing
 
+{{/restate_engine}}
 import tesser.component as ts
+{{#restate_engine}}
 import restate
+{{/restate_engine}}
 
 {{#component_imports}}
 import {{context}}.adapters.{{package}} as {{package}}
 {{/component_imports}}
 import {{context}}.application as application
 import {{context}}.client as client
+{{#restate_engine}}
 
 _RETRY_POLICY: typing.Final[restate.InvocationRetryPolicy] = restate.InvocationRetryPolicy(
     max_attempts=5, on_max_attempts="pause"
 )
+{{/restate_engine}}
 
 
 class Spec(ts.Spec):
 
     def __init__(
-        self, engine_url: str{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}{{#locations}}, {{location_attr}}: str{{/locations}}
+        self{{#restate_engine}}, engine_url: str{{/restate_engine}}{{#identity_seeded}}, identity_seed: int{{/identity_seeded}}{{#locations}}, {{location_attr}}: str{{/locations}}
     ) -> None:
+{{#restate_engine}}
         self.engine_url = engine_url
+{{/restate_engine}}
 {{#identity_seeded}}
         self.identity_seed = identity_seed
 {{/identity_seeded}}
 {{#locations}}
         self.{{location_attr}} = {{location_attr}}
 {{/locations}}
+{{^configured}}
+        pass
+{{/configured}}
 
 
 class Config(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
+{{#restate_engine}}
         self.engine_url = spec.engine_url
+{{/restate_engine}}
 {{#identity_seeded}}
         self.identity_seed = spec.identity_seed
 {{/identity_seeded}}
 {{#locations}}
         self.{{location_attr}} = spec.{{location_attr}}
 {{/locations}}
+{{^configured}}
+        pass
+{{/configured}}
 
 
 class {{Context}}(ts.Component):

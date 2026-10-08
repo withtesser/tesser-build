@@ -328,7 +328,8 @@ run_layout() {
 # (srv.cli.render --check), and gated: tessercheck zero findings, mypy
 # --strict, and a plain pytest from the rendered tree's root. Nothing is served
 # beforehand and nothing is read from the environment: the rendered root
-# conftest.py starts the engines (Docker) and the HTTP host the tests ask for
+# conftest.py starts the HTTP host the tests ask for and, when the composition
+# declares an engine, the engines (Docker)
 # (docs/design-test-tiers.md, "The tests own their infrastructure"). A
 # rendered root tier is its skeletons, red at each placeholder until their
 # author writes them, so the arm reads pytest's report and passes when every

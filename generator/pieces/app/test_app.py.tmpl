@@ -22,7 +22,17 @@ class FakeConfigRepository(app.AppConfigRepository):
     def get(self) -> app.AppConfig:
         return app.AppConfig(
             app.Spec({{context}}_component.Config({{context}}_component.Spec(
+{{#restate_engine}}
                 "http://localhost:8080"{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}=str(self._locations / "{{location_attr}}"){{/locations}}
+{{/restate_engine}}
+{{^restate_engine}}
+{{#identity_seeded}}
+                identity_seed=7,
+{{/identity_seeded}}
+{{#locations}}
+                {{location_attr}}=str(self._locations / "{{location_attr}}"),
+{{/locations}}
+{{/restate_engine}}
             )))
         )
 
@@ -33,7 +43,17 @@ class TestAppConfig:
         spec = app.Spec(
             {{context}}_component.Config(
                 {{context}}_component.Spec(
+{{#restate_engine}}
                     "http://localhost:8080"{{#identity_seeded}}, 7{{/identity_seeded}}{{#locations}}, {{location_attr}}="{{location_attr}}"{{/locations}}
+{{/restate_engine}}
+{{^restate_engine}}
+{{#identity_seeded}}
+                    identity_seed=7,
+{{/identity_seeded}}
+{{#locations}}
+                    {{location_attr}}="{{location_attr}}",
+{{/locations}}
+{{/restate_engine}}
                 )
             )
         )
@@ -44,21 +64,55 @@ class TestAppConfig:
 
 
 class TestEnvConfigRepository:
+{{#reads_environment}}
 
     def test_the_environment_is_read_into_a_config(self) -> None:
         app_config = app.EnvConfigRepository(
+{{#restate_engine}}
             {"{{engine_url_variable}}": "http://engine.invalid:8080"{{#locations}}, "{{location_variable}}": "{{location_attr}}.invalid"{{/locations}}}
+{{/restate_engine}}
+{{^restate_engine}}
+            {
+{{#locations}}
+                "{{location_variable}}": "{{location_attr}}.invalid",
+{{/locations}}
+            }
+{{/restate_engine}}
         ).get()
 
+{{#restate_engine}}
         assert app_config.{{context}}.engine_url == "http://engine.invalid:8080"
+{{/restate_engine}}
 {{#locations}}
         assert app_config.{{context}}.{{location_attr}} == "{{location_attr}}.invalid"
 {{/locations}}
+{{/reads_environment}}
+{{^reads_environment}}
+
+    def test_an_environment_with_no_variables_is_read_into_a_config(self) -> None:
+        app_config = app.EnvConfigRepository({}).get()
+
+        assert app_config.{{context}} is not None
+{{/reads_environment}}
 {{#identity_seeded}}
 
     def test_each_read_draws_a_new_identity_seed(self) -> None:
         env_config_repository = app.EnvConfigRepository(
+{{#restate_engine}}
             {"{{engine_url_variable}}": "http://engine.invalid:8080"{{#locations}}, "{{location_variable}}": "{{location_attr}}.invalid"{{/locations}}}
+{{/restate_engine}}
+{{^restate_engine}}
+{{#located}}
+            {
+{{#locations}}
+                "{{location_variable}}": "{{location_attr}}.invalid",
+{{/locations}}
+            }
+{{/located}}
+{{^located}}
+            {}
+{{/located}}
+{{/restate_engine}}
         )
 
         first = env_config_repository.get()

@@ -1268,3 +1268,159 @@ class TestRenderingCompositions:
         )
 
         assert render_composition_response.problems == ()
+
+    def test_a_composition_with_no_engine_renders_a_service_that_calls_its_ports_and_no_engine_piece(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(client.RenderCompositionRequest(
+            composition_dir=str(tree / "compositions" / "library-direct"), out_dir=str(tmp_path / "out"), printed=(),
+        ))
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "app", "loans", "protocol", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "app", "loans", "protocol", "srv", "tests", "conftest.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        rendered = {
+            path.relative_to(tmp_path / "out").as_posix(): path.read_text()
+            for path in (tmp_path / "out").rglob("*")
+            if path.is_file() and path.name != ".tesser-rendered" and "__pycache__" not in path.parts and ".mypy_cache" not in path.parts
+        }
+        assert [path for path, text in rendered.items() if "restate" in text.lower() or "engine" in text.lower()] == []
+        assert [path for path in rendered if {"activities", "workflows", "dispatchers", "orchestrators", "relays"} & set(path.split("/")[:-1])] == []
+        assert "loans/application/client/__init__.py" not in rendered
+        assert "        await self._notice_sender.send_notice(MapToSendNoticeRequest(lend_book_request))\n" in rendered[
+            "loans/application/loan_service.py"]
+
+    def test_a_workflow_without_an_engine_is_a_problem_for_each_piece_that_needs_one(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "infra.toml": [('[engine.restate]\nbody = "supported"\nengine_path = "/restate"\nengine_url_variable = "RESTATE_URL"\n\n', "")],
+            "implementations.toml": [('engine = "restate"\n', "")],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "composition.toml declares [orchestrator], which runs on a durable-execution engine, and infra.toml declares no "
+            "[engine]: without one, a client operation's steps call its ports directly",
+            "composition.toml declares [actions], which runs on a durable-execution engine, and infra.toml declares no "
+            "[engine]: without one, a client operation's steps call its ports directly",
+            "composition.toml declares [signals], which runs on a durable-execution engine, and infra.toml declares no "
+            "[engine]: without one, a client operation's steps call its ports directly",
+            "step orchestrator.start_arrange_loan runs the orchestrator, and infra.toml declares no [engine] to run it: without "
+            "one, a client operation's steps call its ports directly",
+        )
+        assert not (tmp_path / "out").exists()
+
+    def test_an_environment_running_an_engine_infra_toml_does_not_declare_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {"implementations.toml": [('hosts = ["http"]', 'engine = "restate"\nhosts = ["http"]')]}
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "environment gate runs the restate engine, and infra.toml declares no [engine]",
+        )
+
+    def test_an_app_with_no_engine_and_nothing_to_configure_renders_a_config_that_takes_nothing(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "implementations.toml": [(
+                "[implementations.LoanIdentityRepository.uuid]\nbody = \"supported\"",
+                "[implementations.LoanIdentityRepository.counted]\nclass = \"CountedLoanIdentityRepository\"\nbody = \"agent\"",
+            ), ('LoanIdentityRepository = "uuid"', 'LoanIdentityRepository = "counted"')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "app", "loans", "protocol", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "app", "loans", "protocol", "srv", "tests", "conftest.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        assert "    def __init__(\n        self\n    ) -> None:\n        pass\n" in (tmp_path / "out" / "loans" / "component" / "component.py").read_text()
+
+    def test_an_app_with_no_engine_reads_and_passes_its_store_location(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "implementations.toml": [(
+                "[implementations.LoanRepository.memory]\nbody = \"supported\"",
+                "[implementations.LoanRepository.sqlite]\nclass = \"SqliteLoanRepository\"\nbody = \"agent\"",
+            ), ('LoanRepository = "memory"', 'LoanRepository = "sqlite"')],
+            "infra.toml": [("[storage.memory]", "[storage.sqlite]\nlocation_variable = \"LOAN_DB_PATH\"")],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")]),
+               "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])}
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "app", "loans", "protocol", "srv"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "app", "loans", "protocol", "srv", "tests", "conftest.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+        assert typed.returncode == 0, typed.stdout
+        assert '"LOAN_DB_PATH": str(locations / "sqlite_location"),' in (tmp_path / "out" / "conftest.py").read_text()

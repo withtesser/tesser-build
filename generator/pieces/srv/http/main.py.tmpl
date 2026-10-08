@@ -12,14 +12,18 @@ import fastapi
 import hypercorn.asyncio as hypercorn_asyncio
 import hypercorn.config as hypercorn_config
 import hypercorn.typing as hypercorn_typing
+{{#restate_engine}}
 import restate
+{{/restate_engine}}
 
 import app as app
 import {{context}}.adapters.handlers as {{context}}_handlers
 import protocol
 
 _LISTEN_PORT_VARIABLE: typing.Final[str] = "{{listen_port_variable}}"
+{{#restate_engine}}
 _RESTATE_DEPLOYMENT_PATH: typing.Final[str] = "{{engine_path}}"
+{{/restate_engine}}
 _JSON: typing.Final[str] = "application/json"
 
 
@@ -52,6 +56,7 @@ class HttpHost(ts.Host):
 {{#routes}}
         api.add_api_route("{{path}}", http_routes.{{operation}}, methods=["{{method}}"])
 {{/routes}}
+{{#restate_engine}}
         api.mount(
             _RESTATE_DEPLOYMENT_PATH,
             restate.app(
@@ -62,6 +67,7 @@ class HttpHost(ts.Host):
                 ]
             ),
         )
+{{/restate_engine}}
         config = hypercorn_config.Config()
         config.bind = [argv[0] if argv else f"0.0.0.0:{os.environ[_LISTEN_PORT_VARIABLE]}"]
         served = typing.cast(hypercorn_typing.ASGIFramework, api)

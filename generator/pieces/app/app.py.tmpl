@@ -11,7 +11,9 @@ import typing
 import tesser.app as ts
 
 import {{context}}.component as {{context}}_component
+{{#reads_environment}}
 import tesser.errors as errors
+{{/reads_environment}}
 {{#identity_seeded}}
 
 _IDENTITY_SEED_BITS: typing.Final[int] = 128
@@ -53,9 +55,11 @@ class EnvConfigRepository(AppConfigRepository):
         self._environ = environ
 
     def get(self) -> AppConfig:
+{{#restate_engine}}
         engine_url = self._environ.get("{{engine_url_variable}}")
         if engine_url is None:
             raise errors.invalid("missing_env", "{{engine_url_variable}} is required")
+{{/restate_engine}}
 {{#locations}}
         {{location_attr}} = self._environ.get("{{location_variable}}")
         if {{location_attr}} is None:
@@ -65,7 +69,9 @@ class EnvConfigRepository(AppConfigRepository):
             Spec(
                 {{context}}={{context}}_component.Config(
                     {{context}}_component.Spec(
+{{#restate_engine}}
                         engine_url=engine_url,
+{{/restate_engine}}
 {{#identity_seeded}}
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
 {{/identity_seeded}}

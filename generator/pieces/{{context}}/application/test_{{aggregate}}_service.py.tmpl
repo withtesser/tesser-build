@@ -8,7 +8,9 @@ import tesser.testing as ts
 
 import {{context}}.application as application
 import {{context}}.application.ports as ports
+{{#restate_engine}}
 import {{context}}.application.relays as relays
+{{/restate_engine}}
 import {{context}}.client as client
 {{#fake_ports}}
 
