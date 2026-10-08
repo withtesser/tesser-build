@@ -33,6 +33,19 @@ def test_a_request_that_takes_no_arguments_rejects_the_first_one() -> None:
         protocol.CliRequest(args=("tree",)).no_extra_args(0, "usage: rules")
 
 
+def test_a_flag_is_present_only_when_its_exact_token_was_passed() -> None:
+    assert protocol.CliRequest(args=("--fix", "tree")).flag("--fix")
+    assert protocol.CliRequest(args=("tree", "--fix")).flag("--fix")
+    assert not protocol.CliRequest(args=("tree",)).flag("--fix")
+    assert not protocol.CliRequest(args=("--fixes",)).flag("--fix")
+
+
+def test_a_request_without_a_flag_keeps_the_rest_in_order() -> None:
+    cli_request = protocol.CliRequest(args=("--fix", "tree", "second"))
+    assert cli_request.without("--fix") == protocol.CliRequest(args=("tree", "second"))
+    assert cli_request.without("--fix").arg(0, ".") == "tree"
+
+
 def test_a_response_carries_the_exit_code_and_both_streams() -> None:
     cli_response = protocol.CliResponse(2, stdout="out", stderr="err")
     assert cli_response.exit_code == 2

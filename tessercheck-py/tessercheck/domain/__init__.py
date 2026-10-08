@@ -9,6 +9,9 @@ from tessercheck.domain.checks import DECLARED_UNREADABLE as DECLARED_UNREADABLE
 from tessercheck.domain.checks import DECLARED_UNRECOGNIZED as DECLARED_UNRECOGNIZED
 from tessercheck.domain.checks import DEBT_FILE_MARKER as DEBT_FILE_MARKER
 from tessercheck.domain.checks import DEBT_MARKER as DEBT_MARKER
+from tessercheck.domain.checks import FixTally as FixTally
+from tessercheck.domain.checks import Fixing as Fixing
+from tessercheck.domain.checks import FixingSpec as FixingSpec
 from tessercheck.domain.checks import GOVERNANCE_GOVERNED as GOVERNANCE_GOVERNED
 from tessercheck.domain.checks import GOVERNANCE_OUTSIDE as GOVERNANCE_OUTSIDE
 from tessercheck.domain.checks import GOVERNANCE_SKIPPED as GOVERNANCE_SKIPPED

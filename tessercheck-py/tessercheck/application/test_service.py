@@ -196,6 +196,44 @@ def test_what_a_rename_reports_as_remaining_is_what_a_check_would_report_after_i
     assert any("TB085" in line and "names made for a tag_spec" in line for line in apply_renames_response.remaining), apply_renames_response.remaining
 
 
+def test_a_fix_hands_the_writer_every_module_the_fixing_rewrote() -> None:
+    fake_source_writer = FakeSourceWriter()
+    tessercheck_service = application.TessercheckService(
+        FakePreparedReader(_renameable_tree()),
+        fake_source_writer,
+        FakeRulebookSources(""),
+    )
+    fix_tree_response = tessercheck_service.fix_tree(client.FixTreeRequest(tree="."))
+    assert fix_tree_response.files == 1
+    assert len(fake_source_writer.written) == 1
+    path, text = fake_source_writer.written[0]
+    assert path == "shop/domain/test_tag.py"
+    assert "tag_spec = domain.TagSpec('a')" in text
+    assert "domain.Tag(tag_spec) is not None" in text
+
+
+def test_what_a_fix_reports_is_judged_against_the_tree_it_reads_back() -> None:
+    fake_scripted_reader = FakeScriptedReader(_renameable_tree(), _renameable_tree())
+    tessercheck_service = application.TessercheckService(
+        fake_scripted_reader, FakeSourceWriter(), FakeRulebookSources("")
+    )
+    fix_tree_response = tessercheck_service.fix_tree(client.FixTreeRequest(tree="."))
+    assert fake_scripted_reader.reads == 2
+    assert fix_tree_response.fixed == ()
+    assert any("TB085" in line and "names made for a tag_spec" in line for line in fix_tree_response.remaining), fix_tree_response.remaining
+
+
+def test_a_fix_of_a_tree_with_nothing_to_fix_writes_nothing() -> None:
+    fake_source_writer = FakeSourceWriter()
+    tessercheck_service = application.TessercheckService(
+        FakePreparedReader(_tree_of()), fake_source_writer, FakeRulebookSources("")
+    )
+    fix_tree_response = tessercheck_service.fix_tree(client.FixTreeRequest(tree="."))
+    assert fake_source_writer.written == []
+    assert fix_tree_response.files == 0
+    assert fix_tree_response.fixed == ()
+
+
 def test_a_mark_hands_the_writer_the_line_the_finding_names() -> None:
     fake_source_writer = FakeSourceWriter()
     tessercheck_service = application.TessercheckService(

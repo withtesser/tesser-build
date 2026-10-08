@@ -16105,3 +16105,184 @@ class Codebase(ts.AggregateRoot):
                         ))
                     )
         return tuple(kept)
+
+
+FIX_PASSES: typing.Final[int] = 8
+
+FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB085"})
+
+
+class FindingSpec(ts.Spec):
+
+    def __init__(self, path: str, line: int, code: str, message: str) -> None:
+        self.path = path
+        self.line = line
+        self.code = code
+        self.message = message
+
+
+class Finding(ts.ValueObject):
+
+    _path: Path
+    _line: Line
+    _code: Code
+    _text: Text
+
+    def __init__(self, spec: FindingSpec) -> None:
+        object.__setattr__(self, "_path", Path(spec.path))
+        object.__setattr__(self, "_line", Line(spec.line))
+        object.__setattr__(self, "_code", Code(spec.code))
+        object.__setattr__(self, "_text", Text(spec.message))
+
+    def path(self) -> Path:
+        return self._path
+
+    def line(self) -> Line:
+        return self._line
+
+    def code(self) -> Code:
+        return self._code
+
+    def text(self) -> Text:
+        return self._text
+
+
+class FixTallySpec(ts.Spec):
+
+    def __init__(
+        self,
+        cleared: tuple[tuple[str, int, str, str], ...],
+        remaining: tuple[tuple[str, int, str, str], ...],
+    ) -> None:
+        self.cleared = cleared
+        self.remaining = remaining
+
+
+class FixTally(ts.ValueObject):
+
+    _cleared: tuple[Finding, ...]
+    _remaining: tuple[Finding, ...]
+
+    def __init__(self, spec: FixTallySpec) -> None:
+        object.__setattr__(self, "_cleared", tuple(
+            Finding(FindingSpec(path, line, code, message)) for path, line, code, message in spec.cleared
+        ))
+        object.__setattr__(self, "_remaining", tuple(
+            Finding(FindingSpec(path, line, code, message)) for path, line, code, message in spec.remaining
+        ))
+
+    def cleared(self) -> tuple[Finding, ...]:
+        return self._cleared
+
+    def remaining(self) -> tuple[Finding, ...]:
+        return self._remaining
+
+
+class FixingSpec(ts.Spec):
+
+    def __init__(
+        self,
+        sources: tuple[tuple[str, str, str | None, bool], ...],
+        declared: str,
+        nested: tuple[str, ...],
+        symlinked: tuple[str, ...],
+        exports: tuple[str, ...] = (),
+        imports: tuple[str, ...] = (),
+        stdlib: tuple[str, ...] = (),
+        pure_stdlib: tuple[str, ...] = (),
+        pruned: tuple[str, ...] = (),
+        passes: int = FIX_PASSES,
+    ) -> None:
+        self.sources = sources
+        self.declared = declared
+        self.nested = nested
+        self.symlinked = symlinked
+        self.exports = exports
+        self.imports = imports
+        self.stdlib = stdlib
+        self.pure_stdlib = pure_stdlib
+        self.pruned = pruned
+        self.passes = passes
+
+
+class Fixing(ts.ValueObject):
+
+    _found: tuple[Violation, ...]
+    _rewritten: tuple[RewrittenModule, ...]
+
+    def __init__(self, spec: FixingSpec) -> None:
+        read = {path: source for path, _, source, _ in spec.sources}
+        held = dict(read)
+        found: tuple[Violation, ...] | None = None
+        for _ in range(spec.passes):
+            codebase = Codebase(CodebaseSpec(
+                sources=tuple(
+                    (path, name, held[path], is_package)
+                    for path, name, _, is_package in spec.sources
+                ),
+                declared=spec.declared,
+                nested=spec.nested,
+                symlinked=spec.symlinked,
+                exports=spec.exports,
+                imports=spec.imports,
+                stdlib=spec.stdlib,
+                pure_stdlib=spec.pure_stdlib,
+                pruned=spec.pruned,
+            ))
+            violations = codebase.violations()
+            if found is None:
+                found = violations
+            renames: dict[str, list[tuple[int, str, str]]] = {}
+            for violation in violations:
+                rename = violation.rename()
+                if rename is None or str(violation.code()) not in FIXED_RENAMES:
+                    continue
+                renames.setdefault(str(violation.path()), []).append(
+                    (int(violation.line()), str(rename.actual()), str(rename.derived()))
+                )
+            changed = False
+            for path in sorted(renames):
+                text = held.get(path)
+                if text is None:
+                    continue
+                revised = str(Rewrite(RewriteSpec(text=text, renames=tuple(renames[path]))))
+                if revised == text:
+                    continue
+                try:
+                    ast.parse(revised)
+                except SyntaxError:
+                    continue
+                held[path] = revised
+                changed = True
+            if not changed:
+                break
+        object.__setattr__(self, "_found", found or ())
+        object.__setattr__(self, "_rewritten", tuple(
+            RewrittenModule(RewrittenModuleSpec(path, text))
+            for path, text in sorted(held.items())
+            if text is not None and text != read[path]
+        ))
+
+    def rewritten(self) -> tuple[RewrittenModule, ...]:
+        return self._rewritten
+
+    def tally(self, codebase: Codebase) -> FixTally:
+        remaining = codebase.violations()
+        left: dict[tuple[str, str, str], int] = {}
+        for violation in remaining:
+            key = (str(violation.path()), str(violation.code()), str(violation.text()))
+            left[key] = left.get(key, 0) + 1
+        cleared: list[tuple[str, int, str, str]] = []
+        for violation in self._found:
+            key = (str(violation.path()), str(violation.code()), str(violation.text()))
+            if left.get(key, 0):
+                left[key] -= 1
+                continue
+            cleared.append((key[0], int(violation.line()), key[1], key[2]))
+        return FixTally(FixTallySpec(
+            cleared=tuple(cleared),
+            remaining=tuple(
+                (str(violation.path()), int(violation.line()), str(violation.code()), str(violation.text()))
+                for violation in remaining
+            ),
+        ))

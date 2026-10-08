@@ -13,6 +13,7 @@ class FakeCheckClient(client.TessercheckClient):
     def __init__(self, *findings: str) -> None:
         self.findings = findings
         self.roots: list[str] = []
+        self.fixes: list[str] = []
 
     def check_tree(self, check_tree_request: client.CheckTreeRequest) -> client.CheckTreeResponse:
         self.roots.append(check_tree_request.tree)
@@ -36,6 +37,12 @@ class FakeCheckClient(client.TessercheckClient):
         self.roots.append(apply_renames_request.tree)
         return client.ApplyRenamesResponse(files=0, remaining=self.findings)
 
+    def fix_tree(self, fix_tree_request: client.FixTreeRequest) -> client.FixTreeResponse:
+        self.fixes.append(fix_tree_request.tree)
+        return client.FixTreeResponse(
+            files=1, fixed=("a.py:3: TB085 a.f names made for a tag",), remaining=self.findings
+        )
+
     def render_rulebook(self, render_rulebook_request: client.RenderRulebookRequest) -> client.RenderRulebookResponse:
         self.roots.append(render_rulebook_request.tree)
         return client.RenderRulebookResponse(rendered="| rendered |")
@@ -57,6 +64,9 @@ class FakeRulebookNotRenderedClient(client.TessercheckClient):
         raise client.RulebookNotRendered("rulebook_unreadable", "checks.py cannot be read")
 
     def apply_renames(self, apply_renames_request: client.ApplyRenamesRequest) -> client.ApplyRenamesResponse:
+        raise client.RulebookNotRendered("rulebook_unreadable", "checks.py cannot be read")
+
+    def fix_tree(self, fix_tree_request: client.FixTreeRequest) -> client.FixTreeResponse:
         raise client.RulebookNotRendered("rulebook_unreadable", "checks.py cannot be read")
 
     def render_rulebook(self, render_rulebook_request: client.RenderRulebookRequest) -> client.RenderRulebookResponse:
@@ -100,6 +110,61 @@ def test_an_extra_argument_is_a_usage_error() -> None:
     with pytest.raises(protocol.UsageError):
         handlers.Handler(fake_check_client).check(protocol.CliRequest(("tree", "surplus")))
     assert fake_check_client.roots == []
+
+
+def test_a_check_without_the_fix_flag_never_reaches_the_fix() -> None:
+    fake_check_client = FakeCheckClient("a.py:1: TB040 one")
+    handlers.Handler(fake_check_client).check(protocol.CliRequest(("tree",)))
+    assert fake_check_client.fixes == []
+    assert fake_check_client.roots == ["tree"]
+
+
+def test_the_fix_flag_sends_the_tree_to_the_fix_and_not_to_the_check() -> None:
+    fake_check_client = FakeCheckClient()
+    handlers.Handler(fake_check_client).check(protocol.CliRequest(("--fix", "some/tree")))
+    assert fake_check_client.fixes == ["some/tree"]
+    assert fake_check_client.roots == []
+
+
+def test_the_fix_flag_may_follow_the_tree() -> None:
+    fake_check_client = FakeCheckClient()
+    handlers.Handler(fake_check_client).check(protocol.CliRequest(("some/tree", "--fix")))
+    assert fake_check_client.fixes == ["some/tree"]
+
+
+def test_the_fix_flag_alone_fixes_the_working_directory() -> None:
+    fake_check_client = FakeCheckClient()
+    handlers.Handler(fake_check_client).check(protocol.CliRequest(("--fix",)))
+    assert fake_check_client.fixes == ["."]
+
+
+def test_a_fix_that_leaves_nothing_reports_what_it_fixed_and_exits_zero() -> None:
+    cli_response = handlers.Handler(FakeCheckClient()).check(protocol.CliRequest(("--fix", "tree")))
+    assert cli_response.exit_code == 0
+    assert cli_response.stdout == (
+        "fixed 1 finding(s), rewriting 1 file(s)\n"
+        "fixed: a.py:3: TB085 a.f names made for a tag"
+    )
+    assert cli_response.stderr == ""
+
+
+def test_what_a_fix_leaves_becomes_finding_lines_and_a_failing_exit_code() -> None:
+    fake_check_client = FakeCheckClient("b.py:2: TB071 two")
+    cli_response = handlers.Handler(fake_check_client).check(protocol.CliRequest(("--fix", "tree")))
+    assert cli_response.exit_code == 1
+    assert cli_response.stdout == (
+        "fixed 1 finding(s), rewriting 1 file(s)\n"
+        "fixed: a.py:3: TB085 a.f names made for a tag\n"
+        "1 finding(s) remain:\n"
+        "b.py:2: TB071 two"
+    )
+
+
+def test_an_extra_argument_beside_the_fix_flag_is_a_usage_error() -> None:
+    fake_check_client = FakeCheckClient()
+    with pytest.raises(protocol.UsageError):
+        handlers.Handler(fake_check_client).check(protocol.CliRequest(("--fix", "tree", "surplus")))
+    assert fake_check_client.fixes == []
 
 
 def test_the_tree_argument_reaches_the_client_on_a_mark() -> None:

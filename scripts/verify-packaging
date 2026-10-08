@@ -129,6 +129,33 @@ if ! grep -q 'tag_spec = domain.TagSpec' "$RENAMEABLE/mod/domain/test_tag.py"; t
   exit 1
 fi
 
+# --fix must rewrite the tree in one run and leave it green: the renameable
+# tree has a repairable local and nothing else, so a fix that only starts, or
+# one that reports a fix it did not write, fails here.
+step "tessercheck-check --fix repairs the tree in one run"
+FIXABLE="$VENV/fixable"
+cp -R "$RENAMEABLE" "$FIXABLE" || exit 1
+cat > "$FIXABLE/mod/domain/test_tag.py" <<'TEST'
+import mod.domain as domain
+def test_a_tag_is_built_from_its_spec() -> None:
+    made = domain.TagSpec("a")
+    assert domain.Tag(made) is not None
+TEST
+(cd "$VENV" && "$VENV/venv/bin/tessercheck-check" --fix "$FIXABLE" >/dev/null 2>&1)
+if [ $? -ne 0 ]; then
+  echo "tessercheck-check --fix exited non-zero on a tree it can fix completely" >&2
+  exit 1
+fi
+if ! grep -q 'tag_spec = domain.TagSpec' "$FIXABLE/mod/domain/test_tag.py"; then
+  echo "tessercheck-check --fix did not repair a local the analyzer can name" >&2
+  exit 1
+fi
+(cd "$VENV" && "$VENV/venv/bin/tessercheck-check" "$FIXABLE" >/dev/null 2>&1)
+if [ $? -ne 0 ]; then
+  echo "a tree tessercheck-check --fix fixed did not come back green" >&2
+  exit 1
+fi
+
 # The marker writer must actually write the marker, and the tree it marked has
 # to come back green — a command that starts, or one that writes a marker the
 # analyzer then reports as suppressing nothing, both pass a weaker gate.

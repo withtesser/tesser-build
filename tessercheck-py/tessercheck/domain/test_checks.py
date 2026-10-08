@@ -22913,3 +22913,167 @@ def test_a_relays_constant_is_assigned_once() -> None:
         "is assigned once, because the analyzer reads one value and Python keeps the last" in f
         for f in findings
     ), findings
+
+
+@ts.assembly
+def _fixing_spec(
+    sources: tuple[tuple[str, str, str | None, bool], ...] = (),
+    declared: str = "app",
+    passes: int = 8,
+    base: tuple[tuple[str, str, str | None, bool], ...] = (
+        ("mod/__init__.py", "mod", "", True),
+        (
+            "mod/domain/__init__.py",
+            "mod.domain",
+            "from mod.domain.tag import Tag as Tag\n"
+            "from mod.domain.tag import TagSpec as TagSpec\n",
+            True,
+        ),
+        (
+            "mod/domain/tag.py",
+            "mod.domain.tag",
+            "import tesser.domain as ts\n"
+            "class TagSpec(ts.Spec):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        self.text = text\n"
+            "class Tag(ts.ValueObject):\n"
+            "    def __init__(self, spec: TagSpec) -> None:\n"
+            "        object.__setattr__(self, '_text', spec.text)\n",
+            False,
+        ),
+    ),
+) -> domain.FixingSpec:
+    return domain.FixingSpec(
+        sources=base + sources, declared=declared, nested=(), symlinked=(), passes=passes
+    )
+
+
+def test_a_fixing_renames_every_local_a_finding_names_in_its_own_function() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "class TestTag:\n"
+            "    async def test_one(self) -> None:\n"
+            "        made = domain.TagSpec('a')\n"
+            "        assert domain.Tag(made) is not None\n"
+            "    async def test_two(self) -> None:\n"
+            "        made = domain.TagSpec('b')\n"
+            "        assert made.text == 'made'\n",
+            False,
+        ),
+    )))
+    rewritten = fixing.rewritten()
+    assert [str(module.path()) for module in rewritten] == ["mod/domain/test_tag.py"]
+    assert str(rewritten[0].text()) == (
+        "import mod.domain as domain\n"
+        "class TestTag:\n"
+        "    async def test_one(self) -> None:\n"
+        "        tag_spec = domain.TagSpec('a')\n"
+        "        assert domain.Tag(tag_spec) is not None\n"
+        "    async def test_two(self) -> None:\n"
+        "        tag_spec = domain.TagSpec('b')\n"
+        "        assert tag_spec.text == 'made'\n"
+    )
+
+
+def test_a_fixing_settles_a_rename_that_waits_on_another_in_a_later_pass() -> None:
+    sources = (
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_two_names_settle_in_turn() -> None:\n"
+            "    first = domain.TagSpec('a')\n"
+            "    tag_spec = domain.Tag(first)\n"
+            "    assert tag_spec is not None\n",
+            False,
+        ),
+    )
+    settled = domain.Fixing(_fixing_spec(sources=sources)).rewritten()
+    assert "    tag_spec = domain.TagSpec('a')\n    tag = domain.Tag(tag_spec)\n" in str(settled[0].text())
+    one_pass = domain.Fixing(_fixing_spec(sources=sources, passes=1)).rewritten()
+    assert "    first = domain.TagSpec('a')\n    tag = domain.Tag(first)\n" in str(one_pass[0].text())
+
+
+def test_a_fixing_never_renames_a_parameter_because_a_caller_names_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_parameter_keeps_its_name(made: domain.TagSpec) -> None:\n"
+            "    assert made.text == 'a'\n",
+            False,
+        ),
+    )))
+    assert fixing.rewritten() == ()
+
+
+def test_a_fixing_of_an_undeclared_tree_rewrites_nothing() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        declared="missing",
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_one() -> None:\n"
+                "    made = domain.TagSpec('a')\n"
+                "    assert made is not None\n",
+                False,
+            ),
+        ),
+    ))
+    assert fixing.rewritten() == ()
+
+
+def test_a_tally_names_what_the_fix_cleared_and_what_a_check_still_finds() -> None:
+    fixing_spec = _fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_one() -> None:\n"
+            "    made = domain.TagSpec('a')\n"
+            "    assert domain.Tag(made) is not None\n"
+            "def test_two(made: domain.TagSpec) -> None:\n"
+            "    assert made is not None\n",
+            False,
+        ),
+    ))
+    fixing = domain.Fixing(fixing_spec)
+    fixed_text = str(fixing.rewritten()[0].text())
+    fix_tally = fixing.tally(domain.Codebase(_spec(
+        base=(),
+        sources=(
+            ("mod/__init__.py", "mod", "", True),
+            (
+                "mod/domain/__init__.py",
+                "mod.domain",
+                "from mod.domain.tag import Tag as Tag\n"
+                "from mod.domain.tag import TagSpec as TagSpec\n",
+                True,
+            ),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+            ("mod/domain/test_tag.py", "mod.domain.test_tag", fixed_text, False),
+        ),
+    )))
+    cleared = [f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}" for v in fix_tally.cleared()]
+    remaining = [f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}" for v in fix_tally.remaining()]
+    assert len(cleared) == 1
+    assert cleared[0].startswith("mod/domain/test_tag.py:3: TB085 mod.domain.test_tag.test_one names made for a tag_spec;")
+    assert len(remaining) == 1
+    assert remaining[0].startswith("mod/domain/test_tag.py:5: TB085 mod.domain.test_tag.test_two names made for a tag_spec;")
