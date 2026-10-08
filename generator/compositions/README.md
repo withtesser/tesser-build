@@ -563,7 +563,32 @@ package, so two ports declaring one name is a problem.
 A port whose operations name the aggregate is a **store**: it has exactly one
 save (request `[<aggregate>]`, response `[]`) and one load (request
 `[<identity>]`, response `[<aggregate>]`), its name ends in `Repository`, and
-its store is the same name ending in `Store`.
+its store is the same name ending in `Store`. It may also have any number of
+**lists**: a list answers one field typed `<Aggregate>[]` and takes either
+nothing, for every aggregate stored, or fields of the aggregate's spec, each
+matched by equality:
+
+```toml
+[ports.LoanRepository]
+operations.save_loan = { request = ["loan"], response = [] }
+operations.load_loan = { request = ["loan_id"], response = ["loan"] }
+operations.list_loans = { request = [], response = ["loans: Loan[]"] }
+operations.list_loans_by_borrower = { request = ["borrower"], response = ["loans: Loan[]"] }
+
+[client.operations.list_loans]                       # GET /loans
+request = []
+response = ["loans"]                                 # typed by its step: Loan[], every field
+steps = ["repository.list_loans"]
+
+[client.operations.list_borrowed]                    # GET /borrowers/{borrower}/loans
+request = ["borrower"]
+response = ["loans: LoanView[]"]                     # or a shape holding some of the fields
+steps = ["repository.list_loans_by_borrower"]
+```
+
+The memory store, an agent-owned store's stub, and the service test's fake all
+answer a list from what is saved, in the order it was first saved, and the HTTP
+route answers it as a JSON list.
 
 `serves = [...]` is allowed on any table and read by no one yet.
 

@@ -1008,6 +1008,94 @@ class TestRenderingCompositions:
             tmp_path / "out" / "loans" / "client" / "client.py").read_text()
         assert typed.returncode == 0, typed.stdout
 
+    def test_a_store_lists_every_aggregate_or_those_matching_its_request_and_a_route_answers_them(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [("", (
+                "\n[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\n"
+                "given = \"I have created loans with POST /loans\"\nwhen = \"I GET /loans\"\n"
+                "then = \"I get back 200 with the loans, each with its loan_id, borrower and title\"\nroute = \"GET /loans\"\nstatus = 200\n"
+                "\n[[jtbds.stories.jtbds]]\nid = \"j-1-d\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-d-1\"\n"
+                "given = \"I have created loans with POST /loans\"\nwhen = \"I GET /borrowers/{borrower}/loans\"\n"
+                "then = \"I get back 200 with the borrower's loans, each with its loan_id and title\"\n"
+                "route = \"GET /borrowers/{borrower}/loans\"\nstatus = 200\n"
+            ))],
+            "composition.toml": [
+                ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1", "s-1-d-1"]'),
+                ("[ports.NoticeSender]", (
+                    "[client.operations.list_loans]\nrequest = []\nresponse = [\"loans\"]\nsteps = [\"repository.list_loans\"]\n"
+                    "serves = [\"s-1-c-1\"]\n\n[client.operations.list_borrowed]\nrequest = [\"borrower\"]\n"
+                    "response = [\"loans: LoanView[]\"]\nsteps = [\"repository.list_loans_by_borrower\"]\nserves = [\"s-1-d-1\"]\n\n"
+                    "[shapes.LoanView]\nloan_id = \"str\"\ntitle = \"str\"\n\n[ports.NoticeSender]"
+                )),
+                ('operations.load_loan = { request = ["loan_id"], response = ["loan"] }', (
+                    'operations.load_loan = { request = ["loan_id"], response = ["loan"] }\n'
+                    'operations.list_loans = { request = [], response = ["loans: Loan[]"] }\n'
+                    'operations.list_loans_by_borrower = { request = ["borrower"], response = ["loans: Loan[]"] }'
+                )),
+            ],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text + new if old == "" else text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        (tmp_path / "out" / "tests" / "test_listing.py").write_text(
+            "import json\nimport urllib.request as urllib_request\n\n\nclass TestListing:\n\n"
+            "    def test_every_loan_and_each_borrower_s_loans_are_listed(self, host: str) -> None:\n"
+            "        for borrower, title in ((\"Ada\", \"Beloved\"), (\"Grace\", \"Middlemarch\")):\n"
+            "            urllib_request.urlopen(urllib_request.Request(f\"{host}/loans\", data=json.dumps({\"borrower\": borrower, \"title\": title}).encode(), "
+            "headers={\"Content-Type\": \"application/json\"}, method=\"POST\"), timeout=30)\n"
+            "        with urllib_request.urlopen(f\"{host}/loans\", timeout=30) as answer:\n"
+            "            listed = json.loads(answer.read())[\"loans\"]\n"
+            "        with urllib_request.urlopen(f\"{host}/borrowers/Grace/loans\", timeout=30) as answer:\n"
+            "            borrowed = json.loads(answer.read())[\"loans\"]\n"
+            "        assert sorted((loan[\"borrower\"], loan[\"title\"]) for loan in listed) == [(\"Ada\", \"Beloved\"), (\"Grace\", \"Middlemarch\")]\n"
+            "        assert [loan[\"title\"] for loan in borrowed] == [\"Middlemarch\"]\n"
+        )
+
+        tested = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "loans", "srv", "tests/test_listing.py", "tests/test_reading_loans.py"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert tested.returncode == 0, tested.stdout
+
+    def test_a_store_operation_that_neither_saves_loads_nor_lists_is_a_problem(self, tmp_path: pathlib.Path) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "composition.toml": [(
+                'operations.load_loan = { request = ["loan_id"], response = ["loan"] }',
+                'operations.load_loan = { request = ["loan_id"], response = ["loan"] }\n'
+                'operations.list_loans = { request = ["borrower"], response = ["loan_id"] }',
+            )],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+
+        assert render_composition_response.problems == (
+            "LoanRepository carries loan, so it is a store: one save of it that answers nothing, one load of it by loan_id, and any "
+            "number of lists that answer one \"<field>: Loan[]\" and take only fields of its spec to match",
+        )
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {

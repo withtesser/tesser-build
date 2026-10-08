@@ -1192,7 +1192,9 @@ class Model(ts.Entity):
             for operation_name, operation in port.get("operations", {}).items():
                 request = [str(listed).split(":", 1)[0].strip() for listed in operation.get("request", [])]
                 response = [str(listed).split(":", 1)[0].strip() for listed in operation.get("response", [])]
-                if self._aggregate in request + response:
+                listed_types = [str(listed).split(":", 1)[1].strip() for listed in list(operation.get("request", [])) + list(operation.get("response", []))
+                                if ":" in str(listed)]
+                if self._aggregate in request + response or self._Aggregate + "[]" in listed_types:
                     self._stores[port_name] = port_name.replace("Repository", "Store")
                 Operation = str(Word(operation_name).pascal())
                 declared.append(("ports", module, Operation + "Request", "Request", request, False, port_name, False))
@@ -1339,11 +1341,20 @@ class Model(ts.Entity):
             saves = [(op, request) for op, request, _ in operations if any(str(t.kind()) == "aggregate" for t in request.targets())]
             loads = [(op, request, response) for op, request, response in operations
                      if any(str(t.kind()) == "aggregate" for t in response.targets())]
-            if len(operations) != 2 or len(saves) != 1 or len(loads) != 1 or \
+            spec_scalars = {field for field, type_text in self._spec_fields if str(self._types.kind(type_text)) in ("scalar", "enum")}
+            lists = [(op, request, response) for op, request, response in operations
+                     if [str(t.type_text()) for t in response.targets()] == [self._Aggregate + "[]"]
+                     and all(str(t.field()) in spec_scalars and str(t.type_text()) == dict(self._spec_fields)[str(t.field())]
+                             for t in request.targets())]
+            if len(operations) != 2 + len(lists) or len(saves) != 1 or len(loads) != 1 or \
                     [str(t.field()) for t in loads[0][1].targets()] != [self._identity] or \
                     self._messages[("ports", str(Word(saves[0][0]).pascal()) + "Response")].targets():
-                raise ValueError(f"{port_name} carries {self._aggregate}, so it is a store: one save of it that answers nothing and one load of it by {self._identity}")
+                raise ValueError(f"{port_name} carries {self._aggregate}, so it is a store: one save of it that answers nothing, "
+                                 f"one load of it by {self._identity}, and any number of lists that answer one "
+                                 f"\"<field>: {self._Aggregate}[]\" and take only fields of its spec to match")
             carried = next(t for t in saves[0][1].targets() if str(t.kind()) == "aggregate")
+            aggregate_var = self._aggregate if self._aggregate not in {str(t.field()) for _, request, _ in lists for t in request.targets()} \
+                else "listed_" + self._aggregate
             self._frames[("store", port_name)] = {
                 "Port": port_name, "Store": store, "store_attr": str(Word(store).snake()),
                 "aggregates": str(Word(self._aggregate).plural()), "Record": str(carried.record()),
@@ -1351,6 +1362,16 @@ class Model(ts.Entity):
                 "load": loads[0][0], "Load": str(Word(loads[0][0]).pascal()),
                 "record_sample": ", ".join(f"{m.field()}={self._samples.value(m).literal(m)}" for m in carried.members()),
                 "identity_sample": str(self._samples.value(next(m for m in carried.members() if str(m.field()) == self._identity))),
+                "lists": [
+                    {"list": op, "List": str(Word(op).pascal()), "listed": str(response.targets()[0].field()), "var": aggregate_var,
+                     "matching": "".join(
+                         f" {'if' if index == 0 else 'and'} {aggregate_var}.{t.field()} == {op}_request.{t.field()}"
+                         for index, t in enumerate(request.targets())),
+                     "list_sample": ", ".join(
+                         f"{t.field()}={next(self._samples.value(m).literal(m) for m in carried.members() if m.field() == t.field())}"
+                         for t in request.targets())}
+                    for op, request, response in lists
+                ],
             }
 
     def bodies(self) -> None:
@@ -1478,6 +1499,14 @@ class Model(ts.Entity):
                         seeds.append({"seed": f"fake_{Word(self._stores[port_name]).snake()}.{aggregates}[{identity_value}] = "
                                               f"ports.{loaded[0].record()}({record_args})"})
                         test_name = f"{operation_name}_answers_the_{aggregate}_it_loads"
+                    elif port_name in self._stores and [str(t.type_text()) for t in port_response.targets()] == [Aggregate + "[]"]:
+                        listed = port_response.targets()[0]
+                        sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain", prefix=local + ".",
+                                                       holds=((str(listed.field()), str(self._samples.value(listed))),))))
+                        frame = self._frames[("store", port_name)]
+                        seeds.append({"seed": f"fake_{Word(self._stores[port_name]).snake()}.{aggregates}[{frame['identity_sample']}] = "
+                                              f"ports.{frame['Record']}({frame['record_sample']})"})
+                        test_name = f"{operation_name}_answers_the_{aggregates}_it_lists"
                     elif port_response.targets():
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(fakes[("ports", Step + "Response1")].values()))))
@@ -2438,14 +2467,21 @@ class Model(ts.Entity):
                 segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
                 for segment in path.split("/")
             )
+            loading = any(
+                step.split(".", 1)[1] in self._port_of and any(
+                    str(t.kind()) == "aggregate"
+                    for t in self._messages[("ports", str(Word(step.split(".", 1)[1]).pascal()) + "Response")].targets()
+                )
+                for step in steps if step.startswith("repository.")
+            )
             if body:
                 probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
                 answers.append("400")
                 probes.append({"method": method, "path": probe_path, "body": repr(json.dumps(body).encode())})
                 reaches = any(step.startswith("orchestrator.") for step in steps)
-                loads = bool(path_fields) and any(step.startswith("repository.") for step in steps)
+                loads = bool(path_fields) and loading
                 answers.append("500" if reaches or loads else str(status_code))
-            elif path_fields and any(step.startswith("repository.") for step in steps):
+            elif path_fields and loading:
                 probes.append({"method": method, "path": probe_path, "body": "None"})
                 answers.append("500")
         unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)

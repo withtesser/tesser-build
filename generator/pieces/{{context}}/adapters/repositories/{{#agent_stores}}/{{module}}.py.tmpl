@@ -20,6 +20,11 @@ class {{Repository}}(ts.Repository):
 
     async def {{load}}(self, {{load}}_request: ports.{{Load}}Request) -> ports.{{Load}}Response:
         return ports.{{Load}}Response({{aggregate}}=self._{{aggregates}}[{{load}}_request.{{identity}}])
+{{#lists}}
+
+    async def {{list}}(self, {{list}}_request: ports.{{List}}Request) -> ports.{{List}}Response:
+        return ports.{{List}}Response({{listed}}=tuple({{var}} for {{var}} in self._{{aggregates}}.values(){{matching}}))
+{{/lists}}
 
 
 class {{Store}}(ts.Repository):
