@@ -2954,7 +2954,7 @@ def test_a_read_names_only_what_the_package_exports() -> None:
         ))).violations()
     )
     assert any(
-        "mod.application.service reads domain.vo, a name mod.domain does not export; "
+        "mod.application.service reads domain.vo, a name mod.domain does not export — where a module of mod.domain defines vo, add from mod.domain.<module> import vo as vo to its __init__, otherwise read a name it already exports; "
         "a package __init__ is the list of what the outside may name, and importing "
         "a package binds its submodules on it, so the list holds only where a "
         "read is checked against it" in f
@@ -3000,7 +3000,7 @@ def test_a_sibling_test_reads_only_what_its_own_package_exports() -> None:
         ))).violations()
     )
     assert any(
-        "mod.domain.test_vo reads domain.vo, a name mod.domain does not export; "
+        "mod.domain.test_vo reads domain.vo, a name mod.domain does not export — where a module of mod.domain defines vo, add from mod.domain.<module> import vo as vo to its __init__, otherwise read a name it already exports; "
         "a package __init__ is the list of what the outside may name, and importing "
         "a package binds its submodules on it, so the list holds only where a "
         "read is checked against it" in f
@@ -17664,12 +17664,12 @@ def test_a_package_never_exports_a_class_of_its_own_name() -> None:
         ))).violations()
     )
     assert any(
-        "mod.client re-exports Client; a package never exports a class of its own "
+        "mod.client re-exports Client — rename the class or leave it out of the list; a package never exports a class of its own "
         "name, because the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings
     assert any(
-        "kernel re-exports Kernel; a package never exports a class of its own name, "
+        "kernel re-exports Kernel — rename the class or leave it out of the list; a package never exports a class of its own name, "
         "because the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings
@@ -17705,7 +17705,7 @@ def test_a_shell_package_never_exports_a_class_of_its_own_name() -> None:
         ))).violations()
     )
     assert any(
-        "app re-exports App; a package never exports a class of its own name, because "
+        "app re-exports App — rename the class or leave it out of the list; a package never exports a class of its own name, because "
         "the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings

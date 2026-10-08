@@ -9642,7 +9642,8 @@ class Module(ts.Entity):
                         self._path,
                         lineno,
                         "TB042",
-                        f"{module_name} re-exports {exported}; a package never exports a "
+                        f"{module_name} re-exports {exported} — rename the class or leave it out of the "
+                        "list; a package never exports a "
                         "class of its own name, because the name derived from the class "
                         "rebinds the package's alias",
                     ))
@@ -9835,7 +9836,8 @@ class Module(ts.Entity):
                         self._path,
                         lineno,
                         "TB042",
-                        f"{module_name} re-exports {exported}; a package never exports a "
+                        f"{module_name} re-exports {exported} — rename the class or leave it out of the "
+                        "list; a package never exports a "
                         "class of its own name, because the name derived from the class "
                         "rebinds the package's alias",
                     ))
@@ -9963,7 +9965,9 @@ class Module(ts.Entity):
                     node.lineno,
                     "TB042",
                     f"{module_name} reads {local}.{read}, a name {package} does not "
-                    "export; a package __init__ is the list of what the outside may "
+                    f"export — where a module of {package} defines {read}, add from "
+                    f"{package}.<module> import {read} as {read} to its __init__, otherwise "
+                    "read a name it already exports; a package __init__ is the list of what the outside may "
                     "name, and importing a package binds its submodules on it, so the "
                     "list holds only where a read is checked against it",
                     repair=RepairSpec("export", read, package),
