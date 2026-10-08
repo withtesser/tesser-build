@@ -1604,8 +1604,8 @@ class TestRenderingCompositions:
     def test_an_enum_value_a_language_term_defines_needs_no_story(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
-            'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["overdue_notice", "lapsed"]\n\n[aggregate.reads]')],
-            'language.toml': [('[[terms]]\nterm = "borrower"', '[[terms]]\nterm = "overdue notice"\nmeans = "The notice a borrower gets when a loan runs past its due date."\n\n[[terms]]\nterm = "borrower"')],
+            'composition.toml': [('[aggregate.reads]', '[enums]\nLoanState = ["spoken_for", "lapsed"]\n\n[aggregate.reads]')],
+            'language.toml': [('[[terms]]\nterm = "borrower"', '[[terms]]\nterm = "spoken for"\nmeans = "A tool another borrower has already asked to have next."\n\n[[terms]]\nterm = "borrower"')],
         }
         for name in ("language", "story", "infra", "composition", "implementations", "generator"):
             text = (tree / "compositions" / "library" / f"{name}.toml").read_text()
