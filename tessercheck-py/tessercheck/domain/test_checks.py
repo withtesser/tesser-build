@@ -23409,3 +23409,86 @@ def test_a_repaired_init_ends_the_last_line_once_before_two_exports() -> None:
         repairs=(("export", 1, "E", "a.b.c"), ("export", 1, "F", "a.b.c")),
     ))
     assert str(repaired) == "from a.b.d import D as D\nfrom a.b.c import E as E\nfrom a.b.c import F as F\n"
+
+
+def test_a_repaired_line_loses_a_debt_marker_that_suppresses_nothing_and_keeps_its_code() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="import os  # tesser:debt TB050\nx = 1\n",
+        repairs=(("undebt", 1, "", ""),),
+    ))
+    assert str(repaired) == "import os\nx = 1\n"
+
+
+def test_a_repaired_module_loses_the_whole_line_of_a_file_marker_that_suppresses_nothing() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="import os\n# tesser:debt-file TB040\nx = 'ü'  # tesser:debt TB050\n",
+        repairs=(("undebt", 2, "", ""), ("undebt", 3, "", "")),
+    ))
+    assert str(repaired) == "import os\nx = 'ü'\n"
+
+
+def test_a_repaired_line_keeps_a_marker_spelled_inside_a_string() -> None:
+    text = "x = '# tesser:debt TB050'\n"
+    repaired = domain.Repaired(domain.RepairedSpec(text=text, repairs=(("undebt", 1, "", ""),)))
+    assert str(repaired) == text
+
+
+def test_a_fixing_drops_a_stale_marker_and_keeps_one_that_suppresses_or_is_malformed() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_tag_is_built_from_its_spec() -> None:\n"
+            "    tag_spec = domain.TagSpec('a')  # tesser:debt TB085\n"
+            "    made = domain.Tag(tag_spec)  # tesser:debt TB085\n"
+            "    assert made is not None  # tesser:debt TB85\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["mod/domain/test_tag.py"] == (
+        "import mod.domain as domain\n"
+        "def test_a_tag_is_built_from_its_spec() -> None:\n"
+        "    tag_spec = domain.TagSpec('a')\n"
+        "    made = domain.Tag(tag_spec)  # tesser:debt TB085\n"
+        "    assert made is not None  # tesser:debt TB85\n"
+    )
+
+
+def test_a_fixing_drops_a_marker_an_earlier_pass_of_the_same_run_left_stale() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_excused() -> None:\n"
+                "    tag_spec = domain.TagSpec('a')\n"
+                "    assert domain.Tag(tag_spec) is not None  # tesser:debt TB042\n"
+                "def test_unexcused() -> None:\n"
+                "    tag_spec = domain.TagSpec('b')\n"
+                "    assert domain.Tag(tag_spec) is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "from mod.domain.tag import Tag as Tag\n" in rewritten["mod/domain/__init__.py"]
+    assert "tesser:debt" not in rewritten["mod/domain/test_tag.py"]

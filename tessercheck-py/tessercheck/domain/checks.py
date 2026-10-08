@@ -16143,6 +16143,7 @@ class Codebase(ts.AggregateRoot):
                             "TB090",
                             f"{module.name()} carries a debt marker that suppresses nothing; "
                             "a debt marker suppresses an actual finding",
+                            repair=RepairSpec("undebt") if str(debt._form) == "parsed" else None,
                         ))
                     )
         return tuple(kept)
@@ -16357,7 +16358,7 @@ class Fixing(ts.ValueObject):
         ))
 
 
-REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export")
+REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export", "undebt")
 
 
 class RepairKind(ts.ValueObject):
@@ -16523,6 +16524,29 @@ class Repaired(ts.ValueObject):
             for (line, col), added in sorted(additions.items()):
                 ended = col == 0 or rows[line - 1].endswith(b"\n")
                 edits.append((line, col, line, col, ("" if ended else "\n") + "".join(added)))
+        debts = {line for kind, line, _, _ in spec.repairs if kind == "undebt"}
+        try:
+            tokens = list(tokenize.generate_tokens(io.StringIO(spec.text).readline)) if debts else []
+        except (tokenize.TokenError, IndentationError):
+            tokens = []
+        for token in tokens:
+            if token.type != tokenize.COMMENT or token.start[0] not in debts:
+                continue
+            if not token.string.lstrip("#").strip().startswith(DEBT_MARKER):
+                continue
+            line = token.start[0]
+            decoded = rows[line - 1].decode("utf-8")
+            prefix = decoded[: token.start[1]]
+            if not prefix.strip():
+                edits.append((line, 0, line, len(rows[line - 1]), ""))
+                continue
+            edits.append((
+                line,
+                len(prefix.rstrip().encode("utf-8")),
+                line,
+                len(decoded[: token.end[1]].encode("utf-8")),
+                "",
+            ))
         held = list(rows)
         floor: tuple[int, int] | None = None
         for start_line, start_col, end_line, end_col, written in sorted(set(edits), reverse=True):
