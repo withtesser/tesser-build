@@ -9318,8 +9318,9 @@ class Module(ts.Entity):
                                 inner.lineno,
                                 "TB051",
                                 f"{module_name}.{node.name}.{member.name} reaches sibling "
-                                f"{sibling}; a method is for outsiders — a class reaches "
-                                "into itself only for direct recursion",
+                                f"{sibling} — inline what {sibling} does here, or move it "
+                                "onto the object it works on; a method is for outsiders — "
+                                "a class reaches into itself only for direct recursion",
                             ))
                         )
         return tuple(found)

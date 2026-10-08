@@ -3312,7 +3312,7 @@ def test_sibling_reference_scoping_and_spoof_resistance() -> None:
     sibling = [f for f in findings if "reaches sibling" in f]
     assert not any("Scoped.outer" in f for f in sibling)
     assert any(
-        "plain.domain.y.Inner.go reaches sibling pick; a method is for outsiders "
+        "plain.domain.y.Inner.go reaches sibling pick — inline what pick does here, or move it onto the object it works on; a method is for outsiders "
         "— a class reaches into itself only for direct recursion" in f
         for f in sibling
     )
@@ -11004,12 +11004,12 @@ def test_a_sibling_method_reference_is_flagged_in_every_module_kind() -> None:
         ))).violations()
                )
     assert any(
-        "plain.domain.thing.Thing.shout reaches sibling spoken; a method is for "
+        "plain.domain.thing.Thing.shout reaches sibling spoken — inline what spoken does here, or move it onto the object it works on; a method is for "
         "outsiders — a class reaches into itself only for direct recursion" in f
         for f in findings
     )
     assert any(
-        "plain.domain.test_thing.FakeThing.poke reaches sibling prod; a method is for "
+        "plain.domain.test_thing.FakeThing.poke reaches sibling prod — inline what prod does here, or move it onto the object it works on; a method is for "
         "outsiders — a class reaches into itself only for direct recursion" in f
         for f in findings
     )
