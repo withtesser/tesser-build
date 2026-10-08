@@ -64,8 +64,8 @@ Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
 `mypy --strict`, and a plain `pytest` from its root, which starts the host the
 tests take and, when `infra.toml` declares an engine, the engines (Docker
-required); it passes when every failure is a root-test skeleton red at its
-placeholder. `library/` is the small worked example, and `library-direct/` is
+required); it passes when every failure is a root test's status assertion (the
+served host answered another status). `library/` is the small worked example, and `library-direct/` is
 the same app with no engine: its service calls the ports itself.
 
 ## Which file answers which question
@@ -182,7 +182,7 @@ A level-2 story's `given` is prose: it says in words how the story is reached
 calls; the root test's author does. A story with a `reached_by` key is a
 problem, because the key is no longer part of the format.
 
-**Root test skeletons.** For each level-2 story with a route, the renderer
+**Root tests.** For each level-2 story with a route, the renderer
 writes an agent-owned `tests/test_<words>.py`, named for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
 replacing, `PATCH` updating, `DELETE` deleting), then each segment of the path
 in order, a literal segment as it is and a `{field}` segment as `by_<field>`,
@@ -190,15 +190,16 @@ so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
 `GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds_by_jtbd_id.py` (so `GET
 /jtbds` and `GET /jtbds/{jtbd_id}` are two files). It takes the served host's
 address as the `host` fixture (`def test_<story>(self, host: str)`), calls the
-story's route on it, and asserts its `status`, and holds two placeholders. The first is the given: an assertion whose
-message is the story's `given`, verbatim, with a `<field>: <type> | None = None`
-line above it for each `{field}` the route's path carries; the author writes how
-the host reaches the given (which calls, any waiting) and binds those values in
-its place. A route with no path value has nothing to bind, and the placeholder
-is `assert False, ...`. The second is the then: an assertion whose message is
-the story's `then`, verbatim. So a freshly rendered tree is red at the first
-unwritten placeholder, then at the then, and rendering again keeps the edited
-test.
+story's route on it, and asserts its `status`, with the story's id, `given`,
+and `then`, verbatim, as the assertion's message. It carries only what the
+story and the composition say and nothing that fails on purpose: each
+`{field}` the route's path carries is a `<field>: <type> = <sample>` line bound
+to `generator.toml`'s first sample, and a body carries the samples of the
+operation's request. The author writes how the host reaches the given (which
+calls, any waiting) and what the then asserts. So in a freshly rendered tree a
+story whose given has to be set up first (a read of something created) answers
+another status until its given is written, and rendering again keeps the
+edited test.
 
 Beside the skeletons the renderer writes an empty generated
 `tests/__init__.py`, and the rendered root `conftest.py` holds the session
@@ -636,5 +637,5 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
 7. Render into a fresh directory and run the gate on it (the tests start
    their own host, and engines when there is an engine, and give every storage
    a fresh location); then
-   write each root test's given and then where its skeleton's placeholders
-   stand.
+   write each root test's given before its call and its then after its
+   status assertion.

@@ -79,7 +79,7 @@ class TestRenderHost:
         env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)}
         subprocess.run(render, capture_output=True, text=True, check=True, env=env)
         skeleton = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
-        written = skeleton.read_text().replace("assert False, ", "assert True, ")
+        written = skeleton.read_text().replace('loan_id: str = "loan-1"', 'loan_id: str = "loan-2"')
         skeleton.write_text(written)
 
         completed = subprocess.run(render, capture_output=True, text=True, check=False, env=env)

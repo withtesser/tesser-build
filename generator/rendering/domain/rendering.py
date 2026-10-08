@@ -2377,6 +2377,8 @@ class Model(ts.Entity):
                 "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
                 "body": repr(json.dumps(body).encode()) if body else "None",
                 "path_types": {str(t.field()): str(t.type_text()) for t in request.targets() if str(t.field()) in path_fields},
+                "path_samples": {str(t.field()): str(self._samples.value(t).literal(t)) for t in request.targets()
+                                 if str(t.field()) in path_fields},
             }
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
@@ -2413,18 +2415,16 @@ class Model(ts.Entity):
             call = answered_by[str(story["route"])]
             method, path = str(call["method"]), str(call["path"])
             path_types = typing.cast(dict[str, str], call["path_types"])
+            path_samples = typing.cast(dict[str, str], call["path_samples"])
             words = "_".join([GERUNDS[method]] + [
                 "by_" + segment[1:-1] if PATH_FIELD.fullmatch(segment) else segment.replace("-", "_")
                 for segment in path.strip("/").split("/")
             ])
-            given = repr(f"write the given of {story_id}: {story.get('given', '')}")
             root_tests.append({
                 "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
-                "method": method, "path": path, "body": call["body"],
-                "status": str(story["status"]), "given": given,
-                "path_values": [{"name": name, "type": kind} for name, kind in path_types.items()],
-                "given_check": " and ".join(f"{name} is not None" for name in path_types) or "False",
-                "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
+                "method": method, "path": path, "body": call["body"], "status": str(story["status"]),
+                "path_values": [{"name": name, "type": kind, "sample": path_samples[name]} for name, kind in path_types.items()],
+                "story_text": repr(f"{story_id}: given {story.get('given', '')}; then {story.get('then', '')}"),
             })
         self._binding["root_tests"] = root_tests
         self._binding["root_tier"] = [{}] if root_tests else []

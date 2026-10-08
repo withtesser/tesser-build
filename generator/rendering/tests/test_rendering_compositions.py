@@ -679,7 +679,7 @@ class TestRenderingCompositions:
         assert 'self._environ.get("LOAN_DB_PATH")' in (tmp_path / "out" / "app" / "app.py").read_text()
         assert '"LOAN_DB_PATH": str(locations / "sqlite_location"),' in (tmp_path / "out" / "conftest.py").read_text()
 
-    def test_each_routed_story_renders_a_root_test_skeleton_red_at_its_given(self, tmp_path: pathlib.Path) -> None:
+    def test_each_routed_story_renders_a_root_test_that_calls_its_route_and_asserts_its_status(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
 
@@ -696,17 +696,14 @@ class TestRenderingCompositions:
         assert "    def test_s_2_a_1(self, host: str) -> None:\n" in reading
         assert "tesser.testing" not in reading
         assert "served" not in reading
-        assert "jtbd_id: str | None = None" in reading
-        assert (
-            "assert jtbd_id is not None, 'write the given of s-2-a-1: I have created a job to be done with POST /jtbds, "
-            "and its stories have been drafted'\n"
-        ) in reading
-        assert reading.index("write the given of") < reading.index('f"{host}/jtbds/{jtbd_id}", data=None,')
-        assert "assert status == 200" in reading
+        assert '        jtbd_id: str = "jtbd-1"\n' in reading
+        assert reading.index('jtbd_id: str = "jtbd-1"') < reading.index('f"{host}/jtbds/{jtbd_id}", data=None,')
         assert "reached_by" not in reading
         assert "time.sleep" not in reading
+        assert "assert False" not in reading
         assert reading.rstrip().endswith(
-            "assert False, 'write the then of s-2-a-1: I get back 200 with status \"awaiting_story_acceptance\" and a stories list holding at least one story, "
+            "assert status == 200, 's-2-a-1: given I have created a job to be done with POST /jtbds, and its stories have been drafted; "
+            "then I get back 200 with status \"awaiting_story_acceptance\" and a stories list holding at least one story, "
             "each with a given, a when, and a then, and in state \"drafted\"' + f\" (answered {answered_body!r})\""
         )
         ast.parse(reading)
@@ -738,10 +735,10 @@ class TestRenderingCompositions:
         for fixture in ("engine_url", "engine_admin_url", "engine_callback_host", "free_port"):
             assert f"\ndef {fixture}(" in conftest
         assert (tmp_path / "out" / "tests" / "__init__.py").read_text().startswith("# pragma: tesser-generated;")
-        assert "write the given of" in hosted.stdout
+        assert "Connection refused" in hosted.stdout
         assert "could not register" not in hosted.stdout
 
-    def test_a_route_with_no_path_value_fails_at_its_given_with_nothing_to_bind(self, tmp_path: pathlib.Path) -> None:
+    def test_a_route_with_no_path_value_binds_nothing_and_asserts_its_status_with_its_story(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
 
@@ -750,9 +747,14 @@ class TestRenderingCompositions:
         )
         submitting = (tmp_path / "out" / "tests" / "test_submitting_loans.py").read_text()
 
-        assert "assert False, 'write the given of s-1-a-1: a borrower and a title'\n" in submitting
-        assert "| None" not in submitting
-        assert submitting.index("write the given of") < submitting.index("urllib_request.Request(")
+        assert (
+            "    def test_s_1_a_1(self, host: str) -> None:\n        request = urllib_request.Request(\n"
+        ) in submitting
+        assert (
+            "        assert status == 201, 's-1-a-1: given a borrower and a title; then I get back 201 with its loan_id' "
+            "+ f\" (answered {answered_body!r})\"\n"
+        ) in submitting
+        assert "assert False" not in submitting
         ast.parse(submitting)
 
     def test_an_edited_root_test_skeleton_is_kept_on_render_again(self, tmp_path: pathlib.Path) -> None:
@@ -761,7 +763,7 @@ class TestRenderingCompositions:
         render_composition_request = client.RenderCompositionRequest(composition_dir=str(tree / "compositions" / "library"), out_dir=str(tmp_path / "out"), printed=())
         rendering.client.render_composition(render_composition_request)
         reading = tmp_path / "out" / "tests" / "test_reading_loans_by_loan_id.py"
-        reading.write_text(reading.read_text().replace("loan_id: str | None = None", "loan_id: str | None = 'loan-1'"))
+        reading.write_text(reading.read_text().replace('loan_id: str = "loan-1"', 'loan_id: str = "loan-2"'))
         edited = reading.read_text()
 
         render_composition_response = rendering.client.render_composition(render_composition_request)
@@ -1286,6 +1288,10 @@ class TestRenderingCompositions:
             [sys.executable, "-m", "mypy", "--strict", "app", "loans", "protocol", "srv", "tests", "conftest.py"],
             cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
         )
+        served = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+            cwd=tmp_path / "out", capture_output=True, text=True, check=False, env=env,
+        )
 
         assert render_composition_response.problems == ()
         assert tested.returncode == 0, tested.stdout
@@ -1300,6 +1306,9 @@ class TestRenderingCompositions:
         assert "loans/application/client/__init__.py" not in rendered
         assert "        await self._notice_sender.send_notice(MapToSendNoticeRequest(lend_book_request))\n" in rendered[
             "loans/application/loan_service.py"]
+        assert "1 failed, 1 passed" in served.stdout, served.stdout
+        assert "FAILED tests/test_reading_loans_by_loan_id.py::TestReadingLoansByLoanId::test_s_1_b_1" in served.stdout
+        assert "assert 500 == 200" in served.stdout
 
     def test_a_workflow_without_an_engine_is_a_problem_for_each_piece_that_needs_one(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]

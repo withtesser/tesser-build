@@ -234,11 +234,13 @@ it in a story or remove it from the composition (`compositions/README.md`).
 A render answers these as problems (exit 1, nothing written) rather than
 crashing or rendering something broken: a path naming one `{field}` twice, and a
 sample list in `generator.toml` with no values (`borrower = []`). A root test
-skeleton is named for its method and every path segment, a parameter as
+is named for its method and every path segment, a parameter as
 `by_<field>` (`GET /loans` is `test_reading_loans.py`, `GET /loans/{loan_id}` is
-`test_reading_loans_by_loan_id.py`), and holds two placeholders the agent
-writes: the story's given (how the host reaches it, and any path value the
-route needs) and its then. It takes the served host's address as the `host`
+`test_reading_loans_by_loan_id.py`). It calls the story's route with the
+samples of `generator.toml` (a path value bound to its field's first sample)
+and asserts the story's status, with the story's given and then as the
+assertion's message, and holds nothing that fails on purpose: the agent writes
+how the host reaches the given and what the then asserts. It takes the served host's address as the `host`
 fixture, which the rendered root `conftest.py` answers: it serves
 `srv.http.main` (on a private engine of its own when there is an engine), or answers pytest's `--host`
 option (`pytest tests --host <url>`) when a runner already serves one. A story file with `reached_by` is a problem: the
@@ -265,5 +267,6 @@ reads (`load()` passes `os.environ`), so its test hands it a dict.
 Every composition in `compositions/` is gated: `scripts/verify
 generator` renders each one and runs the rendered tree's tessercheck,
 `mypy --strict`, and a plain `pytest` (Docker required when there is an
-engine), passing when every failure is a root-test skeleton red at its
-placeholder.
+engine), passing when every failure is a root test's status assertion (the
+served host answered another status, as a read of something its given has not
+created yet does).
