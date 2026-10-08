@@ -2296,8 +2296,10 @@ class RegistrySpec(ts.Spec):
         dispatched: tuple[str, ...] = (),
         relay_constants: tuple[tuple[str, str, str], ...] = (),
         constructors: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (),
+        answer_texts: tuple[str, ...] = (),
     ) -> None:
         self.constructors = constructors
+        self.answer_texts = answer_texts
         self.registrations = registrations
         self.dispatched = dispatched
         self.relay_constants = relay_constants
@@ -2361,9 +2363,11 @@ class Registry(ts.ValueObject):
     _dispatched: NameRows
     _relay_constants: ConstantRows
     _constructors: ConstructorRows
+    _answer_texts: NameRows
 
     def __init__(self, spec: RegistrySpec) -> None:
         object.__setattr__(self, "_constructors", ConstructorRows(spec.constructors))
+        object.__setattr__(self, "_answer_texts", NameRows(spec.answer_texts))
         object.__setattr__(self, "_registrations", RegistrationRows(spec.registrations))
         object.__setattr__(self, "_dispatched", NameRows(spec.dispatched))
         object.__setattr__(self, "_relay_constants", ConstantRows(spec.relay_constants))
@@ -2483,6 +2487,9 @@ class Registry(ts.ValueObject):
 
     def constructors(self) -> ConstructorRows:
         return self._constructors
+
+    def answer_texts(self) -> Names:
+        return self._answer_texts.names()
 
     def action_ports(self) -> Symbols:
         return self._action_ports.symbols()
@@ -10405,6 +10412,8 @@ class Module(ts.Entity):
         tops = frozenset(registry.tops())
         scope = self._scope
         attr_rows = registry.attrs()
+        symbols = registry.enums()
+        names = registry.answer_texts()
         functions: list[
             tuple[ast.FunctionDef | ast.AsyncFunctionDef, str | None, Symbol | None]
         ] = [
@@ -10596,6 +10605,34 @@ class Module(ts.Entity):
                         "because a name the analyzer cannot check is a name it is not "
                         "checking",
                         rename=(actual, derived) if local else None,
+                    ))
+                )
+            for node in ast.walk(fn):
+                if (
+                    not isinstance(node, ast.Call)
+                    or len(node.args) != 1
+                    or node.keywords
+                    or not isinstance(node.args[0], ast.Attribute)
+                    or not isinstance(node.args[0].value, ast.Name)
+                ):
+                    continue
+                built_enum = scope.resolve(Text(ast.unparse(node.func)))
+                carrier = typed.get(node.args[0].value.id)
+                if built_enum is None or carrier is None or built_enum not in symbols:
+                    continue
+                carried = node.args[0].attr
+                if f"{carrier.module()}|{carrier.name()}|{carried}" not in names:
+                    continue
+                where = f"{module_name}.{owner.name()}.{fn.name}" if owner is not None else f"{module_name}.{fn.name}"
+                found.append(
+                    Violation(ViolationSpec(
+                        self._path,
+                        node.lineno,
+                        "TB085",
+                        f"{where} builds {built_enum.name()} from {carrier.name()}.{carried}, "
+                        "a str a port answers; a port answer that is an enum is the response's outcome, "
+                        "the field named outcome typed as the enum named for its operation, because a str "
+                        "carrying an enum's value leaves its reader nothing to match exhaustively",
                     ))
                 )
             for lineno, actual in unread:
@@ -15619,6 +15656,21 @@ class Codebase(ts.AggregateRoot):
             for each in self._modules
             for cls, attr, held_module, held_name in each._declared_attrs()
         )
+        answered_messages = frozenset(
+            (ret_module, ret_name)
+            for module_name, owner, _, ret_module, ret_name in return_rows
+            if blocks.get((module_name, owner)) == "port"
+        )
+        answer_text_rows = tuple(sorted(
+            f"{each.name()}|{cls.name}|{arg.arg}"
+            for each in self._modules
+            for cls in each.class_defs()
+            if (each.name(), cls.name) in answered_messages
+            for item in cls.body
+            if isinstance(item, ast.FunctionDef) and item.name == "__init__"
+            for arg in item.args.args + item.args.kwonlyargs
+            if arg.annotation is not None and str(Annotation(arg.annotation).source()) == "str"
+        ))
         export_package_rows = tuple(sorted(
             each.name()
             for each in self._modules
@@ -15664,6 +15716,7 @@ class Codebase(ts.AggregateRoot):
             registrations=registration_rows,
             dispatched=dispatched_rows,
             relay_constants=relay_constant_rows,
+            answer_texts=answer_text_rows,
         )
 
         def constructed(policy: SignaturePolicy, decl: ClassDecl) -> tuple[Violation, ...]:  # tesser:debt TB023
@@ -15749,6 +15802,7 @@ class Codebase(ts.AggregateRoot):
             registrations=registration_rows,
             dispatched=dispatched_rows,
             relay_constants=relay_constant_rows,
+            answer_texts=answer_text_rows,
             constructors=tuple(sorted(
                 row for module in checked for row in module._constructor_rows(blocks)
             )),

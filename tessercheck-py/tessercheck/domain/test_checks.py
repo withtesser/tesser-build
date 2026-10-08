@@ -20000,6 +20000,99 @@ def test_an_enum_on_an_operations_response_is_its_one_outcome_named_outcome() ->
     assert not any("Sink.grade_item " in f for f in findings), findings
 
 
+def test_an_enum_a_port_answers_as_a_str_is_caught_where_its_reader_builds_the_enum() -> None:
+    findings = tuple(
+        f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
+        for v in domain.Codebase(_spec(sources=(
+            (
+                "shop/domain/__init__.py",
+                "shop.domain",
+                "from shop.domain.member import MemberStanding as MemberStanding\n",
+                True,
+            ),
+            (
+                "shop/domain/member.py",
+                "shop.domain.member",
+                "import enum\n"
+                "class MemberStanding(enum.Enum):\n"
+                "    REGISTERED = 'registered'\n"
+                "    UNREGISTERED = 'unregistered'\n",
+                False,
+            ),
+            (
+                "shop/application/ports/__init__.py",
+                "shop.application.ports",
+                "from shop.application.ports.member_register import Loan as Loan\n"
+                "from shop.application.ports.member_register import LookUpMemberRequest as LookUpMemberRequest\n"
+                "from shop.application.ports.member_register import LookUpMemberResponse as LookUpMemberResponse\n"
+                "from shop.application.ports.member_register import LoadLoanRequest as LoadLoanRequest\n"
+                "from shop.application.ports.member_register import LoadLoanResponse as LoadLoanResponse\n"
+                "from shop.application.ports.member_register import MemberRegister as MemberRegister\n",
+                True,
+            ),
+            (
+                "shop/application/ports/member_register.py",
+                "shop.application.ports.member_register",
+                "import typing\n"
+                "import tesser.application as ts\n"
+                "class LookUpMemberRequest(ts.Request):\n"
+                "    def __init__(self, member: str) -> None:\n"
+                "        self.member = member\n"
+                "class LookUpMemberResponse(ts.Response):\n"
+                "    def __init__(self, member_name: str, member_standing: str) -> None:\n"
+                "        self.member_name = member_name\n"
+                "        self.member_standing = member_standing\n"
+                "class Loan(ts.Response):\n"
+                "    def __init__(self, standing: str) -> None:\n"
+                "        self.standing = standing\n"
+                "class LoadLoanRequest(ts.Request):\n"
+                "    def __init__(self, loan_id: str) -> None:\n"
+                "        self.loan_id = loan_id\n"
+                "class LoadLoanResponse(ts.Response):\n"
+                "    def __init__(self, loan: Loan) -> None:\n"
+                "        self.loan = loan\n"
+                "class MemberRegister(ts.Port, typing.Protocol):\n"
+                "    async def look_up_member(self, look_up_member_request: LookUpMemberRequest) -> LookUpMemberResponse: ...\n"
+                "    async def load_loan(self, load_loan_request: LoadLoanRequest) -> LoadLoanResponse: ...\n",
+                False,
+            ),
+            (
+                "shop/application/standing.py",
+                "shop.application.standing",
+                "import shop.application.ports as ports\n"
+                "import shop.domain as domain\n"
+                "def standing_of(look_up_member_response: ports.LookUpMemberResponse) -> domain.MemberStanding:\n"
+                "    return domain.MemberStanding(look_up_member_response.member_standing)\n"
+                "def standing_kept(loan: ports.Loan) -> domain.MemberStanding:\n"
+                "    return domain.MemberStanding(loan.standing)\n"
+                "def name_of(look_up_member_response: ports.LookUpMemberResponse) -> str:\n"
+                "    return str(look_up_member_response.member_name)\n"
+                "class Lookup:\n"
+                "    def __init__(self, member_register: ports.MemberRegister) -> None:\n"
+                "        self._member_register = member_register\n"
+                "    async def look_up(self, member: str) -> domain.MemberStanding:\n"
+                "        look_up_member_response = await self._member_register.look_up_member(ports.LookUpMemberRequest(member=member))\n"
+                "        return domain.MemberStanding(look_up_member_response.member_standing)\n",
+                False,
+            ),
+        ))).violations()
+    )
+    built = [f for f in findings if "builds MemberStanding from" in f]
+    assert any(
+        f.startswith("shop/application/standing.py:4: TB085 shop.application.standing.standing_of builds MemberStanding "
+                     "from LookUpMemberResponse.member_standing, a str a port answers; a port answer that is an enum is "
+                     "the response's outcome, the field named outcome typed as the enum named for its operation, "
+                     "because a str carrying an enum's value leaves its reader nothing to match exhaustively")
+        for f in built
+    ), findings
+    assert any(
+        f.startswith("shop/application/standing.py:14: TB085 shop.application.standing.Lookup.look_up builds MemberStanding "
+                     "from LookUpMemberResponse.member_standing")
+        for f in built
+    ), findings
+    assert len(built) == 2, built
+
+
 def test_a_relay_is_named_for_the_far_side_its_operations_reach() -> None:
     findings = tuple(
         f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
