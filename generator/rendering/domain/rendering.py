@@ -1045,6 +1045,21 @@ class Model(ts.Entity):
                             field, type_text = (part.strip() for part in str(listed).split(":", 1))
                             record_name = str(Word(str(operation_name)).pascal()) + side.capitalize()
                             self._inline[(str(Word(str(port_name)).snake()), record_name, field)] = type_text
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            for side in ("request", "response"):
+                record_name = str(Word(str(operation_name)).pascal()) + side.capitalize()
+                for listed in operation.get(side, []):
+                    if ":" in listed:
+                        field, type_text = (part.strip() for part in str(listed).split(":", 1))
+                        self._inline[("client", record_name, field)] = type_text
+                for step in operation.get("steps", []):
+                    stepped = str(step).split(".", 1)[-1]
+                    for port_name, port in composition.get("ports", {}).items():
+                        for port_side in ("request", "response"):
+                            for listed in port.get("operations", {}).get(stepped, {}).get(port_side, []):
+                                if ":" in listed:
+                                    field, type_text = (part.strip() for part in str(listed).split(":", 1))
+                                    self._inline.setdefault(("stepped", record_name, field), type_text)
         self._registry[self._aggregate] = self._Aggregate
         self._packages = {
             package: Records(RecordsSpec(package=package, types=TypesSpec(*self._types_args)))
@@ -1096,7 +1111,7 @@ class Model(ts.Entity):
         for section in ("client", "orchestrator"):
             for operation_name, operation in composition.get(section, {}).get("operations", {}).items():
                 named.append(("operation", f"[{section}.operations]", str(operation_name)))
-                named.extend(("snake", str(operation_name), str(field))
+                named.extend(("snake", str(operation_name), str(field).split(":", 1)[0].strip())
                              for field in list(operation.get("request", [])) + list(operation.get("response", [])))
         for key, table in composition.get("actions", {}).items():
             named.append(("snake", "[actions]", str(key)))
@@ -1249,22 +1264,27 @@ class Model(ts.Entity):
                     (f"await_{signal_name}", f"await_{signal_name}_request", f"Await{Signal}Request", f"Await{Signal}Response", str(signal_name)))
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
-            declared.append(("client", "client", Operation + "Request", "Request", list(operation["request"]), False, "", False))
-            declared.append(("client", "client", Operation + "Response", "Response", list(operation["response"]), False, "", True))
+            declared.append(("client", "client", Operation + "Request", "Request",
+                             [str(listed).split(":", 1)[0].strip() for listed in operation["request"]], False, "", False))
+            declared.append(("client", "client", Operation + "Response", "Response",
+                             [str(listed).split(":", 1)[0].strip() for listed in operation["response"]], False, "", True))
         for package, module, name, base, fields, snapshot, prefix, reading in declared:
             records = self._packages[package]
             record = Record(RecordSpec(module=module, name=name, base=base, snapshot=snapshot))
             for field in fields:
-                if reading and field in self._read_types:
-                    type_text = self._read_types[field]
-                elif package == "ports" and (module, name, field) in self._inline:
+                if package in ("ports", "client") and (module, name, field) in self._inline:
                     type_text = self._inline[(module, name, field)]
+                elif reading and field in self._read_types:
+                    type_text = self._read_types[field]
                 elif field in self._registry:
                     type_text = self._registry[field]
                 elif field in self._read_types:
                     type_text = self._read_types[field]
+                elif package == "client" and ("stepped", name, field) in self._inline:
+                    type_text = self._inline[("stepped", name, field)]
                 else:
-                    raise ValueError(f"{field} has no type: no aggregate spec, read, command, or port annotation names it")
+                    raise ValueError(f"{field} has no type: no aggregate spec, read, command, or annotation names it; write it "
+                                     f"as \"{field}: <type>\" in the list that names it")
                 record.add(records.target(FieldAsk(FieldAskSpec(module=module, field=field, type_text=type_text, prefix=prefix))))
             records.declare(record)
             self._messages[(package, name)] = record
@@ -2470,7 +2490,8 @@ class Model(ts.Entity):
             pieces.extend((f"enum {enum} value {member}", member) for member in members)
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             for side in ("request", "response"):
-                pieces.extend((f"client operation {operation_name} {side} field {field}", str(field))
+                pieces.extend((f"client operation {operation_name} {side} field {str(field).split(':', 1)[0].strip()}",
+                               str(field).split(":", 1)[0].strip())
                               for field in operation.get(side, []))
         pieces.extend((f"aggregate read {field}", field) for field, _ in self._reads)
         for signal_name, signal in self._composition.get("signals", {}).items():

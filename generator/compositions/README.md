@@ -166,14 +166,18 @@ A field's type is one of:
 
 **Where a field's type comes from.** A field is named by its bare name in
 every list (`request = ["loan_id", "borrower"]`). Its type is looked up, in
-order: the aggregate's `[aggregate.spec]`,
-each command's `takes`, a port annotation (`"story_texts: StoryText[]"` in a
-port operation's list, which types that field of that operation only),
-then `[aggregate.reads]`.
-A client operation's `response` looks in the reads first, so a read that
+order: an annotation (`"story_texts: StoryText[]"` in a port operation's or a
+client operation's list, which types that field of that operation only), the
+aggregate's `[aggregate.spec]`, each command's `takes`, then
+`[aggregate.reads]`, and last, for a client operation's field, an annotation of
+the same field in a port operation its steps call (a gateway answering
+`"name: str"` types a client response's `name`).
+A client operation's `response` looks in the reads before the spec, so a read that
 differs from the spec field of the same name (`stories`: `StorySpec[]` in the
 spec, `StoryView[]` in the reads) answers the read's type.
-Every field named anywhere must get a type this way.
+Every field named anywhere must get a type this way, so a client field the
+aggregate does not hold never needs a read the aggregate does not implement:
+annotate it.
 
 ## 1 `language.toml`
 

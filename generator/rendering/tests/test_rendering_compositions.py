@@ -961,6 +961,53 @@ class TestRenderingCompositions:
         assert tested.returncode == 0, tested.stdout
         assert check_composition_response.drifted == ()
 
+    def test_a_client_field_takes_its_type_from_its_own_annotation_or_else_from_a_port_its_steps_call(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        tree = pathlib.Path(__file__).resolve().parents[2]
+        edits = {
+            "story.toml": [("", (
+                "\n[[jtbds.stories.jtbds]]\nid = \"j-1-c\"\nlevel = 2\n\n[[jtbds.stories.jtbds.stories]]\nid = \"s-1-c-1\"\n"
+                "given = \"I have created a loan with POST /loans\"\nwhen = \"I GET /loans/{loan_id}/copies\"\n"
+                "then = \"I get back 200 with the copies on the shelf and its shelf_label\"\nroute = \"GET /loans/{loan_id}/copies\"\nstatus = 200\n"
+            ))],
+            "composition.toml": [
+                ('serves = ["s-1-a-1", "s-1-b-1"]', 'serves = ["s-1-a-1", "s-1-b-1", "s-1-c-1"]'),
+                ("[ports.NoticeSender]", (
+                    "[client.operations.count_copies]\nrequest = [\"loan_id\"]\nresponse = [\"copies: int\", \"shelf_label\"]\n"
+                    "steps = [\"gateway.count_copies\"]\nserves = [\"s-1-c-1\"]\n\n"
+                    "[ports.CopyCounter]\noperations.count_copies = { request = [\"loan_id\"], response = [\"copies: int\", \"shelf_label: str\"] }\n\n"
+                    "[ports.NoticeSender]"
+                )),
+            ],
+            "implementations.toml": [
+                ("[environments.gate]", "[implementations.CopyCounter.shelf]\nclass = \"ShelfCopyCounter\"\nbody = \"agent\"\n\n[environments.gate]"),
+                ('LoanRepository = "memory"', 'LoanRepository = "memory", CopyCounter = "shelf"'),
+            ],
+            "generator.toml": [('title = ["Middlemarch", "Beloved"]', 'title = ["Middlemarch", "Beloved"]\ncopies = [1, 2]\nshelf_label = ["A1", "B2"]')],
+        }
+        for name in ("language", "story", "infra", "composition", "implementations", "generator"):
+            text = (tree / "compositions" / "library-direct" / f"{name}.toml").read_text()
+            for old, new in edits.get(f"{name}.toml", []):
+                assert old in text
+                text = text + new if old == "" else text.replace(old, new, 1)
+            (tmp_path / "composition").mkdir(exist_ok=True)
+            (tmp_path / "composition" / f"{name}.toml").write_text(text)
+        rendering = component.Rendering(component.Config(component.Spec(pieces_root=str(tree / "pieces"))))
+
+        render_composition_response = rendering.client.render_composition(
+            client.RenderCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"), printed=())
+        )
+        typed = subprocess.run(
+            [sys.executable, "-m", "mypy", "--strict", "loans"], cwd=tmp_path / "out", capture_output=True, text=True, check=False,
+            env={**os.environ, "MYPYPATH": os.pathsep.join([str(tmp_path / "out"), str(tree.parent / "tesser-py")])},
+        )
+
+        assert render_composition_response.problems == ()
+        assert "    def __init__(self, copies: int, shelf_label: str) -> None:\n" in (
+            tmp_path / "out" / "loans" / "client" / "client.py").read_text()
+        assert typed.returncode == 0, typed.stdout
+
     def test_a_story_file_that_still_has_reached_by_is_a_problem(self, tmp_path: pathlib.Path) -> None:
         tree = pathlib.Path(__file__).resolve().parents[2]
         edits = {
