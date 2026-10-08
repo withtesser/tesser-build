@@ -602,6 +602,8 @@ MUTABLE_COLLECTIONS: typing.Final[frozenset[str]] = frozenset(
     }
 )
 
+KEEPING_COLLECTIONS: typing.Final[frozenset[str]] = MUTABLE_COLLECTIONS | frozenset({"deque", "Deque"})
+
 MOCK_MODULES: typing.Final[frozenset[str]] = frozenset({"unittest.mock", "mock"})
 
 PATCHER_FIXTURES: typing.Final[frozenset[str]] = frozenset({"monkeypatch", "mocker"})
@@ -14241,6 +14243,37 @@ class Module(ts.Entity):
             ref = Annotation(node).primary()
             return scope.resolve(ref) if ref is not None else None
 
+        def collection_type(node: ast.expr | None) -> bool:  # tesser:debt TB023
+            if isinstance(node, ast.Subscript):
+                return collection_type(node.value)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                try:
+                    return collection_type(ast.parse(node.value, mode="eval").body)
+                except SyntaxError:
+                    return False
+            if isinstance(node, ast.Name):
+                return node.id in KEEPING_COLLECTIONS
+            if isinstance(node, ast.Attribute):
+                return node.attr in KEEPING_COLLECTIONS
+            return False
+
+        def collection_made(node: ast.expr | None) -> bool:  # tesser:debt TB023
+            if isinstance(node, (ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)):
+                return True
+            return isinstance(node, ast.Call) and collection_type(node.func)
+
+        collections_held: set[str] = set()
+        for node in ast.walk(ast.Module(body=list(self._body), type_ignores=[])):
+            if isinstance(node, ast.AnnAssign) and (collection_type(node.annotation) or collection_made(node.value)):
+                collections_held.add(ast.unparse(node.target))
+            elif isinstance(node, ast.Assign) and collection_made(node.value):
+                collections_held.update(ast.unparse(target) for target in node.targets)
+            elif isinstance(node, ast.arg) and collection_type(node.annotation):
+                collections_held.add(node.arg)
+
+        def collection(node: ast.expr) -> bool:  # tesser:debt TB023
+            return collection_made(node) or ast.unparse(node) in collections_held
+
         def maker(node: ast.expr) -> SpecRef | None:  # tesser:debt TB023
             made = annotation(node)
             if made is not None:
@@ -14470,7 +14503,7 @@ class Module(ts.Entity):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and node.func.attr in (
                     "append", "appendleft", "extend", "insert", "setdefault"
-                ):
+                ) and collection(node.func.value):
                     for each in [*node.args, *(k.value for k in node.keywords)]:
                         hit = carried(each, names)
                         if hit is not None:

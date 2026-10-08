@@ -12176,6 +12176,54 @@ def test_a_spec_is_tracked_at_module_level_through_makers_mutators_and_match() -
     )
 
 
+def test_a_spec_handed_to_a_method_named_like_a_list_mutator_is_kept_only_by_a_collection() -> None:
+    findings = tuple(
+        f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
+        for v in domain.Codebase(_spec(sources=(
+            (
+                "shop/domain/tag.py",
+                "shop.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, value: str) -> None:\n"
+                "        self.value = value\n"
+                "class Tag(ts.AggregateRoot):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        self._value = spec.value\n"
+                "    def extend(self, spec: TagSpec) -> Tag:\n"
+                "        return Tag(spec)\n",
+                False,
+            ),
+            (
+                "shop/application/service.py",
+                "shop.application.service",
+                "import collections\n"
+                "import tesser.application as ts\n"
+                "import shop.domain.tag as tag\n"
+                "class Service(ts.ApplicationService):\n"
+                "    def __init__(self, spec: tag.TagSpec, held: list[tag.TagSpec]) -> None:\n"
+                "        self._queue: collections.deque[tag.TagSpec] = collections.deque()\n"
+                "        self._made = tag.Tag(spec).extend(spec)\n"
+                "        self._tag = tag.Tag(spec)\n"
+                "        self._tag.extend(spec)\n"
+                "        held.append(spec)\n"
+                "        self._queue.appendleft(spec)\n"
+                "        [].extend([spec])\n",
+                False,
+            ),
+        ))).violations()
+    )
+    tb083 = tuple(f for f in findings if " TB083 " in f)
+    assert tb083 == (
+        "shop/application/service.py:10: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
+        "shop/application/service.py:11: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
+        "shop/application/service.py:12: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
+    )
+
+
 def test_a_spec_is_read_only_by_the_init_of_its_own_object() -> None:
     findings = tuple(
         f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
