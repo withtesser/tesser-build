@@ -74,6 +74,62 @@ to hide stays visible. TB043 reader findings (unparseable, unreadable, or
 twice-defined files) are never inline-suppressible — a file the parser
 cannot read cannot carry a working marker, so those are fixed, not excused.
 
+### Fixing what is mechanical: `--fix`
+
+```sh
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.main --fix /path/to/tree
+```
+
+`--fix` reads the tree once and fixes it in memory to a fixed point: each
+pass checks the tree, applies every repair its findings carry, and passes
+again until a pass changes nothing (at most eight), so a fix that waits on
+another — a local that can take its derived name only once a neighbour has
+taken its own — settles in the same run. It writes once, reads the tree
+back, and reports:
+
+```
+fixed 3 finding(s), rewriting 2 file(s)
+fixed: path/to/file.py:12: TB085 ... names made for a tag_spec; ...
+1 finding(s) remain:
+path/to/other.py:4: TB071 ... is neither a test nor a declared helper — name it test_ ...; ...
+```
+
+Each `fixed:` line is a finding as it stood before the run that a check no
+longer reports (a fix can clear findings that cascaded from it, such as the
+TB081s a missing export caused); what remains is exactly what a plain check
+reports after it. Exit 0 when nothing remains, 1 otherwise, 2 on usage.
+Without `--fix` the check's output and exit codes are unchanged. A fix is
+applied only where it cannot change what the code does, and a rewrite that
+would not parse is dropped.
+
+A finding `--fix` cannot apply names its compliant change on the same line,
+between what fired and the clause — `<what fired> — <change>; <clause>` —
+wherever the clause alone states a prohibition rather than the shape to
+write. Every other clause already states the compliant shape.
+
+| Code | `--fix` | Why |
+|---|---|---|
+| TB085 | locals only | A local is renamed to the name derived from its class (`ast.Name` edits in its own function, refused where the new name is bound). A parameter keeps its name because a caller passes it by keyword or a fixture by name; a field an `__init__` sets is read by name elsewhere; the operation, relay, runner, dispatcher, and registration naming rules rename public or engine-visible names across modules. |
+| TB053 | aliases | A bare or misaliased package import takes the alias the rule derives and every read through it is rewritten, refused where the alias is already bound or a bare import's head is still read elsewhere. `from x import y` stays: `y` may be a submodule that only the from form reaches. |
+| TB050 | own package as `ts` | `import tesser.<own>` or `as <other>` becomes `as ts`, under the TB053 refusals. A disallowed tesser package, a second import, and `from tesser.x import Y` (Y may be a submodule tesser does not import) need a person. |
+| TB042 | re-export lists | A re-export no module outside the role reads is dropped, unless any module still reads it through the package; a read of a name the package does not export adds `from P.<module> import X as X` when exactly one module of P defines X; `from x import Y` becomes `from x import Y as Y`. A class named for its own package, `as <other>`, a module import, code in an `__init__`, and a cross-role import change names or structure. |
+| TB090 | stale markers | A well-formed marker that suppresses nothing is removed; it excused nothing. A malformed marker was meant to excuse something, and which code is the author's call. |
+| TB021 | where deferred | A quoted type is unquoted in a module with `from __future__ import annotations`, or on a local inside a function, where nothing evaluates it. Elsewhere unquoting can raise NameError at import; `ClassVar`/`Final`/`InitVar` stay quoted because Record and dataclasses read them by text. |
+| TB002 TB010 TB011 TB012 TB015 TB016 TB017 TB018 TB019 | no | Value-object, entity, and domain-method shape: the fix changes a type, an exit, or a signature every caller depends on. |
+| TB004 | no | `str(a) == str(b)` to `a == b` changes what the assertion checks. |
+| TB020 | no | Deleting a comment or docstring loses what it says; moving it to the doc layer is the author's. |
+| TB022 TB023 | no | The type that names a value, and where a nested function or lambda belongs, are design decisions. |
+| TB030 | no | A fake is code to write. |
+| TB033 | no | The new name of a shadowing binding is the author's. |
+| TB040 TB041 | no | Moving a module rewrites every import of it and decides where it belongs. |
+| TB043 TB044 TB045 | no | An unreadable or twice-defined module, the tree's own declaration, and a symlink's target are outside what a rewrite can know. |
+| TB051 TB052 | no | Moving statements, functions, or methods, and which kind a class is, restructure code. |
+| TB060 TB061 TB062 TB063 TB064 TB065 TB066 TB067 TB068 TB069 | no | An import across a boundary is fixed by moving code or changing the design, not by editing the import line. |
+| TB070 | no | Where a test lives and what it reaches is a test design decision. |
+| TB071 TB072 TB073 | no | Whether a function or class is a test, helper, assembly, or fake, and what a helper mirrors, are the author's. |
+| TB074 | no | A missing sibling test is a test to write; an empty file would hide it. |
+| TB080 TB081 TB082 TB083 TB084 | no | Constructors, signatures, service bodies, specs, and outcomes are design. |
+
 ### From an install, outside a checkout
 
 A consumer repo cannot depend on a checkout being there, and the host is not
@@ -86,6 +142,7 @@ distribution, [`tessercheck-cli`](../tessercheck-cli/):
 
 ```sh
 tessercheck-check /path/to/tree
+tessercheck-check --fix /path/to/tree
 ```
 
 Same exit codes, same one-finding-per-line output. `tessercheck-check` is a

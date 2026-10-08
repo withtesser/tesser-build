@@ -204,7 +204,10 @@ Two things to know:
 
 Every tessercheck gate is a plain zero-findings check — there is no ratchet
 and no code-family off switch. A finding is either fixed or carries a
-site-level `# tesser:debt TB0xx` at the line it excuses. Bare codes, no
+site-level `# tesser:debt TB0xx` at the line it excuses. `--fix` on the check
+(`python -m srv.cli.main --fix <tree>`, `tessercheck-check --fix`) applies
+every fix that is mechanical and safe in one run and lists what is left; which
+rules it covers, and why, is the table in `tessercheck-py/README.md`. Bare codes, no
 brackets: a debt marker whose payload does not parse as codes suppresses
 nothing, and a debt marker that suppresses nothing is itself a finding. The one
 exception: `TB044` (the tree's `.tesser-root` file) and `TB045` (a symlinked

@@ -148,6 +148,15 @@ totality guard
 (`python -m srv.cli.main path/to/tree` from a checkout, or `tessercheck-check
 path/to/tree` from the packaged CLI).
 
+Most findings that have one compliant answer carry it, and **`--fix` applies
+all of them in one run**: `python -m srv.cli.main --fix path/to/tree` (or
+`tessercheck-check --fix`) renames misnamed locals and aliases, settles a role
+`__init__`'s re-export list in both directions, removes debt markers that
+excuse nothing, and unquotes annotations nothing evaluates, then lists what is
+left — each remaining finding naming its change. Never rerun the check to fix
+one finding per run; the table of what `--fix` covers, and why the rest needs
+a person, is in `tessercheck-py/README.md`.
+
 A `TB085` finding on a **local** carries its own repair, so the analyzer can
 apply it: `python -m srv.cli.rename path/to/tree` (or `tessercheck-rename`)
 rewrites every local the rule can name and reports what it could not. It edits
