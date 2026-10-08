@@ -18177,6 +18177,34 @@ def test_a_rewrite_refuses_a_module_alias_whose_new_name_is_already_in_use() -> 
     assert str(rewrite) == text
 
 
+def test_a_rewrite_keeps_a_bare_import_whose_head_another_read_still_needs() -> None:
+    text = (
+        "import mod.domain\n"
+        "def run() -> object:\n"
+        "    return (mod.domain.Tag, mod.other.Label)\n"
+    )
+    rewrite = domain.Rewrite(domain.RewriteSpec(text=text, renames=((1, "mod.domain", "mod_domain"),)))
+    assert str(rewrite) == text
+
+
+def test_a_rewrite_aliases_a_bare_import_whose_head_another_import_also_binds() -> None:
+    rewrite = domain.Rewrite(domain.RewriteSpec(
+        text=(
+            "import mod.domain\n"
+            "import mod.other\n"
+            "def run() -> object:\n"
+            "    return (mod.domain.Tag, mod.other.Label)\n"
+        ),
+        renames=((1, "mod.domain", "mod_domain"),),
+    ))
+    assert str(rewrite) == (
+        "import mod.domain as mod_domain\n"
+        "import mod.other\n"
+        "def run() -> object:\n"
+        "    return (mod_domain.Tag, mod.other.Label)\n"
+    )
+
+
 def test_a_renaming_rewrites_only_the_modules_a_rename_names() -> None:
     renaming = domain.Renaming(domain.RenamingSpec(
         sources=(

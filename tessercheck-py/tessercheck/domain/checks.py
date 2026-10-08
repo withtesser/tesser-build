@@ -1464,6 +1464,10 @@ class Rewrite(ts.ValueObject):
                         )
                 if split:
                     continue
+                if "." in actual and head not in aliased and len(module_sites) < sum(
+                    1 for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == head
+                ):
+                    continue
                 if importing.asname is None:
                     module_sites.append((
                         importing.end_lineno or line,
