@@ -23004,7 +23004,7 @@ def test_a_fixing_never_renames_a_parameter_because_a_caller_names_it() -> None:
             "mod.domain.test_tag",
             "import mod.domain as domain\n"
             "def test_a_parameter_keeps_its_name(made: domain.TagSpec) -> None:\n"
-            "    assert made.text == 'a'\n",
+            "    assert domain.Tag(made) is not None\n",
             False,
         ),
     )))
@@ -23132,3 +23132,280 @@ def test_a_fixing_leaves_an_alias_whose_derived_name_a_reader_already_binds() ->
         ),
     )))
     assert fixing.rewritten() == ()
+
+
+def test_a_repaired_init_drops_the_whole_line_of_a_re_export_nothing_reads() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C\nfrom a.b.d import D as D\n",
+        repairs=(("unexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "from a.b.d import D as D\n"
+
+
+def test_a_repaired_init_drops_one_name_and_keeps_the_others_on_its_line() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C, E as E\n",
+        repairs=(("unexport", 1, "E", ""),),
+    ))
+    assert str(repaired) == "from a.b.c import C as C\n"
+
+
+def test_a_repaired_init_repeats_the_name_a_re_export_left_out() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C\nfrom a.b.c import E as E\n",
+        repairs=(("reexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "from a.b.c import C as C\nfrom a.b.c import E as E\n"
+
+
+def test_a_repaired_init_rewrites_a_parenthesized_re_export_one_name_a_line() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import (\n    C,\n    E as E,\n    F as F,\n)\nfrom a.b.d import D as D\n",
+        repairs=(("reexport", 1, "C", ""), ("unexport", 1, "F", "")),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import (\n    C as C,\n    E as E,\n)\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_adds_an_export_after_the_last_line_from_the_same_module() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C\nfrom a.b.d import D as D\n",
+        repairs=(("export", 1, "E", "a.b.c"),),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import C as C\nfrom a.b.c import E as E\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_adds_an_export_to_an_empty_init() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="", repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == "from a.b.c import E as E\n"
+
+
+def test_a_repaired_init_ends_the_last_line_before_it_adds_an_export() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.d import D as D", repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == "from a.b.d import D as D\nfrom a.b.c import E as E\n"
+
+
+def test_a_repaired_init_adds_nothing_where_the_init_holds_more_than_re_exports() -> None:
+    text = "from a.b.d import D as D\nVALUE = 1\n"
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == text
+
+
+def test_a_repaired_init_keeps_the_comment_a_dropped_re_export_carried() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C  # tesser:debt-file TB040\nfrom a.b.d import D as D\n",
+        repairs=(("unexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "# tesser:debt-file TB040\nfrom a.b.d import D as D\n"
+
+
+def test_a_repaired_init_leaves_a_re_export_that_shares_its_line_with_another_statement() -> None:
+    text = "from a.b.c import C as C; from a.b.d import D as D\n"
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=(("unexport", 1, "C", ""),)
+    ))
+    assert str(repaired) == text
+
+
+def test_a_fixing_drops_a_re_export_nothing_outside_the_role_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_spec_carries_its_text() -> None:\n"
+            "    assert domain.TagSpec('a').text == 'a'\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {"mod/domain/__init__.py": "from mod.domain.tag import TagSpec as TagSpec\n"}
+
+
+def test_a_fixing_empties_an_init_whose_only_re_export_nothing_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(base=(
+        ("mod/__init__.py", "mod", "", True),
+        ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import Tag as Tag\n", True),
+        (
+            "mod/domain/tag.py",
+            "mod.domain.tag",
+            "import tesser.domain as ts\n"
+            "class Tag(ts.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+        ("mod/domain/test_tag.py", "mod.domain.test_tag", "def test_tag() -> None:\n    assert True\n", False),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {"mod/domain/__init__.py": ""}
+
+
+def test_a_fixing_keeps_a_re_export_a_module_inside_the_package_still_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_spec_carries_its_text() -> None:\n"
+            "    assert domain.TagSpec('a').text == 'a'\n",
+            False,
+        ),
+        (
+            "mod/domain/labels.py",
+            "mod.domain.labels",
+            "import tesser.domain as ts\n"
+            "import mod.domain as domain\n"
+            "class Label(ts.ValueObject):\n"
+            "    def __init__(self, spec: domain.TagSpec) -> None:\n"
+            "        object.__setattr__(self, '_tag', domain.Tag(spec))\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "mod/domain/__init__.py" not in rewritten
+
+
+def test_a_fixing_exports_a_name_a_reader_needs_from_the_one_module_that_defines_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_a_tag_is_built_from_its_spec() -> None:\n"
+                "    tag_spec = domain.TagSpec('a')\n"
+                "    assert domain.Tag(tag_spec) is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {
+        "mod/domain/__init__.py": (
+            "from mod.domain.tag import Tag as Tag\n"
+            "from mod.domain.tag import TagSpec as TagSpec\n"
+        )
+    }
+
+
+def test_a_fixing_exports_nothing_when_no_one_module_alone_defines_the_name() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+            (
+                "mod/domain/other.py",
+                "mod.domain.other",
+                "import tesser.domain as ts\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_reads() -> None:\n"
+                "    assert domain.Tag is not None\n"
+                "    assert domain.Missing is not None\n"
+                "    assert domain.other is not None\n"
+                "    assert domain.TagSpec is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "mod/domain/__init__.py" not in rewritten
+
+
+def test_a_fixing_never_exports_a_class_named_for_its_own_package() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import Tag as Tag\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n"
+                "class Domain(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_reads() -> None:\n"
+                "    assert domain.Tag('a') is not None\n"
+                "    assert domain.Domain('a') is not None\n",
+                False,
+            ),
+        ),
+    ))
+    assert fixing.rewritten() == ()
+
+
+def test_a_repaired_init_adds_an_export_where_it_sorts_among_lines_from_the_same_module() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import A as A\nfrom a.b.c import F as F\nfrom a.b.d import D as D\n",
+        repairs=(("export", 1, "E", "a.b.c"), ("export", 1, "B", "a.b.c")),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import A as A\nfrom a.b.c import B as B\nfrom a.b.c import E as E\n"
+        "from a.b.c import F as F\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_ends_the_last_line_once_before_two_exports() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.d import D as D",
+        repairs=(("export", 1, "E", "a.b.c"), ("export", 1, "F", "a.b.c")),
+    ))
+    assert str(repaired) == "from a.b.d import D as D\nfrom a.b.c import E as E\nfrom a.b.c import F as F\n"

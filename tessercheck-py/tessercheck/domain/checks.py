@@ -1293,12 +1293,14 @@ class ViolationSpec(ts.Spec):
         code: str,
         message: str,
         rename: tuple[str, str] | None = None,
+        repair: RepairSpec | None = None,
     ) -> None:
         self.path = path
         self.line = line
         self.code = code
         self.message = message
         self.rename = rename
+        self.repair = repair
 
 
 class Violation(ts.ValueObject):
@@ -1308,6 +1310,7 @@ class Violation(ts.ValueObject):
     _code: Code
     _text: Text
     _rename: Rename | None
+    _repair: Repair | None
     _mark: Mark | None
 
     def __init__(self, spec: ViolationSpec) -> None:
@@ -1320,6 +1323,7 @@ class Violation(ts.ValueObject):
             "_rename",
             None if spec.rename is None else Rename(RenameSpec(spec.rename[0], spec.rename[1])),
         )
+        object.__setattr__(self, "_repair", None if spec.repair is None else Repair(spec.repair))
         object.__setattr__(
             self, "_mark", None if spec.code in UNMARKABLE else Mark(spec.code)
         )
@@ -1338,6 +1342,9 @@ class Violation(ts.ValueObject):
 
     def rename(self) -> Rename | None:
         return self._rename
+
+    def repair(self) -> Repair | None:
+        return self._repair
 
     def mark(self) -> Mark | None:
         return self._mark
@@ -1512,16 +1519,16 @@ class RewrittenModuleSpec(ts.Spec):
 class RewrittenModule(ts.ValueObject):
 
     _path: Path
-    _text: Text
+    _text: SourceText
 
     def __init__(self, spec: RewrittenModuleSpec) -> None:
         object.__setattr__(self, "_path", Path(spec.path))
-        object.__setattr__(self, "_text", Text(spec.text))
+        object.__setattr__(self, "_text", SourceText(spec.text))
 
     def path(self) -> Path:
         return self._path
 
-    def text(self) -> Text:
+    def text(self) -> SourceText:
         return self._text
 
 
@@ -9797,6 +9804,7 @@ class Module(ts.Entity):
                         f"{module_name} imports {original} without repeating the name; "
                         "a role __init__ re-exports under the name the module defines — "
                         "from x import Y as Y, the form mypy --strict reads as an export",
+                        repair=RepairSpec("reexport", original),
                     ))
                 )
             elif exported != original:
@@ -9831,6 +9839,7 @@ class Module(ts.Entity):
                         f"{module_name} re-exports {exported}, which no module outside "
                         "the role reads; a role __init__ re-exports only what a module "
                         "outside its role reads",
+                        repair=RepairSpec("unexport", exported),
                     ))
                 )
         return tuple(found)
@@ -9947,6 +9956,7 @@ class Module(ts.Entity):
                     "export; a package __init__ is the list of what the outside may "
                     "name, and importing a package binds its submodules on it, so the "
                     "list holds only where a read is checked against it",
+                    repair=RepairSpec("export", read, package),
                 ))
             )
         return tuple(found)
@@ -15304,6 +15314,37 @@ class Codebase(ts.AggregateRoot):
         self._mapper_target: dict[tuple[str, str], tuple[str, str]] = {}
         self._outcome_methods: frozenset[tuple[str, str, str]] = frozenset()
 
+    def reads(self) -> Symbols:
+        found: set[tuple[str, str]] = set()
+        for module in self._modules:
+            for symbol in module.package_attrs():
+                found.add((str(symbol.module()), str(symbol.name())))
+            for target, original in module._imported.values():
+                found.add((target, original))
+        return Symbols(SymbolsSpec(tuple(SymbolSpec(package, name) for package, name in sorted(found))))
+
+    def definer(self, symbol: Symbol) -> Text | None:
+        package = str(symbol.module())
+        name = str(symbol.name())
+        found: set[str] = set()
+        for module in self._modules:
+            if module.is_package() or module.name().rsplit(".", 1)[0] != package:
+                continue
+            for stmt in module.body():
+                if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    bound = [stmt.name]
+                elif isinstance(stmt, ast.Assign):
+                    bound = [target.id for target in stmt.targets if isinstance(target, ast.Name)]
+                elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                    bound = [stmt.target.id]
+                else:
+                    continue
+                if name in bound:
+                    found.add(module.name())
+        if len(found) != 1:
+            return None
+        return Text(found.pop())
+
     def governance(self, path: Path) -> Governance:
         if self._tree.violations():
             return Governance.UNDECLARED
@@ -16212,6 +16253,8 @@ class Fixing(ts.ValueObject):
 
     def __init__(self, spec: FixingSpec) -> None:
         read = {path: source for path, _, source, _ in spec.sources}
+        names = {path: name for path, name, _, _ in spec.sources}
+        homes = {name: path for path, name, _, is_package in spec.sources if is_package}
         held = dict(read)
         found: tuple[Violation, ...] | None = None
         for _ in range(spec.passes):
@@ -16233,19 +16276,45 @@ class Fixing(ts.ValueObject):
             if found is None:
                 found = violations
             renames: dict[str, list[tuple[int, str, str]]] = {}
+            repairs: dict[str, list[tuple[str, int, str, str]]] = {}
+            symbols = codebase.reads()
             for violation in violations:
+                path = str(violation.path())
                 rename = violation.rename()
-                if rename is None or str(violation.code()) not in FIXED_RENAMES:
+                if rename is not None and str(violation.code()) in FIXED_RENAMES:
+                    renames.setdefault(path, []).append(
+                        (int(violation.line()), str(rename.actual()), str(rename.derived()))
+                    )
+                repair = violation.repair()
+                if repair is None:
                     continue
-                renames.setdefault(str(violation.path()), []).append(
-                    (int(violation.line()), str(rename.actual()), str(rename.derived()))
-                )
+                kind = str(repair.kind())
+                name = str(repair.name() or "")
+                source = str(repair.source() or "")
+                if kind == "export":
+                    home = homes.get(source)
+                    definer = codebase.definer(Symbol(SymbolSpec(source, name)))
+                    if (
+                        home is None
+                        or definer is None
+                        or str(DerivedName(name)) == source.rsplit(".", 1)[-1]
+                    ):
+                        continue
+                    repairs.setdefault(home, []).append((kind, 1, name, str(definer)))
+                    continue
+                if kind == "unexport" and Symbol(SymbolSpec(names[path], name)) in symbols:
+                    continue
+                repairs.setdefault(path, []).append((kind, int(violation.line()), name, source))
             changed = False
-            for path in sorted(renames):
+            for path in sorted(set(renames) | set(repairs)):
                 text = held.get(path)
                 if text is None:
                     continue
-                revised = str(Rewrite(RewriteSpec(text=text, renames=tuple(renames[path]))))
+                revised = text
+                if path in renames:
+                    revised = str(Rewrite(RewriteSpec(text=revised, renames=tuple(renames[path]))))
+                if path in repairs:
+                    revised = str(Repaired(RepairedSpec(text=revised, repairs=tuple(repairs[path]))))
                 if revised == text:
                     continue
                 try:
@@ -16286,3 +16355,184 @@ class Fixing(ts.ValueObject):
                 for violation in remaining
             ),
         ))
+
+
+REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export")
+
+
+class RepairKind(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        if value not in REPAIR_KINDS:
+            raise ValueError(f"repair kind must be one of {', '.join(REPAIR_KINDS)}")
+        object.__setattr__(self, "_value", value)
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class RepairSpec(ts.Spec):
+
+    def __init__(self, kind: str, name: str = "", source: str = "") -> None:
+        self.kind = kind
+        self.name = name
+        self.source = source
+
+
+class Repair(ts.ValueObject):
+
+    _kind: RepairKind
+    _name: Text | None
+    _source: Text | None
+
+    def __init__(self, spec: RepairSpec) -> None:
+        object.__setattr__(self, "_kind", RepairKind(spec.kind))
+        object.__setattr__(self, "_name", Text(spec.name) if spec.name else None)
+        object.__setattr__(self, "_source", Text(spec.source) if spec.source else None)
+
+    def kind(self) -> RepairKind:
+        return self._kind
+
+    def name(self) -> Text | None:
+        return self._name
+
+    def source(self) -> Text | None:
+        return self._source
+
+
+class SourceText(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        object.__setattr__(self, "_value", value)
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class RepairedSpec(ts.Spec):
+
+    def __init__(self, text: str, repairs: tuple[tuple[str, int, str, str], ...]) -> None:
+        self.text = text
+        self.repairs = repairs
+
+
+class Repaired(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, spec: RepairedSpec) -> None:
+        tree = ast.parse(spec.text)
+        rows = [row.encode("utf-8") for row in spec.text.splitlines(keepends=True)] or [b""]
+        dropped: dict[int, set[str]] = {}
+        reformed: dict[int, set[str]] = {}
+        exported: set[tuple[str, str]] = set()
+        for kind, line, name, source in spec.repairs:
+            if kind == "unexport":
+                dropped.setdefault(line, set()).add(name)
+            elif kind == "reexport":
+                reformed.setdefault(line, set()).add(name)
+            elif kind == "export":
+                exported.add((source, name))
+        edits: list[tuple[int, int, int, int, str]] = []
+        statements: list[ast.ImportFrom] = []
+        for stmt in tree.body:
+            if isinstance(stmt, ast.ImportFrom):
+                statements.append(stmt)
+        for stmt in statements:
+            drops = dropped.get(stmt.lineno, set())
+            reforms = reformed.get(stmt.lineno, set())
+            if not drops and not reforms:
+                continue
+            kept: list[str] = []
+            for alias in stmt.names:
+                if (alias.asname or alias.name) in drops:
+                    continue
+                if alias.asname is None and alias.name in reforms:
+                    kept.append(f"{alias.name} as {alias.name}")
+                elif alias.asname is None:
+                    kept.append(alias.name)
+                else:
+                    kept.append(f"{alias.name} as {alias.asname}")
+            end_line = stmt.end_lineno or stmt.lineno
+            end_col = stmt.end_col_offset or 0
+            before = rows[stmt.lineno - 1][: stmt.col_offset]
+            after = rows[end_line - 1][end_col:]
+            if before.strip():
+                continue
+            if kept and end_line == stmt.lineno:
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col,
+                    f"from {'.' * stmt.level}{stmt.module or ''} import {', '.join(kept)}",
+                ))
+            elif kept:
+                indent = before.decode("utf-8")
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col,
+                    f"from {'.' * stmt.level}{stmt.module or ''} import (\n"
+                    + "".join(f"{indent}    {each},\n" for each in kept)
+                    + f"{indent})",
+                ))
+            elif not after.strip():
+                edits.append((stmt.lineno, 0, end_line, len(rows[end_line - 1]), ""))
+            elif after.strip().startswith(b"#"):
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col + len(after) - len(after.lstrip()),
+                    "",
+                ))
+        if exported and len(statements) == len(tree.body):
+            present = {alias.asname or alias.name for stmt in statements for alias in stmt.names}
+            additions: dict[tuple[int, int], list[str]] = {}
+            for source, name in sorted(exported):
+                if name in present:
+                    continue
+                present.add(name)
+                same = [stmt for stmt in statements if stmt.level == 0 and stmt.module == source]
+                later = [
+                    stmt.lineno
+                    for stmt in same
+                    if stmt.col_offset == 0 and stmt.names[0].name > name
+                ]
+                every = [stmt.end_lineno or stmt.lineno for stmt in statements]
+                if later:
+                    additions.setdefault((min(later), 0), []).append(f"from {source} import {name} as {name}\n")
+                    continue
+                anchor = (
+                    max(stmt.end_lineno or stmt.lineno for stmt in same)
+                    if same
+                    else max(every) if every else 0
+                )
+                if anchor == 0:
+                    additions.setdefault((1, 0), []).append(f"from {source} import {name} as {name}\n")
+                    continue
+                additions.setdefault((anchor, len(rows[anchor - 1])), []).append(
+                    f"from {source} import {name} as {name}\n"
+                )
+            for (line, col), added in sorted(additions.items()):
+                ended = col == 0 or rows[line - 1].endswith(b"\n")
+                edits.append((line, col, line, col, ("" if ended else "\n") + "".join(added)))
+        held = list(rows)
+        floor: tuple[int, int] | None = None
+        for start_line, start_col, end_line, end_col, written in sorted(set(edits), reverse=True):
+            if floor is not None and (end_line, end_col) > floor:
+                continue
+            held[start_line - 1 : end_line] = [
+                held[start_line - 1][:start_col] + written.encode("utf-8") + held[end_line - 1][end_col:]
+            ]
+            floor = (start_line, start_col)
+        object.__setattr__(self, "_value", b"".join(held).decode("utf-8"))
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)

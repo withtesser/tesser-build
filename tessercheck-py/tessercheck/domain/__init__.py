@@ -41,6 +41,8 @@ from tessercheck.domain.checks import PlacementSpec as PlacementSpec
 from tessercheck.domain.checks import ROLES as ROLES
 from tessercheck.domain.checks import RELAY_MESSAGE_BLOCKS as RELAY_MESSAGE_BLOCKS
 from tessercheck.domain.checks import Renaming as Renaming
+from tessercheck.domain.checks import Repaired as Repaired
+from tessercheck.domain.checks import RepairedSpec as RepairedSpec
 from tessercheck.domain.checks import RenamingSpec as RenamingSpec
 from tessercheck.domain.checks import Rewrite as Rewrite
 from tessercheck.domain.checks import RewriteSpec as RewriteSpec

@@ -271,7 +271,7 @@ VIOLATION_SPEC: typing.Final[str] = "ViolationSpec"
 
 VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("path", "line", "code", "message")
 
-OPTIONAL_VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("rename",)
+OPTIONAL_VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("rename", "repair")
 
 
 class RuleRowSpec(ts.Spec):
