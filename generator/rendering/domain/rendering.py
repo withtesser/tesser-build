@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import enum
+import hashlib
 import json
 import keyword
 import re
@@ -81,6 +83,18 @@ WORD_START: typing.Final[re.Pattern[str]] = re.compile(r"(?<!^)(?=[A-Z])")
 PRIMITIVE_TYPES: typing.Final[tuple[str, ...]] = ("str", "int")
 
 UNKNOWN: typing.Final[str] = "\x00unknown"
+
+OUTCOME_FIELD: typing.Final[str] = "outcome"
+
+WHOLE: typing.Final[str] = "*"
+
+NESTED: typing.Final[str] = " / "
+
+RECORDED: typing.Final[str] = "recorded"
+
+GENERATED: typing.Final[str] = "generated"
+
+OWNED: typing.Final[str] = "owned"
 
 
 class Health(ts.Outcome):
@@ -282,11 +296,13 @@ class TypesSpec(ts.Spec):
         shapes: tuple[tuple[str, tuple[tuple[str, str], ...]], ...],
         aggregate: str,
         aggregate_fields: tuple[tuple[str, str], ...],
+        outcomes: tuple[tuple[str, tuple[str, ...]], ...] = (),
     ) -> None:
         self.enums = enums
         self.shapes = shapes
         self.aggregate = aggregate
         self.aggregate_fields = aggregate_fields
+        self.outcomes = outcomes
 
 
 class Types(ts.ValueObject):
@@ -295,6 +311,7 @@ class Types(ts.ValueObject):
 
     def __init__(self, spec: TypesSpec) -> None:
         rows = [(name, "enum", tuple((member, member) for member in members)) for name, members in spec.enums]
+        rows.extend((name, "outcome", tuple((member, member) for member in members)) for name, members in spec.outcomes)
         rows.extend((name, "shape", fields) for name, fields in spec.shapes)
         rows.append((spec.aggregate, "aggregate", spec.aggregate_fields))
         object.__setattr__(self, "_rows", tuple(rows))
@@ -320,7 +337,7 @@ class Types(ts.ValueObject):
 
     def members(self, enum: str) -> Pairs:
         for name, kind, items in self._rows:
-            if name == enum and kind == "enum":
+            if name == enum and kind in ("enum", "outcome"):
                 return Pairs(items)
         raise ValueError(f"{enum} is named as an enum, and [enums] does not declare it")
 
@@ -385,6 +402,30 @@ class Target(ts.ValueObject):
 
     def members(self) -> tuple[Target, ...]:
         return self._members
+
+    def fit(self, sample: Sample) -> Sample:
+        value = json.loads(str(sample))
+        type_text = str(self._type_text)
+        if type_text == "int" and isinstance(value, str) and re.fullmatch(r"-?[0-9]{1,18}", value):
+            return Sample(json.dumps(int(value)))
+        if type_text == "str" and isinstance(value, int) and not isinstance(value, bool):
+            return Sample(json.dumps(str(value)))
+        if (type_text == "int" and not (isinstance(value, int) and not isinstance(value, bool))) or \
+                (type_text == "str" and not isinstance(value, str)):
+            raise ValueError(f"generator.toml samples {self._field} as {json.dumps(value)}, and {self._field} is a {type_text} "
+                             f"there: write a sample that is a {type_text}")
+        return sample
+
+    def empty(self, pairs: Pairs) -> Text:
+        kind = str(self._kind)
+        if kind == "array":
+            return Text("()")
+        member = pairs.get(str(self._type_text))
+        if kind == "enum" and member is not None:
+            return Text(json.dumps(str(member)))
+        if kind == "outcome" and member is not None:
+            return Text(f"{self._package}.{self._type_text}.{str(member).upper()}")
+        return Text("0" if str(self._type_text) == "int" else '""')
 
 
 class SourceSpec(ts.Spec):
@@ -459,11 +500,13 @@ class Sources(ts.Entity):
 
 class AskSpec(ts.Spec):
 
-    def __init__(self, name: str, target_ref: str, allow_empty: bool, occasion: str = "") -> None:
+    def __init__(self, name: str, target_ref: str, allow_empty: bool, occasion: str = "",
+                 guards: tuple[tuple[str, str], ...] = ()) -> None:
         self.name = name
         self.target_ref = target_ref
         self.allow_empty = allow_empty
         self.occasion = occasion
+        self.guards = guards
 
 
 class Ask(ts.Entity):
@@ -473,6 +516,7 @@ class Ask(ts.Entity):
         self._occasion = spec.occasion
         self._target_ref = spec.target_ref
         self._allow_empty = spec.allow_empty
+        self._guards = spec.guards
         self._targets: list[Target] = []
         self._sources = Sources(SourcesSpec(name=spec.name))
 
@@ -504,14 +548,19 @@ class Ask(ts.Entity):
     def sources(self) -> Sources:
         return self._sources
 
+    def guards(self) -> Pairs:
+        return Pairs(self._guards)
+
 
 class MapperDefSpec(ts.Spec):
 
-    def __init__(self, name: str, target: str, params: tuple[tuple[str, str], ...], args: tuple[tuple[str, str], ...]) -> None:
+    def __init__(self, name: str, target: str, params: tuple[tuple[str, str], ...], args: tuple[tuple[str, str], ...],
+                 guards: tuple[tuple[str, str], ...] = ()) -> None:
         self.name = name
         self.target = target
         self.params = params
         self.args = args
+        self.guards = guards
 
 
 class MapperDef(ts.ValueObject):
@@ -520,12 +569,14 @@ class MapperDef(ts.ValueObject):
     _target: Word
     _params: Pairs
     _args: Pairs
+    _guards: Pairs
 
     def __init__(self, spec: MapperDefSpec) -> None:
         object.__setattr__(self, "_name", Word(spec.name))
         object.__setattr__(self, "_target", Word(spec.target))
         object.__setattr__(self, "_params", Pairs(spec.params))
         object.__setattr__(self, "_args", Pairs(spec.args))
+        object.__setattr__(self, "_guards", Pairs(spec.guards))
 
     def name(self) -> Word:
         return self._name
@@ -538,6 +589,9 @@ class MapperDef(ts.ValueObject):
 
     def args(self) -> Pairs:
         return self._args
+
+    def guards(self) -> Pairs:
+        return self._guards
 
 
 class MappedSpec(ts.Spec):
@@ -599,10 +653,14 @@ class Mappers(ts.Entity):
                     values.append((field, "[]"))
                     continue
                 raise ValueError(f"{name} needs {field}, and nothing before it in the steps holds one")
+            held = str(found.holds().get(field))
+            if str(found.kind()) == "initial":
+                args.append((field, str(Sample(held).literal(target))))
+                values.append((field, held))
+                continue
             if found not in used:
                 used.append(found)
             read = str(found.prefix()) + field
-            held = str(found.holds().get(field))
             reads_aggregate = str(found.kind()) == "aggregate"
             if kind == "aggregate":
                 if not reads_aggregate:
@@ -641,15 +699,26 @@ class Mappers(ts.Entity):
             else:
                 args.append((field, read))
             values.append((field, held))
+        guards: list[tuple[str, str]] = []
+        for guarded, guard in ask.guards():
+            named = str(json.loads(str(guard)).get("source", ""))
+            matched = next((source for source in sources.held() if str(source.expr()) == named), None) if named else sources.find(Word(guarded))
+            if matched is None:
+                raise ValueError(f"{name} matches {guarded}, and nothing before it in the steps holds one")
+            if matched not in used:
+                used.append(matched)
+            guards.append((str(matched.prefix()) + guarded, str(guard)))
         params: list[tuple[str, str]] = []
         for source in sources.held():
             param = (str(source.expr()), str(source.type_ref()))
             if source in used and param not in params:
                 params.append(param)
-        mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
+        mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args),
+                                             guards=tuple(guards)))
         if any(existing.name() == mapper_def.name() and existing != mapper_def for existing in self._defs) and str(ask.occasion()):
             name = f"{name}For{ask.occasion()}"
-            mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args)))
+            mapper_def = MapperDef(MapperDefSpec(name=name, target=str(ask.target_ref()), params=tuple(params), args=tuple(args),
+                                                 guards=tuple(guards)))
         for existing in self._defs:
             if existing.name() == mapper_def.name() and existing != mapper_def:
                 raise ValueError(f"two mappers in {self._module} would be named {name}")
@@ -684,6 +753,10 @@ class Sample(ts.ValueObject):
             return Text(f"({', '.join(items)},)" if items else "()")
         if package == "domain" and str(target.kind()) == "enum":
             return Text(f"domain.{target.type_text()}.{str(value).upper()}")
+        if str(target.kind()) == "outcome":
+            return Text(f"{package}.{target.type_text()}.{str(value).upper()}")
+        if str(target.kind()) == "scalar":
+            return Text(str(target.fit(self)))
         return Text(json.dumps(value))
 
 
@@ -710,18 +783,17 @@ class Samples(ts.ValueObject):
         values = json.loads(str(self._values))
         index = int(str(self._index))
         field = str(target.field())
-        if field in values:
-            listed = values[field]
-            return Sample(json.dumps(listed[index % len(listed)]))
         array = str(target.kind()) == "array"
-        wanted = list(target.element()) if array else [(field, str(target.type_text()))]
         found: dict[str, object] = {}
-        for wanted_field, wanted_type in wanted:
+        if field in values:
+            found[field] = values[field][index % len(values[field])]
+        wanted = list(target.element()) if array else [(field, str(target.type_text()))]
+        for wanted_field, wanted_type in wanted if field not in found else []:
             if wanted_field in values:
                 listed = values[wanted_field]
                 found[wanted_field] = listed[index % len(listed)]
                 continue
-            if str(self._types.kind(wanted_type)) == "enum":
+            if str(self._types.kind(wanted_type)) in ("enum", "outcome"):
                 members = [member for member, _ in self._types.members(wanted_type)]
                 found[wanted_field] = members[index % len(members)]
                 continue
@@ -737,7 +809,16 @@ class Samples(ts.ValueObject):
             if not nested:
                 raise ValueError(f"generator.toml gives no sample value for {wanted_field}, and no sample holds one")
             found[wanted_field] = nested[index % len(nested)]
-        return Sample(json.dumps([found] if array else found[field]))
+        chosen = found[field] if field in found else [found] if array else found[field]
+        if not array:
+            return target.fit(Sample(json.dumps(chosen)))
+        element_types = dict(target.element())
+        return Sample(json.dumps([
+            {key: json.loads(str(Target(TargetSpec(field=key, type_text=element_types.get(key, ""), kind="scalar", package="",
+                                                   record="", element=(), members=())).fit(Sample(json.dumps(item_value)))))
+             for key, item_value in item.items()} if isinstance(item, dict) else item
+            for item in (chosen if isinstance(chosen, list) else [])
+        ]))
 
 
 class FieldAskSpec(ts.Spec):
@@ -850,7 +931,7 @@ class Records(ts.Entity):
         type_text = str(field_ask.type_text())
         prefix = str(field_ask.prefix())
         kind = str(self._types.kind(type_text))
-        if kind in ("scalar", "enum"):
+        if kind in ("scalar", "enum", "outcome"):
             return Target(TargetSpec(field=field, type_text=type_text, kind=kind, package=self._package, record="",
                                      element=(), members=()))
         if kind == "shape":
@@ -940,16 +1021,19 @@ class Readout(ts.ValueObject):
 
 class EchoSpec(ts.Spec):
 
-    def __init__(self, samples: SamplesSpec) -> None:
+    def __init__(self, samples: SamplesSpec, chosen: tuple[tuple[str, str], ...] = ()) -> None:
         self.samples = samples
+        self.chosen = chosen
 
 
 class Echo(ts.ValueObject):
 
     _samples: Samples
+    _chosen: Pairs
 
     def __init__(self, spec: EchoSpec) -> None:
         object.__setattr__(self, "_samples", Samples(spec.samples))
+        object.__setattr__(self, "_chosen", Pairs(spec.chosen))
 
     def of(self, ask: Ask) -> Mapped:
         args: list[tuple[str, str]] = []
@@ -961,7 +1045,8 @@ class Echo(ts.ValueObject):
                 args.append((field, str(found.prefix()) + field))
                 values.append((field, str(found.holds().get(field))))
                 continue
-            sample = self._samples.value(target)
+            chosen = self._chosen.get(str(target.type_text())) if str(target.kind()) in ("enum", "outcome") else None
+            sample = Sample(json.dumps(str(chosen))) if chosen is not None else self._samples.value(target)
             args.append((field, str(sample.literal(target))))
             values.append((field, str(sample)))
         return Mapped(MappedSpec(call=", ".join(f"{field}={expr}" for field, expr in args), values=tuple(values)))
@@ -999,6 +1084,7 @@ class Model(ts.Entity):
         self._aggregate = str(Word(self._Aggregate).snake())
         self._identity = str(aggregate_table["identity"])
         self._Orchestrator = self._Aggregate + "Orchestrator"
+        self._engine_declared = bool(self._infra.get("engine", {}))
         self._spec_fields = [(str(field), str(type_text)) for field, type_text in aggregate_table["spec"].items()]
         self._reads = [(str(field), str(type_text)) for field, type_text in aggregate_table["reads"].items()]
         self._read_types = dict(self._reads)
@@ -1007,13 +1093,115 @@ class Model(ts.Entity):
         shapes = dict(composition.get("shapes", {}))
         shapes.update(composition.get("messages", {}))
         self._shapes = {str(name): [(str(field), str(type_text)) for field, type_text in fields.items()] for name, fields in shapes.items()}
+        self._outcome_of: dict[str, tuple[str, str, str]] = {}
+        self._outcome_enums: dict[str, list[str]] = {}
+        port_typed = dict(self._spec_fields)
+        for command in self._commands.values():
+            for field, type_text in command.get("takes", {}).items():
+                port_typed.setdefault(str(field), str(type_text))
+        for field, type_text in self._reads:
+            port_typed.setdefault(field, type_text)
+        for port_name, port in composition.get("ports", {}).items():
+            for operation_name, operation in port.get("operations", {}).items():
+                answered: list[tuple[str, str]] = []
+                for listed in operation.get("response", []):
+                    field, _, annotation = (part.strip() for part in str(listed).partition(":"))
+                    type_text = annotation or port_typed.get(field, "")
+                    if type_text in self._enums:
+                        answered.append((field, type_text))
+                if len(answered) > 1:
+                    raise ValueError(f"ports.{port_name} operation {operation_name} answers {len(answered)} enums "
+                                     f"({', '.join(field for field, _ in answered)}); a response carries at most one outcome, "
+                                     f"because its caller matches one answer: answer one, or split the operation")
+                if not answered:
+                    continue
+                field, Enum = answered[0]
+                Outcome = str(Word(str(operation_name)).pascal()) + "Outcome"
+                if Outcome in self._enums or Outcome in self._shapes:
+                    raise ValueError(f"ports.{port_name} operation {operation_name} answers {field}, an enum, which renders as "
+                                     f"its outcome {Outcome}, and the composition already declares {Outcome}")
+                self._outcome_of[str(Word(str(operation_name)).pascal()) + "Response"] = (field, Outcome, Enum)
+                self._outcome_enums[Outcome] = list(self._enums[Enum])
+        typed: list[str] = [type_text for _, type_text in self._spec_fields + self._reads]
+        typed.extend(str(t) for command in self._commands.values() for t in command.get("takes", {}).values())
+        typed.extend(type_text for fields in self._shapes.values() for _, type_text in fields)
+        for operation in composition.get("client", {}).get("operations", {}).values():
+            typed.extend(str(listed).partition(":")[2].strip() for side in ("request", "response") for listed in operation.get(side, []))
+        for port in composition.get("ports", {}).values():
+            for operation_name, operation in port.get("operations", {}).items():
+                answered_outcome = self._outcome_of.get(str(Word(str(operation_name)).pascal()) + "Response")
+                typed.extend(str(listed).partition(":")[2].strip() for listed in operation.get("request", []))
+                typed.extend(str(listed).partition(":")[2].strip() for listed in operation.get("response", [])
+                             if answered_outcome is None or str(listed).partition(":")[0].strip() != answered_outcome[0])
+        answered_only = {Enum for _, _, Enum in self._outcome_of.values()} - set(typed)
+        self._domain_enums = {name: members for name, members in self._enums.items() if name not in answered_only}
         self._types_args = (
             tuple((name, tuple(members)) for name, members in self._enums.items()),
             tuple((name, tuple(fields)) for name, fields in self._shapes.items()),
             self._Aggregate,
             tuple(self._spec_fields),
+            tuple((name, tuple(members)) for name, members in self._outcome_enums.items()),
         )
         self._types = Types(TypesSpec(*self._types_args))
+        initial = aggregate_table.get("initial", {})
+        if not isinstance(initial, dict):
+            raise ValueError("[aggregate.initial] is not a table of spec fields and the value each starts as")
+        self._initial: dict[str, object] = {}
+        spec_types = dict(self._spec_fields)
+        for field, value in initial.items():
+            type_text = spec_types.get(str(field))
+            if type_text is None:
+                raise ValueError(f"[aggregate.initial] names {field}, which [aggregate.spec] does not hold: an initial value is "
+                                 f"what a spec field of a new {self._Aggregate} starts as")
+            kind = str(self._types.kind(type_text))
+            fits = (
+                (kind == "enum" and isinstance(value, str) and value in self._enums.get(type_text, []))
+                or (type_text == "str" and isinstance(value, str))
+                or (type_text == "int" and isinstance(value, int) and not isinstance(value, bool))
+            )
+            if not fits:
+                wanted = f"one of {', '.join(self._enums[type_text])}" if kind == "enum" else f"a {type_text}"
+                raise ValueError(f"[aggregate.initial] starts {field} as {value!r}, and {field} is a {type_text}: write {wanted}")
+            self._initial[str(field)] = value
+        self._checks: dict[str, list[tuple[str, str]]] = {}
+        self._values: dict[str, str] = {}
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            checks = operation.get("checks", {})
+            if not isinstance(checks, dict):
+                raise ValueError(f"client operation {operation_name} lists checks as something other than a table of request "
+                                 f"fields and the domain value each must make, like {{ days = \"Days\" }}")
+            request_types = {}
+            for listed in operation.get("request", []):
+                field, _, annotation = (part.strip() for part in str(listed).partition(":"))
+                request_types[field] = annotation or dict(self._spec_fields).get(field) or self._read_types.get(field, "")
+            for field, value_name in checks.items():
+                value_name = str(value_name)
+                if str(field) not in request_types:
+                    raise ValueError(f"client operation {operation_name} checks {field}, which its request does not take")
+                type_text = request_types[str(field)]
+                if type_text not in PRIMITIVE_TYPES:
+                    raise ValueError(f"client operation {operation_name} checks {field}, a {type_text or 'field with no type'}, "
+                                     f"and a domain value a request field must make holds a str or an int")
+                if PASCAL.fullmatch(value_name) is None or keyword.iskeyword(value_name):
+                    raise ValueError(f"client operation {operation_name} checks {field} as {value_name!r}, which is not a "
+                                     f"PascalCase name, like Days")
+                taken = {self._Aggregate, self._Aggregate + "Spec", "Text", "Number", *self._enums, *self._shapes} | {
+                    str(Word(str(command)).pascal()) + suffix for command in self._commands for suffix in ("Spec", "Outcome")}
+                if value_name in taken:
+                    raise ValueError(f"client operation {operation_name} checks {field} as {value_name}, a name the domain "
+                                     f"already gives to something else")
+                if self._values.setdefault(value_name, type_text) != type_text:
+                    raise ValueError(f"{value_name} is checked on a {self._values[value_name]} and on a {type_text}: a domain "
+                                     f"value holds one type")
+                self._checks.setdefault(str(operation_name), []).append((str(field), value_name))
+        self._draft: object = aggregate_table.get("draft_identity")
+        identity_type = spec_types.get(self._identity)
+        if self._draft is not None and not (
+            (identity_type == "str" and isinstance(self._draft, str))
+            or (identity_type == "int" and isinstance(self._draft, int) and not isinstance(self._draft, bool))
+        ):
+            raise ValueError(f"[aggregate] draft_identity is {self._draft!r}, and the identity {self._identity} is a {identity_type}: "
+                             f"write a {identity_type} the domain accepts as an identity")
         for sampled_field, sampled in dict(self._generator.get("sample_values", {})).items():
             if isinstance(sampled, list) and not sampled:
                 raise ValueError(f"generator.toml lists no sample values for {sampled_field}")
@@ -1032,6 +1220,21 @@ class Model(ts.Entity):
                             field, type_text = (part.strip() for part in str(listed).split(":", 1))
                             record_name = str(Word(str(operation_name)).pascal()) + side.capitalize()
                             self._inline[(str(Word(str(port_name)).snake()), record_name, field)] = type_text
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            for side in ("request", "response"):
+                record_name = str(Word(str(operation_name)).pascal()) + side.capitalize()
+                for listed in operation.get(side, []):
+                    if ":" in listed:
+                        field, type_text = (part.strip() for part in str(listed).split(":", 1))
+                        self._inline[("client", record_name, field)] = type_text
+                for step in operation.get("steps", []):
+                    stepped = str(step).split(".", 1)[-1]
+                    for port_name, port in composition.get("ports", {}).items():
+                        for port_side in ("request", "response"):
+                            for listed in port.get("operations", {}).get(stepped, {}).get(port_side, []):
+                                if ":" in listed:
+                                    field, type_text = (part.strip() for part in str(listed).split(":", 1))
+                                    self._inline.setdefault(("stepped", record_name, field), type_text)
         self._registry[self._aggregate] = self._Aggregate
         self._packages = {
             package: Records(RecordsSpec(package=package, types=TypesSpec(*self._types_args)))
@@ -1057,8 +1260,43 @@ class Model(ts.Entity):
                 else:
                     raise ValueError(f"{spec_name} takes {field} as a {type_text}, which a spec carries only as a list")
             self._domain_targets[spec_name] = targets
+        self._refusals: dict[str, list[tuple[str, str, tuple[str, ...], str]]] = {}
+        for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
+            refuses = operation.get("refuses", [])
+            if not isinstance(refuses, list) or not all(isinstance(refusal, dict) for refusal in refuses):
+                raise ValueError(f"client operation {operation_name} lists refuses as something other than a list of tables "
+                                 f"like {{ code = \"<code>\", when = \"<enum field a step answers>\", is = [\"<member>\"] }}")
+            for refusal in refuses:
+                unknown_keys = sorted(set(refusal) - {"code", "when", "is", "message", "field"})
+                if unknown_keys or not {"code", "when", "is"} <= set(refusal):
+                    raise ValueError(f"client operation {operation_name} has a refusal that is not "
+                                     f"{{ code, when, is }} with an optional message and field: it has {', '.join(sorted(refusal))}")
+                refused = refusal["is"]
+                refused_names = (str(refused),) if isinstance(refused, str) else tuple(str(member) for member in refused)
+                code = str(refusal["code"])
+                message = str(refusal.get("message", code.replace("_", " ")))
+                if not re.fullmatch(r"[ !#-\[\]-~]+", message):
+                    raise ValueError(f"client operation {operation_name} refuses {code} with a message that is not "
+                                     f"printable ASCII free of quotes and backslashes")
+                arguments = json.dumps(message)
+                if "field" in refusal:
+                    if SNAKE.fullmatch(str(refusal["field"])) is None:
+                        raise ValueError(f"client operation {operation_name} refuses {code} on the field "
+                                         f"{str(refusal['field'])!r}, which is not a snake_case name, like loan_id")
+                    arguments += f", field={json.dumps(str(refusal['field']))}"
+                self._refusals.setdefault(str(operation_name), []).append((code, str(refusal["when"]), refused_names, arguments))
+        refused_members = {member for refusals in self._refusals.values() for _, _, members, _ in refusals for member in members}
+        self._success = {
+            name: next((member for member in members if member not in refused_members), members[0])
+            for name, members in self._enums.items() if members
+        }
+        for _, Outcome, Enum in self._outcome_of.values():
+            if Enum in self._success:
+                self._success[Outcome] = self._success[Enum]
+        self._chosen = Pairs(tuple(self._success.items()))
         self._echo = {
-            index: Echo(EchoSpec(SamplesSpec(values=self._sample_values, index=index, types=TypesSpec(*self._types_args))))
+            index: Echo(EchoSpec(SamplesSpec(values=self._sample_values, index=index, types=TypesSpec(*self._types_args)),
+                                 chosen=tuple(self._success.items())))
             for index in (0, 1)
         }
         self._readout = Readout(ReadoutSpec(reads=tuple(self._reads), aggregate=self._aggregate, types=TypesSpec(*self._types_args)))
@@ -1083,7 +1321,7 @@ class Model(ts.Entity):
         for section in ("client", "orchestrator"):
             for operation_name, operation in composition.get(section, {}).get("operations", {}).items():
                 named.append(("operation", f"[{section}.operations]", str(operation_name)))
-                named.extend(("snake", str(operation_name), str(field))
+                named.extend(("snake", str(operation_name), str(field).split(":", 1)[0].strip())
                              for field in list(operation.get("request", [])) + list(operation.get("response", [])))
         for key, table in composition.get("actions", {}).items():
             named.append(("snake", "[actions]", str(key)))
@@ -1093,6 +1331,8 @@ class Model(ts.Entity):
                 named.extend(("snake", str(operation_name), str(field))
                              for field in list(operation.get("request", [])) + list(operation.get("response", [])))
                 named.extend(("snake", f"{operation_name} calls_on", str(outcome)) for outcome in operation.get("calls_on", []))
+        for operation_name, refusals in self._refusals.items():
+            named.extend(("snake", f"client operation {operation_name} refusal code", code) for code, _, _, _ in refusals)
         for signal_name, signal in composition.get("signals", {}).items():
             named.append(("operation", "[signals]", str(signal_name)))
             named.extend(("snake", str(signal_name), str(field)) for field in signal.get("payload", []))
@@ -1106,6 +1346,8 @@ class Model(ts.Entity):
             for key, implementation in choices.items():
                 if implementation.get("body") == "agent":
                     named.append(("pascal", f"[implementations.{port_name}.{key}] class", str(implementation.get("class", ""))))
+                if "reaches" in implementation:
+                    named.append(("snake", f"[implementations.{port_name}.{key}] reaches", str(implementation["reaches"])))
         engine = self._infra.get("engine", {}).get("restate", {})
         named.extend(("variable", f"[engine.restate] {key}", str(engine[key]))
                      for key in ("engine_url_variable",) if key in engine)
@@ -1123,6 +1365,10 @@ class Model(ts.Entity):
             if pattern.fullmatch(name) is None or keyword.iskeyword(name):
                 raise ValueError(f"{where} names {name!r}, which is not a {description}")
         domain_nouns = {str(code_name) for term in language.get("terms", []) for code_name in term.get("code_names", [])}
+        self._language_words = {str(Word(name).snake()) for name in domain_nouns} | {
+            re.sub(r"[^a-z0-9]+", "_", str(spelling).lower()).strip("_")
+            for term in language.get("terms", []) for spelling in (term.get("term"), term.get("short")) if spelling
+        }
         for term in language.get("terms", []):
             for spelling in (term.get("term"), term.get("short")):
                 if spelling:
@@ -1147,8 +1393,12 @@ class Model(ts.Entity):
             "App": str(Word(self._app).pascal()), "Aggregate": self._Aggregate, "aggregate": self._aggregate,
             "aggregates": str(Word(self._aggregate).plural()), "identity": self._identity,
             "ClientClass": str(Word(self._context).pascal()) + "Client", "Service": self._Aggregate + "Service",
+            "Rejected": self._Aggregate + "Rejected", "rejected": self._aggregate + "_rejected",
         }
         self._frames: dict[tuple[str, str], dict[str, object]] = {}
+        self._joined: list[Model] = []
+        self._unserved: set[str] = set()
+        self._root: dict[str, object] = self._binding
 
     @property
     def identity(self) -> str:
@@ -1163,7 +1413,9 @@ class Model(ts.Entity):
             for operation_name, operation in port.get("operations", {}).items():
                 request = [str(listed).split(":", 1)[0].strip() for listed in operation.get("request", [])]
                 response = [str(listed).split(":", 1)[0].strip() for listed in operation.get("response", [])]
-                if self._aggregate in request + response:
+                listed_types = [str(listed).split(":", 1)[1].strip() for listed in list(operation.get("request", [])) + list(operation.get("response", []))
+                                if ":" in str(listed)]
+                if self._aggregate in request + response or self._Aggregate + "[]" in listed_types:
                     self._stores[port_name] = port_name.replace("Repository", "Store")
                 Operation = str(Word(operation_name).pascal())
                 declared.append(("ports", module, Operation + "Request", "Request", request, False, port_name, False))
@@ -1173,8 +1425,18 @@ class Model(ts.Entity):
                                      f"ports exports one {Operation}Request and one {Operation}Response, so one port declares it")
                 self._port_of[operation_name] = port_name
                 self._port_ops[port_name].append(operation_name)
-        for step in [step for operation in composition.get("client", {}).get("operations", {}).values()
-                     for step in operation.get("steps", [])]:
+        client_steps = [str(step) for operation in composition.get("client", {}).get("operations", {}).values()
+                        for step in operation.get("steps", [])]
+        if not self._engine_declared:
+            unrun = [f"composition.toml declares [{section}], which runs on a durable-execution engine, and infra.toml declares "
+                     f"no [engine]: without one, a client operation's steps call its ports directly"
+                     for section in ("orchestrator", "actions", "signals") if composition.get(section)]
+            unrun.extend(f"step {step} runs the orchestrator, and infra.toml declares no [engine] to run it: without one, a "
+                         f"client operation's steps call its ports directly"
+                         for step in client_steps if step.split(".", 1)[0] == "orchestrator")
+            if unrun:
+                raise ValueError(*unrun)
+        for step in client_steps:
             kind, rest = str(step).split(".", 1)
             if kind != "orchestrator":
                 continue
@@ -1184,11 +1446,12 @@ class Model(ts.Entity):
             modes = self._orchestrator_modes.setdefault(operation_name, [])
             if mode not in modes:
                 modes.append(mode)
-        relay_module = str(Word(self._Orchestrator).snake()) + "_relay"
-        self._relay_ops[self._Orchestrator + "Relay"] = []
         orchestrator_operations = composition.get("orchestrator", {}).get("operations", {})
-        if len(orchestrator_operations) != 1:
-            raise ValueError("the composition declares one orchestrator operation, because a workflow keeps one main")
+        if self._engine_declared:
+            self._relay_ops[self._Orchestrator + "Relay"] = []
+            if len(orchestrator_operations) != 1:
+                raise ValueError("the composition declares one orchestrator operation, because a workflow keeps one main")
+        relay_module = str(Word(self._Orchestrator).snake()) + "_relay"
         for operation_name, operation in orchestrator_operations.items():
             Operation = str(Word(operation_name).pascal())
             declared.append(("relays", relay_module, Operation + "Request", "Request", list(operation["request"]), True, self._Orchestrator, False))
@@ -1224,22 +1487,35 @@ class Model(ts.Entity):
                     (f"await_{signal_name}", f"await_{signal_name}_request", f"Await{Signal}Request", f"Await{Signal}Response", str(signal_name)))
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
-            declared.append(("client", "client", Operation + "Request", "Request", list(operation["request"]), False, "", False))
-            declared.append(("client", "client", Operation + "Response", "Response", list(operation["response"]), False, "", True))
+            declared.append(("client", "client", Operation + "Request", "Request",
+                             [str(listed).split(":", 1)[0].strip() for listed in operation["request"]], False, "", False))
+            declared.append(("client", "client", Operation + "Response", "Response",
+                             [str(listed).split(":", 1)[0].strip() for listed in operation["response"]], False, "", True))
         for package, module, name, base, fields, snapshot, prefix, reading in declared:
             records = self._packages[package]
             record = Record(RecordSpec(module=module, name=name, base=base, snapshot=snapshot))
             for field in fields:
-                if reading and field in self._read_types:
-                    type_text = self._read_types[field]
-                elif package == "ports" and (module, name, field) in self._inline:
+                outcome = self._outcome_of.get(name) if package == "ports" else None
+                if outcome is not None and field == outcome[0]:
+                    if OUTCOME_FIELD in fields and field != OUTCOME_FIELD:
+                        raise ValueError(f"{name} answers {field}, an enum, as its outcome, and lists a field named "
+                                         f"{OUTCOME_FIELD} too: name that field otherwise")
+                    record.add(records.target(FieldAsk(FieldAskSpec(module=module, field=OUTCOME_FIELD, type_text=outcome[1],
+                                                                    prefix=prefix))))
+                    continue
+                if package in ("ports", "client") and (module, name, field) in self._inline:
                     type_text = self._inline[(module, name, field)]
+                elif reading and field in self._read_types:
+                    type_text = self._read_types[field]
                 elif field in self._registry:
                     type_text = self._registry[field]
                 elif field in self._read_types:
                     type_text = self._read_types[field]
+                elif package == "client" and ("stepped", name, field) in self._inline:
+                    type_text = self._inline[("stepped", name, field)]
                 else:
-                    raise ValueError(f"{field} has no type: no aggregate spec, read, command, or port annotation names it")
+                    raise ValueError(f"{field} has no type: no aggregate spec, read, command, or annotation names it; write it "
+                                     f"as \"{field}: <type>\" in the list that names it")
                 record.add(records.target(FieldAsk(FieldAskSpec(module=module, field=field, type_text=type_text, prefix=prefix))))
             records.declare(record)
             self._messages[(package, name)] = record
@@ -1253,9 +1529,9 @@ class Model(ts.Entity):
                         element = list(target.element())
                         field_frames.append({
                             "field": str(target.field()),
-                            "dto_type": {"scalar": str(target.type_text()), "enum": "str",
+                            "dto_type": {"scalar": str(target.type_text()), "enum": "str", "outcome": str(target.type_text()),
                                          "array": f"tuple[{target.record()}, ...]"}.get(kind, str(target.record())),
-                            "scalar": [{}] if kind in ("scalar", "enum") else [],
+                            "scalar": [{}] if kind in ("scalar", "enum", "outcome") else [],
                             "array": [{}] if kind == "array" else [],
                             "var": str(target.field().singular()),
                             "primitive": "int" if str(target.type_text()) == "int" else "str",
@@ -1294,11 +1570,20 @@ class Model(ts.Entity):
             saves = [(op, request) for op, request, _ in operations if any(str(t.kind()) == "aggregate" for t in request.targets())]
             loads = [(op, request, response) for op, request, response in operations
                      if any(str(t.kind()) == "aggregate" for t in response.targets())]
-            if len(operations) != 2 or len(saves) != 1 or len(loads) != 1 or \
+            spec_scalars = {field for field, type_text in self._spec_fields if str(self._types.kind(type_text)) in ("scalar", "enum")}
+            lists = [(op, request, response) for op, request, response in operations
+                     if [str(t.type_text()) for t in response.targets()] == [self._Aggregate + "[]"]
+                     and all(str(t.field()) in spec_scalars and str(t.type_text()) == dict(self._spec_fields)[str(t.field())]
+                             for t in request.targets())]
+            if len(operations) != 2 + len(lists) or len(saves) != 1 or len(loads) != 1 or \
                     [str(t.field()) for t in loads[0][1].targets()] != [self._identity] or \
                     self._messages[("ports", str(Word(saves[0][0]).pascal()) + "Response")].targets():
-                raise ValueError(f"{port_name} carries {self._aggregate}, so it is a store: one save of it that answers nothing and one load of it by {self._identity}")
+                raise ValueError(f"{port_name} carries {self._aggregate}, so it is a store: one save of it that answers nothing, "
+                                 f"one load of it by {self._identity}, and any number of lists that answer one "
+                                 f"\"<field>: {self._Aggregate}[]\" and take only fields of its spec to match")
             carried = next(t for t in saves[0][1].targets() if str(t.kind()) == "aggregate")
+            aggregate_var = self._aggregate if self._aggregate not in {str(t.field()) for _, request, _ in lists for t in request.targets()} \
+                else "listed_" + self._aggregate
             self._frames[("store", port_name)] = {
                 "Port": port_name, "Store": store, "store_attr": str(Word(store).snake()),
                 "aggregates": str(Word(self._aggregate).plural()), "Record": str(carried.record()),
@@ -1306,6 +1591,16 @@ class Model(ts.Entity):
                 "load": loads[0][0], "Load": str(Word(loads[0][0]).pascal()),
                 "record_sample": ", ".join(f"{m.field()}={self._samples.value(m).literal(m)}" for m in carried.members()),
                 "identity_sample": str(self._samples.value(next(m for m in carried.members() if str(m.field()) == self._identity))),
+                "lists": [
+                    {"list": op, "List": str(Word(op).pascal()), "listed": str(response.targets()[0].field()), "var": aggregate_var,
+                     "matching": "".join(
+                         f" {'if' if index == 0 else 'and'} {aggregate_var}.{t.field()} == {op}_request.{t.field()}"
+                         for index, t in enumerate(request.targets())),
+                     "list_sample": ", ".join(
+                         f"{t.field()}={next(self._samples.value(m).literal(m) for m in carried.members() if m.field() == t.field())}"
+                         for t in request.targets())}
+                    for op, request, response in lists
+                ],
             }
 
     def bodies(self) -> None:
@@ -1316,7 +1611,8 @@ class Model(ts.Entity):
         Orchestrator = self._Orchestrator
         aggregates = str(Word(aggregate).plural())
         blank: dict[str, object] = {"build": [], "port_call": [], "store_call": [], "assign": "", "holder": "",
-                                    "call": "", "argument": "", "repository": ""}
+                                    "call": "", "argument": "", "repository": "", "refuses_unknown": [], "loads_known": [{}],
+                                    "command": [], "arms": [], "draft": [], "check": [], "checked": []}
         fakes: dict[tuple[str, str], Mapped] = {}
         for (package, name), record in self._messages.items():
             if package not in ("ports", "relays") or not name.endswith("Request"):
@@ -1342,6 +1638,8 @@ class Model(ts.Entity):
         dependencies: list[dict[str, object]] = []
         service_ops: list[dict[str, object]] = []
         service_tests: list[dict[str, object]] = []
+        refusal_tests: list[dict[str, object]] = []
+        refusing_fakes: dict[tuple[str, str], dict[str, object]] = {}
         for operation_name, operation in composition.get("client", {}).get("operations", {}).items():
             Operation = str(Word(operation_name).pascal())
             occasion = Operation
@@ -1353,14 +1651,22 @@ class Model(ts.Entity):
                 prefix=operation_name + "_request.",
                 holds=tuple((str(t.field()), str(self._samples.value(t))) for t in request_record.targets()))))
             statements: list[dict[str, object]] = []
+            if str(operation_name) in self._checks:
+                statements.append(dict(blank, check=[{}], checked=[
+                    {"Value": value_name, "expr": f"{operation_name}_request.{field}"}
+                    for field, value_name in self._checks[str(operation_name)]]))
             checks: list[dict[str, object]] = []
             seeds: list[dict[str, object]] = []
             built = False
             saved = False
             test_name = f"{operation_name}_answers_from_its_steps"
+            refusals = self._refusals.get(str(operation_name), [])
+            unmatched = list(refusals)
+            pending: list[tuple[str, str]] = []
+            refusing: list[tuple[str, str, str, str]] = []
             for step in operation.get("steps", []):
                 kind, rest = str(step).split(".", 1)
-                if kind in ("identity", "repository"):
+                if kind in ("identity", "repository", "gateway"):
                     if rest not in self._port_of:
                         raise ValueError(f"step {step} names {rest}, which no port declares")
                     port_name = self._port_of[rest]
@@ -1368,10 +1674,33 @@ class Model(ts.Entity):
                     port_request = self._messages[("ports", Step + "Request")]
                     port_response = self._messages[("ports", Step + "Response")]
                     carries = any(str(t.kind()) == "aggregate" for t in port_request.targets())
-                    if carries and not built:
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion))
+                    if self._draft is not None and not built and identity in {str(t.field()) for t in port_response.targets()}:
+                        ask = Ask(AskSpec(name=f"MapToDraft{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True,
+                                          occasion=occasion, guards=tuple(pending)))
+                        pending = []
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
+                        ask.source(Source(SourceSpec(
+                            expr="initial", type_ref="initial", kind="initial", prefix="",
+                            holds=tuple((field, json.dumps(value)) for field, value in [*self._initial.items(), (identity, self._draft)]))))
+                        for held in sources.held():
+                            ask.source(held)
+                        try:
+                            drafted = mappers.map(ask)
+                        except ValueError as unheld:
+                            raise ValueError(f"{unheld}: with a draft_identity, client operation {operation_name} builds a draft "
+                                             f"{aggregate} before {step} issues its {identity}, from what the steps before {step} "
+                                             f"hold, so put the steps that answer it before {step}") from unheld
+                        statements.append(dict(blank, draft=[{}], argument=str(drafted.call())))
+                    if carries and not built:
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}Spec", target_ref=f"domain.{Aggregate}Spec", allow_empty=True, occasion=occasion,
+                                          guards=tuple(pending)))
+                        pending = []
+                        for target in self._domain_targets[Aggregate + "Spec"]:
+                            ask.target(target)
+                        if self._initial:
+                            ask.source(Source(SourceSpec(expr="initial", type_ref="initial", kind="initial", prefix="",
+                                                         holds=tuple((field, json.dumps(value)) for field, value in self._initial.items()))))
                         for held in sources.held():
                             ask.source(held)
                         mapped = mappers.map(ask)
@@ -1385,8 +1714,10 @@ class Model(ts.Entity):
                             ask.target(target)
                         for held in sources.held():
                             ask.source(held)
-                        argument = str(mappers.map(ask).call())
+                        port_mapped = mappers.map(ask)
+                        argument = str(port_mapped.call())
                     else:
+                        port_mapped = Mapped(MappedSpec(call="", values=()))
                         argument = f"ports.{Step}Request()"
                     local = rest + "_response"
                     assign = f"{local} = " if port_response.targets() else ""
@@ -1399,6 +1730,11 @@ class Model(ts.Entity):
                         holder = str(Word(port_name).snake())
                         dependency = {"dependency": holder, "dependency_type": f"ports.{port_name}"}
                         statements.append(dict(blank, port_call=[{}], holder=holder, assign=assign, call=rest, argument=argument))
+                        pairs = port_mapped.values()
+                        if port_request.targets() and all(str(value) != UNKNOWN for _, value in pairs):
+                            reads = ", ".join(f"received.{t.field()}" for t in port_request.targets())
+                            expected = ", ".join(str(Sample(str(pairs.get(str(t.field())))).literal(t)) for t in port_request.targets())
+                            checks.append({"check": f"[({reads},) for received in fake_{holder}.{rest}_requests] == [({expected},)]"})
                     if dependency not in dependencies:
                         dependencies.append(dependency)
                     saved = saved or carries
@@ -1408,7 +1744,15 @@ class Model(ts.Entity):
                         member_values = tuple((str(m.field()), str(self._samples.value(m))) for m in members)
                         source = Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                           prefix=f"{local}.{loaded[0].field()}.", holds=member_values))
-                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False, occasion=occasion))
+                        statements[-1] = dict(statements[-1], refuses_unknown=[{}], loads_known=[])
+                        refusal_tests.append({
+                            "name": f"{operation_name}_refuses_an_unknown_{aggregate}", "operation": operation_name,
+                            "Operation": Operation, "code": f"unknown_{aggregate}", "seeds": [], "replaced": {}, "unsaved": [],
+                            "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request_record.targets()),
+                        })
+                        ask = Ask(AskSpec(name=f"MapTo{Aggregate}SpecWhenLoaded", target_ref=f"domain.{Aggregate}Spec", allow_empty=False, occasion=occasion,
+                                          guards=tuple(pending)))
+                        pending = []
                         for target in self._domain_targets[Aggregate + "Spec"]:
                             ask.target(target)
                         ask.source(source)
@@ -1426,9 +1770,79 @@ class Model(ts.Entity):
                         seeds.append({"seed": f"fake_{Word(self._stores[port_name]).snake()}.{aggregates}[{identity_value}] = "
                                               f"ports.{loaded[0].record()}({record_args})"})
                         test_name = f"{operation_name}_answers_the_{aggregate}_it_loads"
+                    elif port_name in self._stores and [str(t.type_text()) for t in port_response.targets()] == [Aggregate + "[]"]:
+                        listed = port_response.targets()[0]
+                        sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain", prefix=local + ".",
+                                                       holds=((str(listed.field()), str(self._samples.value(listed))),))))
+                        frame = self._frames[("store", port_name)]
+                        seeds.append({"seed": f"fake_{Word(self._stores[port_name]).snake()}.{aggregates}[{frame['identity_sample']}] = "
+                                              f"ports.{frame['Record']}({frame['record_sample']})"})
+                        test_name = f"{operation_name}_answers_the_{aggregates}_it_lists"
                     elif port_response.targets():
                         sources.hold(Source(SourceSpec(expr=local, type_ref=f"ports.{Step}Response", kind="plain",
                                                        prefix=local + ".", holds=tuple(fakes[("ports", Step + "Response1")].values()))))
+                        answered_types = {str(t.field()): t for t in port_response.targets() if str(t.kind()) != "outcome"}
+                        outcome = self._outcome_of.get(Step + "Response")
+                        if outcome is not None:
+                            answered_types[outcome[0]] = next(t for t in port_response.targets() if str(t.kind()) == "outcome")
+                        for refusal in [refusal for refusal in unmatched if refusal[1] in answered_types]:
+                            code, when, refused_names, message = refusal
+                            unmatched.remove(refusal)
+                            matched_target = answered_types[when]
+                            if str(matched_target.kind()) != "outcome":
+                                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
+                                                 f"{', '.join(refused_names)}, and {step} answers {when} as {matched_target.type_text()}, "
+                                                 f"not an enum: a refusal matches an enum field a step answers")
+                            Outcome = str(matched_target.type_text())
+                            Enum = self._outcome_of[Step + "Response"][2]
+                            enum_members = self._outcome_enums[Outcome]
+                            strangers = [member for member in refused_names if member not in enum_members]
+                            if strangers:
+                                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is "
+                                                 f"{', '.join(strangers)}, which {Enum} does not list")
+                            if pending and any(json.loads(guard)["when"] == when for _, guard in pending):
+                                raise ValueError(f"client operation {operation_name} refuses on {when} twice: write one refusal "
+                                                 f"per field, its is listing every member it refuses")
+                            if set(enum_members) <= set(refused_names):
+                                raise ValueError(f"client operation {operation_name} refuses {code} on every member of {Enum}, "
+                                                 f"so it never answers")
+                            arms = [{"members": [member.upper() for member in refused_names], "code": code, "message": message}] + [
+                                {"members": [member.upper()], "code": "", "message": ""}
+                                for member in enum_members if member not in refused_names]
+                            pending.append((OUTCOME_FIELD, json.dumps({"Outcome": Outcome, "when": when, "source": local, "arms": arms})))
+                            refusing.append((port_name, rest, refused_names[0], code))
+                elif kind == "aggregate":
+                    if rest not in self._commands:
+                        raise ValueError(f"step {step} names {rest}, which [aggregate.commands] does not declare")
+                    if not built:
+                        raise ValueError(f"step {step} applies {rest} to the {aggregate}, and no step before it builds or loads "
+                                         f"one: put it after the step that loads the {aggregate}")
+                    if any(statement["command"] for statement in statements):
+                        raise ValueError(f"client operation {operation_name} applies two commands, and a service method "
+                                         f"decides once: apply one, or make one command of the two")
+                    Command = str(Word(rest).pascal())
+                    if self._domain_targets[Command + "Spec"]:
+                        ask = Ask(AskSpec(name=f"MapTo{Command}Spec", target_ref=f"domain.{Command}Spec", allow_empty=True,
+                                          occasion=occasion))
+                        for target in self._domain_targets[Command + "Spec"]:
+                            ask.target(target)
+                        for held in sources.held():
+                            ask.source(held)
+                        argument = str(mappers.map(ask).call())
+                    else:
+                        argument = f"domain.{Command}Spec()"
+                    outcomes = [str(outcome) for outcome in self._commands[rest].get("outcomes", [])]
+                    statements.append(dict(blank, command=[{}], call=rest, argument=argument, arms=[
+                        {"Outcome": Command + "Outcome", "MEMBER": outcome.upper(),
+                         "refuse": [{"code": outcome, "message": json.dumps(outcome.replace("_", " "))}] if index else [],
+                         "passes": [] if index else [{}]}
+                        for index, outcome in enumerate(outcomes)
+                    ]))
+                    before = next(held for held in reversed(sources.held()) if str(held.kind()) == "aggregate")
+                    sources.hold(Source(SourceSpec(expr=aggregate, type_ref=f"domain.{Aggregate}", kind="aggregate",
+                                                   prefix=aggregate + ".",
+                                                   holds=tuple((field, value if field == identity else UNKNOWN)
+                                                               for field, value in before.holds()))))
                 elif kind == "orchestrator":
                     mode, orchestrator_operation = rest.split("_", 1)
                     Step = str(Word(orchestrator_operation).pascal())
@@ -1465,6 +1879,42 @@ class Model(ts.Entity):
                     test_name = f"{operation_name}_{rest}_with_the_{aggregate}_it_built"
                 else:
                     raise ValueError(f"client step {step} is of a kind this renderer does not know: {kind}")
+            for code, when, _, _ in unmatched:
+                raise ValueError(f"client operation {operation_name} refuses {code} when {when} is answered, and none of its "
+                                 f"steps answers {when}")
+            for when in [str(json.loads(guard)["when"]) for _, guard in pending]:
+                raise ValueError(f"client operation {operation_name} refuses on {when}, and no step after the one that answers "
+                                 f"it builds the {aggregate}, where a refusal is raised: put that step before the step that "
+                                 f"builds or loads the {aggregate}")
+            for refusing_port, refusing_operation, refused_member, code in refusing:
+                Member = str(Word(refused_member).pascal())
+                Refusing = str(Word(refusing_operation).pascal())
+                refusing_request = self._messages[("ports", Refusing + "Request")]
+                refusing_response = self._messages[("ports", Refusing + "Response")]
+                refused_enum = self._outcome_of[Refusing + "Response"][1]
+                echo = Echo(EchoSpec(
+                    SamplesSpec(values=self._sample_values, index=1, types=TypesSpec(*self._types_args)),
+                    chosen=tuple((name, refused_member if name == refused_enum else member) for name, member in self._success.items())))
+                refusing_ask = Ask(AskSpec(name=Refusing + "Response", target_ref=Refusing + "Response", allow_empty=False))
+                for target in refusing_response.targets():
+                    refusing_ask.target(target)
+                refusing_ask.source(Source(SourceSpec(
+                    expr=refusing_operation + "_request", type_ref=Refusing + "Request", kind="plain", prefix=refusing_operation + "_request.",
+                    holds=tuple((str(t.field()), UNKNOWN) for t in refusing_request.targets() if str(t.kind()) != "array"))))
+                refusing_fakes.setdefault((refusing_port, refused_member), {
+                    "Port": refusing_port, "Member": Member, "member": refused_member,
+                    "operations": [
+                        {"operation": op, "Operation": str(Word(op).pascal()),
+                         "fake_response": str(echo.of(refusing_ask).call() if op == refusing_operation
+                                              else fakes[("ports", str(Word(op).pascal()) + "Response1")].call())}
+                        for op in self._port_ops[refusing_port]],
+                })
+                refusal_tests.append({
+                    "name": f"{operation_name}_refuses_{code}", "operation": operation_name, "Operation": Operation,
+                    "code": code, "seeds": list(seeds), "unsaved": [] if seeds else [{}],
+                    "replaced": {f"fake_{Word(refusing_port).snake()}": f"Fake{refusing_port}Answering{Member}()"},
+                    "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request_record.targets()),
+                })
             ask = Ask(AskSpec(name=f"MapTo{Operation}Response", target_ref=f"client.{Operation}Response", allow_empty=False, occasion=occasion))
             for target in response_record.targets():
                 ask.target(target)
@@ -1489,8 +1939,21 @@ class Model(ts.Entity):
                 "Mapper": str(made.name()), "target": str(made.target()),
                 "params": [{"param": param, "param_type": param_type} for param, param_type in made.params()],
                 "args": [{"field": field, "expr": expr} for field, expr in made.args()],
+                "guards": [
+                    {"subject": subject, "arms": [
+                        {"patterns": " | ".join(f"ports.{matched['Outcome']}.{member}" for member in arm["members"]),
+                         "refuse": [{"code": arm["code"], "arguments": arm["message"]}] if arm["code"] else [],
+                         "passes": [] if arm["code"] else [{}]}
+                        for arm in matched["arms"]]}
+                    for subject, matched in ((subject, json.loads(str(guard))) for subject, guard in made.guards())
+                ],
             })
         self._binding["mappers"] = def_frames
+        self._binding["service_guarded"] = [{}] if any(made.guards() for made in mappers.defs()) or any(
+            statement["command"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
+        ) else []
+        self._refusal_tests = refusal_tests
+        self._binding["refusing_ports"] = list(refusing_fakes.values())
         self._binding["dependencies"] = dependencies
         self._binding["service_operations"] = service_ops
         self._service_tests = service_tests
@@ -1504,6 +1967,9 @@ class Model(ts.Entity):
                                   ("client", "client"), ("domain", "domain"))
             if alias in aliases
         ]
+        self._binding["service_refuses"] = [{}] if any(
+            statement["build"] or statement["command"] or statement["draft"] or statement["check"] for operation in service_ops for statement in typing.cast(list[dict[str, object]], operation["statements"])
+        ) else []
 
     def actions(self) -> None:
         Aggregate = self._Aggregate
@@ -1795,10 +2261,15 @@ class Model(ts.Entity):
             module = str(Word(port_name).snake())
             records = [self._frames[("ports", str(r.name()))] for r in self._packages["ports"].declared(Word(module))]
             store = self._stores.get(port_name, "")
+            outcomes = [self._outcome_of[str(Word(op).pascal()) + "Response"][1] for op in operations
+                        if str(Word(op).pascal()) + "Response" in self._outcome_of]
             ports.append({"module": module, "Port": port_name, "records": records, "store": [{}] if store else [],
-                          "Store": store,
+                          "Store": store, "enumerated": [{}] if outcomes else [],
+                          "outcomes": [{"Outcome": Outcome, "members": [{"MEMBER": member.upper(), "value": member}
+                                                                        for member in self._outcome_enums[Outcome]]}
+                                       for Outcome in outcomes],
                           "operations": [{"operation": op, "Operation": str(Word(op).pascal())} for op in operations]})
-            names = sorted([str(r["Record"]) for r in records] + [port_name] + ([store] if store else []))
+            names = sorted([str(r["Record"]) for r in records] + [port_name] + ([store] if store else []) + outcomes)
             ports_exports.extend({"module": module, "name": name} for name in names)
         self._binding["ports"] = ports
         self._binding["ports_exports"] = ports_exports
@@ -1832,7 +2303,8 @@ class Model(ts.Entity):
         ]
         self._binding["client_exports"] = [
             {"name": name}
-            for name in sorted([str(r["Record"]) for r in client_records] + [str(self._binding["ClientClass"])])
+            for name in sorted([str(r["Record"]) for r in client_records]
+                               + [str(self._binding["ClientClass"]), str(self._binding["Rejected"]), "ERRORS"])
         ]
         fake_ports: list[dict[str, object]] = []
         fake_stores: list[dict[str, object]] = []
@@ -1881,6 +2353,26 @@ class Model(ts.Entity):
             dict(test, fake_locals=fake_locals, service=str(Word(self._Aggregate + "Service").snake()), service_args=service_args)
             for test in self._service_tests
         ]
+        aggregates = str(Word(self._aggregate).plural())
+        renamed = {
+            id(test): {local: "fake_" + str(Word(construct.removesuffix("()").removeprefix("Fake")).snake())
+                       for local, construct in typing.cast(dict[str, str], test["replaced"]).items()}
+            for test in self._refusal_tests
+        }
+        self._binding["refusal_tests"] = [
+            {key: bound for key, bound in test.items() if key != "replaced"} | {
+                "fake_locals": [
+                    {"local": renamed[id(test)].get(str(entry["local"]), entry["local"]),
+                     "construct": typing.cast(dict[str, str], test["replaced"]).get(str(entry["local"]), entry["construct"])}
+                    for entry in fake_locals],
+                "service": str(Word(self._Aggregate + "Service").snake()),
+                "service_args": ", ".join(renamed[id(test)].get("fake_" + str(d["dependency"]), "fake_" + str(d["dependency"]))
+                                          for d in (dependencies if isinstance(dependencies, list) else [])),
+                "unsaved": [{"unsaved": f"fake_{store_dependency}.{aggregates}"}] if test["unsaved"] and store_dependency else [],
+            }
+            for test in self._refusal_tests
+        ]
+        self._binding["refusal_tested"] = [{}] if self._refusal_tests else []
 
     def stub(self) -> None:
         Aggregate = self._Aggregate
@@ -1889,7 +2381,7 @@ class Model(ts.Entity):
         self._binding["enums"] = [
             {"Enum": name, "enum_snake": str(Word(name).snake()),
              "members": [{"MEMBER": member.upper(), "value": member} for member in members]}
-            for name, members in self._enums.items()
+            for name, members in self._domain_enums.items()
         ]
         specs: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -1946,6 +2438,12 @@ class Model(ts.Entity):
                                     "expected": str(self._samples.value(Target(TargetSpec(
                                         field=field, type_text=type_text, kind=kind, package="domain", record="",
                                         element=(), members=()))))})
+            elif kind == "enum" and read_type == type_text:
+                stored.append({"field": field, "stored_expr": f"spec.{field}"})
+                stored_names.add(field)
+                sample = self._samples.value(Target(TargetSpec(field=field, type_text=type_text, kind=kind, package="domain",
+                                                               record="", element=(), members=())))
+                read_checks.append({"actual": f"str({aggregate}.{field})", "expected": json.dumps(str(json.loads(str(sample))))})
             elif kind == "array" and read_type is not None and str(types.kind(read_type)) == "array":
                 view = str(types.element(read_type))
                 element = str(types.element(type_text))
@@ -1969,12 +2467,17 @@ class Model(ts.Entity):
                 view_reads = ", ".join(f"{entry['cast']}({var}.{entry['field']})" for entry in view_fields)
                 expected = ", ".join("(" + ", ".join(json.dumps(item[str(entry["field"])]) for entry in view_fields) + ",)" for item in sample)
                 read_checks.append({"actual": f"[({view_reads},) for {var} in {aggregate}.{field}]", "expected": f"[{expected}]"})
-        if self._identity not in stored_names or spec_types.get(self._identity) != "str":
-            raise ValueError(f"the aggregate's identity {self._identity} is a str its spec holds and it reads")
+        if self._identity not in stored_names or spec_types.get(self._identity) not in PRIMITIVE_TYPES:
+            raise ValueError(f"the aggregate's identity {self._identity} is a str or an int its spec holds and it reads")
+        if self._engine_declared and spec_types[self._identity] != "str":
+            raise ValueError(f"the aggregate's identity {self._identity} is an int, and a workflow on the engine is keyed by "
+                             f"text: with an engine, the identity is a str")
         reads: list[dict[str, object]] = []
         for read, read_type in self._reads:
             kind = str(types.kind(read_type))
-            if read in stored_names:
+            if read in stored_names and kind == "enum":
+                reads.append({"read": read, "read_type": "Text", "read_expr": f"Text(self._{read}.value)"})
+            elif read in stored_names:
                 reads.append({"read": read, "read_type": f"tuple[{types.element(read_type)}, ...]" if kind == "array" else read_type,
                               "read_expr": f"self._{read}"})
             elif kind == "enum":
@@ -1986,14 +2489,25 @@ class Model(ts.Entity):
                 reads.append({"read": read, "read_type": "int", "read_expr": "0"})
             else:
                 reads.append({"read": read, "read_type": "Text", "read_expr": 'Text("")'})
+        self._binding["values"] = [
+            {"Value": name, "primitive": type_text, "reader": "__int__" if type_text == "int" else "__str__",
+             "canonical": "canonical_int" if type_text == "int" else "canonical_str", "value_snake": str(Word(name).snake()),
+             "cast": type_text,
+             "value_sample": str(self._samples.value(Target(TargetSpec(
+                 field=next(field for checks in self._checks.values() for field, checked in checks if checked == name),
+                 type_text=type_text, kind="scalar", package="domain", record="", element=(), members=()))).literal(Target(TargetSpec(
+                 field=name, type_text=type_text, kind="scalar", package="domain", record="", element=(), members=()))))}
+            for name, type_text in self._values.items()
+        ]
         self._binding["views"] = views
         self._binding["stored"] = stored
         self._binding["reads"] = reads
-        self._binding["identity_type"] = "str"
+        self._binding["identity_type"] = spec_types[self._identity]
         self._binding["stub_text"] = [{}] if "Text" in leaves or any(r["read_type"] == "Text" for r in reads) else []
         self._binding["stub_number"] = [{}] if "Number" in leaves else []
-        self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] else []
-        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._enums) | {str(c["Outcome"]) for c in commands}
+        self._binding["serialized"] = [{}] if self._binding["stub_text"] or self._binding["stub_number"] or self._values else []
+        exports = {Aggregate, Aggregate + "Spec"} | {str(s["Spec"]) for s in specs} | set(self._domain_enums) | {str(c["Outcome"]) for c in commands}
+        exports |= set(self._values)
         self._binding["domain_exports"] = [{"name": name} for name in sorted(exports)]
         spec_parts = []
         bare_parts = []
@@ -2010,14 +2524,13 @@ class Model(ts.Entity):
 
     def engine(self) -> None:
         implementations = self._implementations
-        identity = self._identity
         Orchestrator = self._Orchestrator
         infra = self._infra
         engines = infra.get("engine", {})
-        if list(engines) != ["restate"]:
+        if self._engine_declared and list(engines) != ["restate"]:
             raise ValueError("infra.toml names an engine other than restate, the one this renderer renders")
-        engine = engines["restate"]
-        for key in ("engine_url_variable", "engine_path"):
+        engine = engines.get("restate", {})
+        for key in ("engine_url_variable", "engine_path") if self._engine_declared else ():
             if key not in engine:
                 raise ValueError(f"[engine.restate] does not say {'where its endpoint is mounted' if key == 'engine_path' else 'which variable is the ' + key.removesuffix('_variable').replace('_', ' ')}")
             self._binding[key] = str(engine[key])
@@ -2025,7 +2538,7 @@ class Model(ts.Entity):
             if key in engine:
                 raise ValueError(f"[engine.restate] names {key}, which nothing reads: the tests take the engine's admin URL "
                                  f"and callback host from the root conftest's fixtures, so infra.toml names no variable for them")
-        self._binding["restate_engine"] = [{}]
+        self._binding["restate_engine"] = [{}] if self._engine_declared else []
         chosen: dict[str, str] = {}
         if not implementations.get("environments"):
             raise ValueError("implementations.toml declares no [environments]")
@@ -2037,8 +2550,11 @@ class Model(ts.Entity):
                 if chosen.setdefault(str(port_name), str(implementation)) != str(implementation):
                     raise ValueError(f"{port_name} is {chosen[str(port_name)]} in one environment and {implementation} in "
                                      f"{environment_name}, which needs a selector variable this renderer does not render")
-            if environment.get("engine") != "restate":
+            if self._engine_declared and environment.get("engine") != "restate":
                 raise ValueError(f"environment {environment_name} runs no restate engine")
+            if not self._engine_declared and "engine" in environment:
+                raise ValueError(f"environment {environment_name} runs the {environment['engine']} engine, and infra.toml declares "
+                                 f"no [engine]")
             if list(environment.get("hosts", [])) != ["http"]:
                 raise ValueError(f"environment {environment_name} serves hosts other than http, the one this renderer renders")
         host = infra.get("hosts", {}).get("http")
@@ -2097,14 +2613,35 @@ class Model(ts.Entity):
                     response = self._messages[("ports", Operation + "Response")]
                     request = self._messages[("ports", Operation + "Request")]
                     gateway_operations.append({
-                        "operation": operation, "Operation": Operation,
-                        "minimal": ", ".join(
-                            f"{t.field()}=()" if str(t.kind()) == "array" else f"{t.field()}={'0' if str(t.type_text()) == 'int' else chr(34) * 2}"
-                            for t in response.targets()),
+                        "operation": operation, "Operation": Operation, "calls": [], "call_tests": [],
+                        "minimal": ", ".join(f"{t.field()}={t.empty(self._chosen)}" for t in response.targets()),
                         "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
                     })
-                gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations})
-                port_exprs[port_name] = f"gateways.{Gateway}()"
+                peer = str(implementation.get("reaches", ""))
+                called = implementation.get("operations", {})
+                if called and not peer:
+                    raise ValueError(f"[implementations.{port_name}.{key}] says which operations it calls and reaches no "
+                                     f"context: a gateway that calls another context's client says reaches = \"<context>\"")
+                for called_operation, call in called.items():
+                    if called_operation not in operations:
+                        raise ValueError(f"[implementations.{port_name}.{key}.operations.{called_operation}] names an "
+                                         f"operation {port_name} does not declare")
+                    unknown_keys = sorted(set(call) - {"calls", "sends", "answers", "refused"})
+                    if unknown_keys or "calls" not in call:
+                        raise ValueError(f"[implementations.{port_name}.{key}.operations.{called_operation}] is not calls "
+                                         f"with optional sends, answers, and refused: it has {', '.join(sorted(call))}")
+                    for gateway_operation in gateway_operations:
+                        if gateway_operation["operation"] == called_operation:
+                            gateway_operation["call"] = dict(call)
+                reaches: list[dict[str, object]] = []
+                if peer:
+                    if peer == self._context:
+                        raise ValueError(f"[implementations.{port_name}.{key}] reaches {peer}, its own context: a gateway reaches a peer")
+                    reaches.append({"peer": peer, "PeerClient": str(Word(peer).pascal()) + "Client", "peer_operations": []})
+                gateways.append({"module": str(Word(Gateway).snake()), "Gateway": Gateway, "operations": gateway_operations,
+                                 "reaches": reaches, "Port": port_name, "port_param": str(Word(port_name).snake()),
+                                 "implementation": f"[implementations.{port_name}.{key}]"})
+                port_exprs[port_name] = str(Word(port_name).snake()) if peer else f"gateways.{Gateway}()"
             elif body == "supported" and key == "memory":
                 if port_name not in self._stores:
                     raise ValueError(f"{port_name} is memory, which renders a store, and it does not carry {self._aggregate}")
@@ -2123,6 +2660,9 @@ class Model(ts.Entity):
                 if issue_response is None or issue_request is None or issue_request.targets() or \
                         [str(t.kind()) for t in issue_response.targets()] != ["scalar"]:
                     raise ValueError(f"{port_name} is uuid, which renders one operation that takes nothing and issues one id")
+                if str(issue_response.targets()[0].type_text()) != "str":
+                    raise ValueError(f"{port_name} is uuid, which issues text, and {Operation}Response answers "
+                                     f"{issue_response.targets()[0].field()} as an int: implement it with body = \"agent\"")
                 uuid_repositories.append({
                     "module": "uuid_" + str(Word(port_name).snake()), "Repository": "Uuid" + port_name,
                     "repository": str(Word("Uuid" + port_name).snake()), "issue": operations[0], "Issue": Operation,
@@ -2133,6 +2673,8 @@ class Model(ts.Entity):
             else:
                 raise ValueError(f"{port_name} is implemented by {key}, a type the toolkit does not support; say body = \"agent\"")
         self._binding["gateways"] = gateways
+        self._binding["peer_gateways"] = [gateway for gateway in gateways if gateway["reaches"]]
+        self._binding["peers_reached"] = [{}] if self._binding["peer_gateways"] else []
         self._binding["memory_repositories"] = memory_repositories
         self._binding["agent_stores"] = agent_stores
         self._binding["locations"] = locations
@@ -2140,6 +2682,38 @@ class Model(ts.Entity):
         self._binding["uuid_repositories"] = uuid_repositories
         self._binding["shared_stores"] = shared_stores
         self._binding["identity_seeded"] = [{}] if seeded else []
+        self._binding["configured"] = [{}] if self._engine_declared or seeded or locations else []
+        self._binding["reads_environment"] = [{}] if self._engine_declared or locations else []
+        self._port_exprs = port_exprs
+        service_args: list[dict[str, object]] = []
+        service_dependencies = self._binding.get("dependencies", [])
+        for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
+            type_name = str(dependency["dependency_type"]).split(".", 1)[1]
+            if type_name == Orchestrator + "Relay":
+                workflow_local = str(Word("Restate" + str(Word(self._orchestration[0]).pascal())).snake())
+                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.engine_url, {workflow_local})"})
+            elif type_name in port_exprs:
+                service_args.append({"expr": port_exprs[type_name]})
+            else:
+                service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
+        self._binding["service_args"] = service_args
+        imported = {"activities", "workflows"} if self._engine_declared else set()
+        if self._relay_ops.get(Orchestrator + "Relay"):
+            imported.add("dispatchers")
+        if any(not gateway["reaches"] for gateway in gateways):
+            imported.add("gateways")
+        if memory_repositories or uuid_repositories or agent_stores:
+            imported.add("repositories")
+        self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
+
+    def restate(self) -> None:
+        if not self._engine_declared:
+            for name in ("activities", "application_clients", "first_activity", "containers", "workflows", "http_dispatchers"):
+                self._binding[name] = []
+            return
+        identity = self._identity
+        Orchestrator = self._Orchestrator
+        port_exprs = self._port_exprs
         operation_name, steps = self._orchestration
         activities: list[dict[str, object]] = []
         used: list[str] = []
@@ -2250,25 +2824,6 @@ class Model(ts.Entity):
             workflow, module="restate_http_" + str(Word(Orchestrator).snake()) + "_relay",
             Dispatcher="RestateHttp" + Orchestrator + "Relay", start_methods=start_methods, run_methods=run_methods,
         )] if start_methods or run_methods else []
-        service_args: list[dict[str, object]] = []
-        service_dependencies = self._binding.get("dependencies", [])
-        for dependency in service_dependencies if isinstance(service_dependencies, list) else []:
-            type_name = str(dependency["dependency_type"]).split(".", 1)[1]
-            if type_name == Orchestrator + "Relay":
-                service_args.append({"expr": f"dispatchers.RestateHttp{Orchestrator}Relay(config.engine_url, {workflow['workflow_local']})"})
-            elif type_name in port_exprs:
-                service_args.append({"expr": port_exprs[type_name]})
-            else:
-                service_args.append({"expr": port_exprs[next(port for port, store in self._stores.items() if store == type_name)]})
-        self._binding["service_args"] = service_args
-        imported = {"activities", "workflows"}
-        if start_methods or run_methods:
-            imported.add("dispatchers")
-        if gateways:
-            imported.add("gateways")
-        if memory_repositories or uuid_repositories or agent_stores:
-            imported.add("repositories")
-        self._binding["component_imports"] = [{"package": name} for name in sorted(imported)]
 
     def routes(self) -> None:
         served = [str(story) for story in self._composition.get("interfaces", {}).get("http", {}).get("serves", [])]
@@ -2286,7 +2841,6 @@ class Model(ts.Entity):
                     pending.extend(child for child in children if isinstance(child, dict))
         routes: list[dict[str, object]] = []
         probes: list[dict[str, object]] = []
-        answers: list[str] = []
         routed_stories: set[str] = set()
         answered_by: dict[str, dict[str, object]] = {}
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
@@ -2312,7 +2866,12 @@ class Model(ts.Entity):
                                  f"{method} {path}, and HTTP reaches only one of them")
             when = str(story.get("when", ""))
             then = str(story.get("then", ""))
-            if method not in when.split() or path not in when.split() or str(status_code) not in then.split():
+            said = (
+                re.search(rf"(?<![A-Za-z]){method}(?![A-Za-z])", when),
+                re.search(rf"(?<![A-Za-z0-9_/{{}}-]){re.escape(path)}(?![A-Za-z0-9_/{{}}-])", when),
+                re.search(rf"(?<![0-9]){status_code}(?![0-9])", then),
+            )
+            if not all(said):
                 raise ValueError(f"{routed[0]} is {method} {path} answering {status_code}, and its own when and then "
                                  f"do not say so (when: {when!r}; then: {then!r})")
             path_fields = PATH_FIELD.findall(path)
@@ -2341,14 +2900,23 @@ class Model(ts.Entity):
             response_values = {str(t.field()): json.loads(str(self._samples.value(t))) for t in response.targets()}
             answered_by[str(story["route"])] = {
                 "operation": operation_name, "method": method, "path": path, "path_fields": path_fields,
-                "body": repr(json.dumps(body).encode()) if body else "None",
+                "body": repr(json.dumps(body).encode()) if body else "None", "sample_body": body,
                 "path_types": {str(t.field()): str(t.type_text()) for t in request.targets() if str(t.field()) in path_fields},
+                "path_samples": {str(t.field()): str(self._samples.value(t).literal(t)) for t in request.targets()
+                                 if str(t.field()) in path_fields},
             }
             routes.append({
                 "operation": operation_name, "Operation": Operation, "method": method, "path": path,
                 "status": str(status_code), "inputs": inputs, "has_inputs": [{}] if inputs else [],
                 "outputs": self._frames[("client", Operation + "Response")]["fields"],
                 "response_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in response.targets()),
+                "peer_response_sample": ", ".join(
+                    f"{t.field()}=" + str(self._samples.value(t).literal(Target(TargetSpec(
+                        field=str(t.field()), type_text=str(t.type_text()), kind=str(t.kind()), package=self._context + "_client",
+                        record=str(t.record()), element=tuple(t.element()), members=(),
+                    ))))
+                    for t in response.targets()
+                ),
                 "response_json": json.dumps(response_values),
                 "request_sample": ", ".join(f"{t.field()}={self._samples.value(t).literal(t)}" for t in request.targets()),
                 "path_params_sample": json.dumps(path_params),
@@ -2357,46 +2925,53 @@ class Model(ts.Entity):
             steps = [str(step) for step in operation.get("steps", [])]
             integers = {str(t.field()) for t in request.targets() if str(t.type_text()) == "int"}
             probe_path = "/".join(
-                segment if not PATH_FIELD.fullmatch(segment) else "0" if segment[1:-1] in integers else "never-issued"
+                segment if not PATH_FIELD.fullmatch(segment) else "-1" if segment[1:-1] in integers else "never-issued"
                 for segment in path.split("/")
             )
+            loads_at = [
+                index for index, step in enumerate(steps) if step.startswith("repository.") and step.split(".", 1)[1] in self._port_of
+                and any(str(t.kind()) == "aggregate"
+                        for t in self._messages[("ports", str(Word(step.split(".", 1)[1]).pascal()) + "Response")].targets())
+            ]
+            engine_at = [index for index, step in enumerate(steps) if step.startswith("orchestrator.")]
+            unknown = "422" if loads_at and (not engine_at or loads_at[0] < engine_at[0]) else "500"
+            probe: dict[str, object] = {"operation": operation_name, "method": method, "path": probe_path, "fills": "{}", "issues": []}
             if body:
-                probes.append({"method": method, "path": probe_path, "body": 'b"{}"'})
-                answers.append("400")
-                probes.append({"method": method, "path": probe_path, "body": repr(json.dumps(body).encode())})
-                reaches = any(step.startswith("orchestrator.") for step in steps)
-                loads = bool(path_fields) and any(step.startswith("repository.") for step in steps)
-                answers.append("500" if reaches or loads else str(status_code))
-            elif path_fields and any(step.startswith("repository.") for step in steps):
-                probes.append({"method": method, "path": probe_path, "body": "None"})
-                answers.append("500")
-        unserved = sorted(story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories)
-        if unserved:
-            raise ValueError(f"{', '.join(unserved)} has a route, and no client operation serves it")
+                probes.append(dict(probe, body='b"{}"', answer="400"))
+                if path_fields and loads_at:
+                    answer = unknown
+                elif engine_at:
+                    answer = "500"
+                else:
+                    answer = str(status_code)
+                probes.append(dict(probe, body=repr(json.dumps(body).encode()), answer=answer, body_fields=sorted(body),
+                                   issues=[str(t.field()) for t in response.targets()] if answer == str(status_code) else [],
+                                   issue_types={str(t.field()): str(t.type_text()) for t in response.targets()}))
+            elif path_fields and loads_at:
+                probes.append(dict(probe, body="None", answer=unknown))
+        self._unserved = {story_id for story_id, story in stories.items() if "route" in story and story_id not in routed_stories}
         root_tests: list[dict[str, object]] = []
         for story_id in sorted(routed_stories):
             story = stories[story_id]
             call = answered_by[str(story["route"])]
             method, path = str(call["method"]), str(call["path"])
             path_types = typing.cast(dict[str, str], call["path_types"])
+            path_samples = typing.cast(dict[str, str], call["path_samples"])
             words = "_".join([GERUNDS[method]] + [
                 "by_" + segment[1:-1] if PATH_FIELD.fullmatch(segment) else segment.replace("-", "_")
                 for segment in path.strip("/").split("/")
             ])
-            given = repr(f"write the given of {story_id}: {story.get('given', '')}")
             root_tests.append({
                 "module": f"test_{words}", "Words": str(Word(words).pascal()), "story": story_id.replace("-", "_"),
-                "method": method, "path": path, "body": call["body"],
-                "status": str(story["status"]), "given": given,
-                "path_values": [{"name": name, "type": kind} for name, kind in path_types.items()],
-                "given_check": " and ".join(f"{name} is not None" for name in path_types) or "False",
-                "then": repr(f"write the then of {story_id}: {story.get('then', '')}"),
+                "operation": call["operation"], "sample_body": call["sample_body"], "given_params": "", "issues_any": [],
+                "method": method, "path": path, "body": call["body"], "status": str(story["status"]),
+                "path_values": [{"name": name, "type": kind, "sample": path_samples[name]} for name, kind in path_types.items()],
+                "story_text": repr(f"{story_id}: given {story.get('given', '')}; then {story.get('then', '')}"),
             })
         self._binding["root_tests"] = root_tests
         self._binding["root_tier"] = [{}] if root_tests else []
         self._binding["routes"] = routes
         self._binding["route_probes"] = probes
-        self._binding["route_probe_answers"] = ", ".join(answers)
 
     def traced(self) -> None:
         pending: list[dict[str, object]] = list(self._story.get("jtbds", []))
@@ -2409,30 +2984,267 @@ class Model(ts.Entity):
                 if isinstance(children, list):
                     pending.extend(child for child in children if isinstance(child, dict))
         text = "\n".join(prose)
-        pieces: list[tuple[str, str]] = []
-        for enum, members in self._enums.items():
-            pieces.extend((f"enum {enum} value {member}", member) for member in members)
+        pieces: list[tuple[str, str, bool]] = [
+            (f"enum {enum} value {member}", member, True) for enum, members in self._enums.items() for member in members
+        ]
         for operation_name, operation in self._composition.get("client", {}).get("operations", {}).items():
             for side in ("request", "response"):
-                pieces.extend((f"client operation {operation_name} {side} field {field}", str(field))
+                pieces.extend((f"client operation {operation_name} {side} field {str(field).split(':', 1)[0].strip()}",
+                               str(field).split(":", 1)[0].strip(), False)
                               for field in operation.get(side, []))
-        pieces.extend((f"aggregate read {field}", field) for field, _ in self._reads)
+        pieces.extend((f"aggregate read {field}", field, False) for field, _ in self._reads)
         for signal_name, signal in self._composition.get("signals", {}).items():
-            pieces.extend((f"signal {signal_name} payload field {field}", str(field)) for field in signal.get("payload", []))
+            pieces.extend((f"signal {signal_name} payload field {field}", str(field), False) for field in signal.get("payload", []))
         for command, table in self._commands.items():
-            pieces.extend((f"command {command} outcome {outcome}", str(outcome)) for outcome in list(table.get("outcomes", []))[1:])
+            pieces.extend((f"command {command} outcome {outcome}", str(outcome), False) for outcome in list(table.get("outcomes", []))[1:])
         untraced = [
+            f"{piece} is named by no story and is no term in language.toml: write it in a story's given, when, or then, "
+            f"define it as a term in language.toml, or remove it from the composition" if termed else
             f"{piece} is named by no story: write it in a story's given, when, or then, or remove it from the composition"
-            for piece, name in pieces
-            if re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
+            for piece, name, termed in pieces
+            if not (termed and name.lower() in self._language_words)
+            and re.search(r"(?<![A-Za-z0-9_])" + re.escape(name).replace("_", "[_ ]") + r"(?![A-Za-z0-9_])", text, re.IGNORECASE) is None
         ]
         if untraced:
             raise ValueError(*untraced)
 
+    def join(self, model: Model) -> None:
+        self._joined.append(model)
+
+    def compose(self) -> None:
+        models = [self, *self._joined]
+        declared = {model._context: model for model in models}
+        if len(models) > 1 and any(model._engine_declared for model in models):
+            raise ValueError("the composition declares more than one context and infra.toml declares an [engine]: a composition "
+                             "of several contexts renders without an engine")
+        unserved = set.intersection(*(model._unserved for model in models))
+        if unserved:
+            raise ValueError(f"{', '.join(sorted(unserved))} has a route, and no client operation serves it")
+        owners: dict[str, str] = {}
+        for model in models:
+            for port_name in model._port_ops:
+                if port_name in owners:
+                    raise ValueError(f"contexts {owners[port_name]} and {model._context} both declare port {port_name}, and "
+                                     f"implementations.toml names a port once, so one context declares it")
+                owners[port_name] = model._context
+        ordered: list[Model] = []
+        remaining = list(models)
+        while remaining:
+            reached = {
+                model._context: [str(typing.cast(list[dict[str, object]], gateway["reaches"])[0]["peer"])
+                                 for gateway in typing.cast(list[dict[str, object]], model._binding["peer_gateways"])]
+                for model in remaining
+            }
+            for context, peers in reached.items():
+                for peer in peers:
+                    if peer not in declared:
+                        raise ValueError(f"context {context} has a gateway that reaches {peer}, and no composition in the "
+                                         f"directory declares context {peer}")
+            ready = [model for model in remaining if all(peer in [done._context for done in ordered] for peer in reached[model._context])]
+            if not ready:
+                raise ValueError(f"contexts {', '.join(sorted(reached))} reach each other in a cycle, so none can be built first")
+            ordered.append(ready[0])
+            remaining.remove(ready[0])
+        for model in models:
+            for gateway in typing.cast(list[dict[str, object]], model._binding["peer_gateways"]):
+                reach = typing.cast(list[dict[str, object]], gateway["reaches"])[0]
+                reach["peer_operations"] = [
+                    {"operation": route["operation"], "Operation": route["Operation"], "peer_response_sample": route["peer_response_sample"]}
+                    for route in typing.cast(list[dict[str, object]], declared[str(reach["peer"])]._binding["routes"])
+                ]
+        for model in models:
+            for other in models:
+                if other is not model and other not in model._joined:
+                    model.join(other)
+            model.reach()
+        bindings = [model._binding for model in ordered]
+        issuers: dict[str, dict[str, object]] = {}
+        for model in models:
+            for probe in typing.cast(list[dict[str, object]], model._binding["route_probes"]):
+                if model._identity in typing.cast(list[str], probe["issues"]) and model._identity not in issuers:
+                    issuers[model._identity] = probe
+        helpers: dict[str, dict[str, object]] = {}
+        issued_routes: list[tuple[str, str, str, str]] = []
+        for model in models:
+            for test in typing.cast(list[dict[str, object]], model._binding["root_tests"]):
+                sampled = [probe for probe in typing.cast(list[dict[str, object]], model._binding["route_probes"])
+                           if probe["operation"] == test["operation"] and "body_fields" in probe]
+                fills = typing.cast(dict[str, str], json.loads(str(sampled[0]["fills"]))) if sampled else {}
+                for identity in fills.values():
+                    issuer = issuers[identity]
+                    helpers[identity] = {
+                        "helper": "issued_" + identity, "identity": identity,
+                        "type": typing.cast(dict[str, str], issuer["issue_types"])[identity],
+                        "verb": str(issuer["method"]).lower(), "path": str(issuer["path"]),
+                        "helper_json": json.dumps(json.loads(ast.literal_eval(str(issuer["body"])))),
+                    }
+                if not fills:
+                    continue
+                test["given_params"] = "".join(f", issued_{identity}: {helpers[identity]['type']}" for identity in dict.fromkeys(fills.values()))
+                test["issues_any"] = [{}]
+                test["body"] = "json.dumps({" + ", ".join(
+                    f"{json.dumps(field)}: {'issued_' + fills[field] if field in fills else json.dumps(value)}"
+                    for field, value in typing.cast(dict[str, object], test["sample_body"]).items()) + "}).encode()"
+                issued_routes.extend((str(test["method"]), str(test["path"]), "issued_" + identity, field)
+                                     for field, identity in fills.items() if "{" not in str(test["path"]))
+        locations: list[dict[str, object]] = []
+        for binding in bindings:
+            for location in typing.cast(list[dict[str, object]], binding["locations"]):
+                if not any(known["location_attr"] == location["location_attr"] for known in locations):
+                    locations.append(location)
+        root = dict(self._binding)
+        root["contexts"] = bindings
+        root["contexts_reversed"] = list(reversed(bindings))
+        root["root_tests"] = [test for binding in bindings for test in typing.cast(list[dict[str, object]], binding["root_tests"])]
+        root["root_tier"] = [{}] if root["root_tests"] else []
+        root["given_helpers"] = [helpers[identity] for identity in sorted(helpers)]
+        root["issued_routes"] = json.dumps(issued_routes)
+        root["route_probes"] = [probe for binding in bindings for probe in typing.cast(list[dict[str, object]], binding["route_probes"])]
+        root["route_probe_answers"] = ", ".join(str(probe["answer"]) for probe in typing.cast(list[dict[str, object]], root["route_probes"]))
+        root["locations"] = locations
+        root["located"] = [{}] if locations else []
+        root["identity_seeded_any"] = [{}] if any(binding["identity_seeded"] for binding in bindings) else []
+        root["reads_environment_any"] = [{}] if any(binding["reads_environment"] for binding in bindings) else []
+        self._root = root
+
+    def reach(self) -> None:
+        declared = {model._context: model for model in [self, *self._joined]}
+        called: dict[str, tuple[Model, str, dict[str, str], str]] = {}
+        for gateway in typing.cast(list[dict[str, object]], self._binding["peer_gateways"]):
+            reach = typing.cast(list[dict[str, object]], gateway["reaches"])[0]
+            peer = declared[str(reach["peer"])]
+            where = str(gateway["implementation"])
+            rejecting = False
+            for operation in typing.cast(list[dict[str, object]], gateway["operations"]):
+                if "call" not in operation:
+                    continue
+                call = typing.cast(dict[str, object], operation["call"])
+                operation_name = str(operation["operation"])
+                Operation = str(operation["Operation"])
+                at = f"{where[:-1]}.operations.{operation_name}]"
+                peer_operation = str(call["calls"])
+                if peer_operation not in peer._composition.get("client", {}).get("operations", {}):
+                    raise ValueError(f"{at} calls {peer_operation}, which context {peer._context}'s client does not declare")
+                PeerOperation = str(Word(peer_operation).pascal())
+                peer_request = peer._messages[("client", PeerOperation + "Request")]
+                peer_response = peer._messages[("client", PeerOperation + "Response")]
+                request = self._messages[("ports", Operation + "Request")]
+                response = self._messages[("ports", Operation + "Response")]
+                tables = {key: call.get(key, {}) for key in ("sends", "answers", "refused")}
+                for key, table in tables.items():
+                    if not isinstance(table, dict):
+                        raise ValueError(f"{at} {key} is not a table of fields")
+                sends = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["sends"]).items()}
+                answers = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["answers"]).items()}
+                refused = {str(k): str(v) for k, v in typing.cast(dict[str, object], tables["refused"]).items()}
+                ours = {str(t.field()): t for t in request.targets()}
+                theirs = {str(t.field()): t for t in peer_response.targets()}
+                param = operation_name + "_request"
+                local = peer_operation + "_response"
+                sent: list[str] = []
+                for target in peer_request.targets():
+                    field = str(target.field())
+                    source = sends.get(field, field)
+                    if source not in ours:
+                        raise ValueError(f"{at} sends {peer._context}'s {field} from {source}, which {operation_name} does not "
+                                         f"take: say sends = {{ {field} = \"<a field {operation_name} takes>\" }}")
+                    if str(ours[source].kind()) != "scalar" or str(ours[source].type_text()) != str(target.type_text()):
+                        raise ValueError(f"{at} sends {peer._context}'s {field}, a {target.type_text()}, from {source}, a "
+                                         f"{ours[source].type_text()}: a call sends a str or an int as the same type")
+                    sent.append(f"{field}={param}.{source}")
+                strays = sorted(set(sends) - {str(t.field()) for t in peer_request.targets()})
+                if strays:
+                    raise ValueError(f"{at} sends {', '.join(strays)}, which {peer._context}'s {peer_operation} does not take")
+                answered: list[str] = []
+                fallen: list[str] = []
+                checks: list[dict[str, object]] = []
+                refused_checks: list[dict[str, object]] = []
+                reads_peer = False
+                outcome = self._outcome_of.get(Operation + "Response")
+                named_fields = {str(t.field()) for t in response.targets() if str(t.kind()) != "outcome"} | (
+                    {outcome[0]} if outcome is not None else set())
+                for target in response.targets():
+                    field = str(target.field())
+                    kind = str(target.kind())
+                    if kind == "outcome" and outcome is not None:
+                        spec_field, Outcome, Enum = outcome
+                        member = answers.get(spec_field, self._success[Outcome])
+                        refused_member = refused.get(spec_field, member)
+                        for named, chosen in (("answers", member), ("refused", refused_member)):
+                            if chosen not in self._outcome_enums[Outcome]:
+                                raise ValueError(f"{at} {named} {spec_field} as {chosen}, which {Enum} does not list")
+                        answered.append(f"{field}=ports.{Outcome}.{member.upper()}")
+                        fallen.append(f"{field}=ports.{Outcome}.{refused_member.upper()}")
+                        checks.append({"check": f"{operation_name}_response.{field} is ports.{Outcome}.{member.upper()}"})
+                        refused_checks.append({"check": f"{operation_name}_response.{field} is ports.{Outcome}.{refused_member.upper()}"})
+                        continue
+                    if field in refused:
+                        raise ValueError(f"{at} refused names {field}, a {target.type_text()}: refused gives an enum field "
+                                         f"its member, and every other field answers empty")
+                    source = answers.get(field, field)
+                    if kind != "scalar" or source not in theirs or str(theirs[source].kind()) != "scalar" or \
+                            str(theirs[source].type_text()) != str(target.type_text()):
+                        raise ValueError(f"{at} answers {field}, a {target.type_text()}, from {peer._context}'s {source}, which "
+                                         f"{peer_operation} does not answer as a {target.type_text()}: say answers = "
+                                         f"{{ {field} = \"<a field {peer_operation} answers>\" }}, or leave out this "
+                                         f"operation's calls and write the call by hand")
+                    answered.append(f"{field}={local}.{source}")
+                    fallen.append(f"{field}={target.empty(self._chosen)}")
+                    reads_peer = True
+                    expected = str(Sample(str(peer._samples.value(theirs[source]))).literal(target))
+                    checks.append({"check": f"{operation_name}_response.{field} == {expected}"})
+                    refused_checks.append({"check": f"{operation_name}_response.{field} == {target.empty(self._chosen)}"})
+                strays = sorted(set(answers) - named_fields)
+                strays += sorted(set(refused) - named_fields)
+                if strays:
+                    raise ValueError(f"{at} names {', '.join(strays)}, which {operation_name} does not answer")
+                refusable = "refused" in call
+                rejecting = rejecting or refusable
+                operation["calls"] = [{
+                    "peer": peer._context, "peer_operation": peer_operation, "PeerOperation": PeerOperation,
+                    "PeerRejected": peer._Aggregate + "Rejected", "sent": ", ".join(sent), "answered": ", ".join(answered),
+                    "assign": f"{local} = " if reads_peer else "",
+                    "refusable": [{"refused": ", ".join(fallen)}] if refusable else [],
+                }]
+                operation["call_tests"] = [{
+                    "checks": checks, "refusal": [{"refused_checks": refused_checks}] if refusable else [],
+                }]
+                loads = any(
+                    str(step).startswith("repository.") and any(
+                        str(t.kind()) == "aggregate"
+                        for t in peer._messages.get(("ports", str(Word(str(step).split(".", 1)[1]).pascal()) + "Response"),
+                                                    Record(RecordSpec(module="", name="", base="", snapshot=False))).targets())
+                    for step in peer._composition["client"]["operations"][peer_operation].get("steps", []))
+                fed = sends.get(peer._identity, peer._identity) if loads and peer._identity in {str(t.field()) for t in peer_request.targets()} else ""
+                called[operation_name] = (peer, fed, refused if refusable else {}, "refusable" if refusable else "")
+            reach["rejecting"] = [{}] if rejecting else []
+            reach["PeerRejected"] = peer._Aggregate + "Rejected"
+        for probe in typing.cast(list[dict[str, object]], self._binding["route_probes"]):
+            if "body_fields" not in probe:
+                continue
+            operation = self._composition["client"]["operations"][str(probe["operation"])]
+            fills: dict[str, str] = {}
+            for step in [str(step) for step in operation.get("steps", [])]:
+                if step.split(".", 1)[1] not in called:
+                    continue
+                peer, fed, refused, catches = called[step.split(".", 1)[1]]
+                if not fed:
+                    continue
+                issued = any(peer._identity in typing.cast(list[str], peer_probe["issues"])
+                             for peer_probe in typing.cast(list[dict[str, object]], peer._binding["route_probes"]))
+                if fed in typing.cast(list[str], probe["body_fields"]) and issued:
+                    fills[fed] = peer._identity
+                elif not catches:
+                    probe["answer"] = "500" if str(probe["answer"]).startswith("2") else probe["answer"]
+                elif any(when in refused and refused[when] in members
+                         for _, when, members, _ in self._refusals.get(str(probe["operation"]), [])):
+                    probe["answer"] = "422" if str(probe["answer"]).startswith("2") else probe["answer"]
+            probe["fills"] = json.dumps(fills)
+
     def scope(self) -> Scope:
         table: list[str] = []
         indexes: dict[int, int] = {}
-        stack: list[tuple[dict[str, object], bool]] = [(self._binding, False)]
+        stack: list[tuple[dict[str, object], bool]] = [(self._root, False)]
         while stack:
             node, done = stack.pop()
             if not done:
@@ -2451,7 +3263,338 @@ class Model(ts.Entity):
                     frame[key] = [indexes[id(child)] for child in bound if isinstance(child, dict)]
             indexes[id(node)] = len(table)
             table.append(json.dumps(frame))
-        return Scope((tuple(table), (indexes[id(self._binding)],)))
+        return Scope((tuple(table), (indexes[id(self._root)],)))
+
+
+class Digest(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        normalized = "\n".join(line.rstrip() for line in value.splitlines()).strip("\n")
+        object.__setattr__(self, "_value", hashlib.sha256(normalized.encode()).hexdigest()[:16])
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class LevelSpec(ts.Spec):
+
+    def __init__(
+        self,
+        path: str,
+        mode: str,
+        records: tuple[tuple[str, str], ...],
+        rendered: tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...]], ...],
+        existing: tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...]], ...],
+    ) -> None:
+        self.path = path
+        self.mode = mode
+        self.records = records
+        self.rendered = rendered
+        self.existing = existing
+
+
+class Level(ts.Entity):
+
+    def __init__(self, spec: LevelSpec) -> None:
+        self._path = spec.path
+        self._kept: list[Text] = []
+        self._conflicts: list[Text] = []
+        self._drift: list[Text] = []
+        records = dict(spec.records)
+        wanted = {row[0]: row for row in spec.rendered}
+        placed: list[tuple[str, str, str]] = []
+        for key, name, lead, text, members in spec.existing:
+            whole = text + "".join(member_lead + member_text for _, _, member_lead, member_text in members)
+            row = wanted.get(key)
+            if row is None:
+                untouched = spec.mode == RECORDED and records.get(key) == str(Digest(text)) and all(
+                    records.get(member_key) == str(Digest(member_text)) for member_key, _, _, member_text in members
+                )
+                if untouched and not key.startswith(("import ", "from ")):
+                    self._drift.append(Text(f"{spec.path}: {name} is no longer rendered"))
+                elif not untouched:
+                    self._kept.append(Text(name))
+                    placed.append((key, lead, whole))
+                continue
+            _, rendered_name, _, rendered_text, rendered_members = row
+            split = bool(members) and bool(rendered_members)
+            rendered_whole = rendered_text + "".join(member_lead + member_text for _, _, member_lead, member_text in rendered_members)
+            ours, theirs = (text, rendered_text) if split else (whole, rendered_whole)
+            recorded = records.get(key)
+            chosen = theirs
+            if Digest(ours) == Digest(theirs):
+                chosen = theirs
+            elif spec.mode == RECORDED and recorded == str(Digest(ours)):
+                self._drift.append(Text(f"{spec.path}: {rendered_name} differs from what the composition renders"))
+            else:
+                chosen = ours
+                self._kept.append(Text(name))
+                if spec.mode == RECORDED and recorded != str(Digest(theirs)):
+                    self._conflicts.append(Text(name))
+                    self._drift.append(Text(f"{spec.path}: {name} was edited by hand, and the composition now renders it differently"))
+            if split:
+                level = Level(LevelSpec(
+                    path=spec.path, mode=spec.mode, records=spec.records,
+                    rendered=tuple((member_key, member_name, member_lead, member_text, ())
+                                   for member_key, member_name, member_lead, member_text in rendered_members),
+                    existing=tuple((member_key, member_name, member_lead, member_text, ())
+                                   for member_key, member_name, member_lead, member_text in members),
+                ))
+                self._kept.extend(level.kept())
+                self._conflicts.extend(level.conflicts())
+                self._drift.extend(level.drift())
+                chosen += "".join(str(piece) for piece in level.placed())
+            placed.append((key, lead, chosen))
+        for index, (key, name, lead, text, members) in enumerate(spec.rendered):
+            if any(placed_key == key for placed_key, _, _ in placed):
+                continue
+            if not key.startswith(("import ", "from ")):
+                self._drift.append(Text(f"{spec.path}: {name} is missing"))
+            position = 0
+            for earlier in reversed(spec.rendered[:index]):
+                at = [spot for spot, (placed_key, _, _) in enumerate(placed) if placed_key == earlier[0]]
+                if at:
+                    position = at[0] + 1
+                    break
+            placed.insert(position, (key, lead, text + "".join(member_lead + member_text for _, _, member_lead, member_text in members)))
+        self._placed = tuple(Text(lead + text) for _, lead, text in placed)
+
+    @property
+    def identity(self) -> str:
+        return self._path
+
+    def placed(self) -> tuple[Text, ...]:
+        return self._placed
+
+    def kept(self) -> tuple[Text, ...]:
+        return tuple(self._kept)
+
+    def conflicts(self) -> tuple[Text, ...]:
+        return tuple(self._conflicts)
+
+    def drift(self) -> tuple[Text, ...]:
+        return tuple(self._drift)
+
+
+class RootTestSpec(ts.Spec):
+
+    def __init__(self, path: str, source: str, issued: str) -> None:
+        self.path = path
+        self.source = source
+        self.issued = issued
+
+
+class RootTest(ts.ValueObject):
+
+    _unissued: tuple[Text, ...]
+
+    def __init__(self, spec: RootTestSpec) -> None:
+        statements = ast.parse(spec.source).body
+        found: list[Text] = []
+        for owner, node in [("", top) for top in statements] + [
+            (top.name + ".", member) for top in statements if isinstance(top, ast.ClassDef) for member in top.body
+        ]:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            text = ast.get_source_segment(spec.source, node) or ""
+            for method, route, fixture, field in typing.cast(list[list[str]], json.loads(spec.issued)):
+                if f"{{host}}{route}\"" in text and f"\"{method}\"" in text and fixture not in text:
+                    found.append(Text(
+                        f"{spec.path}: {owner}{node.name}, written by hand, calls {method} {route} and does not take the "
+                        f"{fixture} fixture: take it, and send it as {field}, which {method} {route} looks up in another context"))
+        object.__setattr__(self, "_unissued", tuple(found))
+
+    def unissued(self) -> tuple[Text, ...]:
+        return self._unissued
+
+
+class MergeSpec(ts.Spec):
+
+    def __init__(self, path: str, rendered: str, existing: str, records: tuple[tuple[str, str], ...], mode: str) -> None:
+        self.path = path
+        self.rendered = rendered
+        self.existing = existing
+        self.records = records
+        self.mode = mode
+
+
+class Merge(ts.Entity):
+
+    def __init__(self, spec: MergeSpec) -> None:
+        self._path = spec.path
+        self._kept: list[Text] = []
+        self._conflicts: list[Text] = []
+        self._drift: list[Text] = []
+        self._text = Text(spec.rendered)
+        records = dict(spec.records)
+        if not spec.path.endswith(".py"):
+            self._recorded: tuple[Text, ...] = (Text(f"{Digest(spec.rendered)}\t{spec.path}\t{WHOLE}"),)
+            recorded = records.get(WHOLE)
+            if Digest(spec.existing) == Digest(spec.rendered):
+                return
+            if spec.mode == GENERATED or (spec.mode == RECORDED and recorded == str(Digest(spec.existing))):
+                self._drift.append(Text(f"{spec.path} differs from what the composition renders"))
+                return
+            self._text = Text(spec.existing)
+            self._kept.append(Text(spec.path))
+            if spec.mode == RECORDED and recorded != str(Digest(spec.rendered)):
+                self._conflicts.append(Text(spec.path))
+                self._drift.append(Text(f"{spec.path} was edited by hand, and the composition now renders it differently"))
+            return
+        layouts: list[tuple[str, tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool], ...], str]] = []
+        for source in (spec.rendered,) if spec.mode == GENERATED else (spec.rendered, spec.existing):
+            try:
+                statements = ast.parse(source).body
+            except SyntaxError as error:
+                raise ValueError(f"line {error.lineno}: {error.msg}") from error
+            lines = source.splitlines(keepends=True)
+            spots: dict[int, tuple[int, str, str]] = {}
+            for statement in [*statements, *(member for top in statements if isinstance(top, ast.ClassDef) for member in top.body)]:
+                start = statement.lineno
+                if isinstance(statement, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    start = min([start] + [decorator.lineno for decorator in statement.decorator_list])
+                if isinstance(statement, (ast.Import, ast.ImportFrom)):
+                    key = name = ast.unparse(statement)
+                elif isinstance(statement, ast.ClassDef):
+                    key, name = f"class {statement.name}", statement.name
+                elif isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    key, name = f"def {statement.name}", statement.name
+                elif isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
+                    key, name = f"{statement.targets[0].id} =", statement.targets[0].id
+                elif isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+                    key, name = f"{statement.target.id} =", statement.target.id
+                else:
+                    key = name = lines[statement.lineno - 1].strip()
+                spots[id(statement)] = (start, key, name)
+            first = spots[id(statements[0])][0] if statements else len(lines) + 1
+            head = 0
+            while head < first - 1 and lines[head].startswith("#"):
+                head += 1
+            headers: dict[int, int] = {}
+            for top in statements:
+                if isinstance(top, ast.ClassDef) and spots[id(top.body[0])][0] > top.lineno:
+                    header_end = spots[id(top.body[0])][0] - 1
+                    while header_end > spots[id(top)][0] and (
+                        not lines[header_end - 1].strip() or lines[header_end - 1].lstrip().startswith("#")
+                    ):
+                        header_end -= 1
+                    headers[id(top)] = header_end
+            work: list[tuple[list[ast.stmt], int, str, str, int]] = [
+                (top.body, headers[id(top)], spots[id(top)][1] + NESTED, spots[id(top)][2] + ".", id(top))
+                for top in statements if isinstance(top, ast.ClassDef) and id(top) in headers
+            ]
+            work.append((statements, head, "", "", 0))
+            levels: dict[int, tuple[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool], ...]] = {}
+            for body, after, prefix, owner, owner_id in work:
+                rows: list[tuple[str, str, str, str, tuple[tuple[str, str, str, str], ...], bool]] = []
+                seen: dict[str, int] = {}
+                previous = after
+                for statement in body:
+                    start, key, name = spots[id(statement)]
+                    end = statement.end_lineno or start
+                    seen[key] = seen.get(key, 0) + 1
+                    if seen[key] > 1:
+                        key, name = f"{key} #{seen[key]}", f"{name} #{seen[key]}"
+                    text = "".join(lines[start - 1 : headers.get(id(statement), end) if owner_id == 0 else end])
+                    members = tuple(row[:4] for row in levels.get(id(statement), ())) if owner_id == 0 else ()
+                    rows.append((
+                        prefix + key, owner + name, "".join(lines[previous : start - 1]),
+                        text if text.endswith("\n") else text + "\n", members,
+                        isinstance(statement, (ast.Import, ast.ImportFrom)),
+                    ))
+                    previous = end
+                levels[owner_id] = tuple(rows)
+            last = max((statement.end_lineno or 0) for statement in statements) if statements else head
+            layouts.append(("".join(lines[:head]), levels[0], "".join(lines[last:])))
+        head_text, module_rows, tail = layouts[0]
+        self._recorded = (Text(f"{Digest(spec.rendered)}\t{spec.path}\t{WHOLE}"),) + tuple(
+            Text(f"{Digest(text)}\t{spec.path}\t{key}")
+            for row_key, _, _, row_text, members, _ in module_rows
+            for key, text in [(row_key, row_text), *((member_key, member_text) for member_key, _, _, member_text in members)]
+        )
+        if spec.mode == GENERATED:
+            if spec.existing != spec.rendered:
+                self._drift.append(Text(f"{spec.path} differs from what the composition renders"))
+            return
+        pieces: list[str] = [head_text]
+        for imported in (True, False):
+            level = Level(LevelSpec(
+                path=spec.path, mode=spec.mode, records=spec.records,
+                rendered=tuple(row[:5] for row in module_rows if row[5] == imported),
+                existing=tuple(row[:5] for row in layouts[1][1] if row[5] == imported),
+            ))
+            self._kept.extend(level.kept())
+            self._conflicts.extend(level.conflicts())
+            self._drift.extend(level.drift())
+            pieces.extend(str(piece) for piece in level.placed())
+        if self._kept:
+            self._text = Text("".join(pieces) + tail)
+
+    @property
+    def identity(self) -> str:
+        return self._path
+
+    def text(self) -> Text:
+        return self._text
+
+    def kept(self) -> tuple[Text, ...]:
+        return tuple(self._kept)
+
+    def conflicts(self) -> tuple[Text, ...]:
+        return tuple(self._conflicts)
+
+    def drift(self) -> tuple[Text, ...]:
+        return tuple(self._drift)
+
+    def recorded(self) -> tuple[Text, ...]:
+        return self._recorded
+
+
+class RenamingSpec(ts.Spec):
+
+    def __init__(self, before: tuple[tuple[str, str], ...], after: tuple[tuple[str, str], ...]) -> None:
+        self.before = before
+        self.after = after
+
+
+class Renaming(ts.ValueObject):
+
+    _pairs: Pairs
+
+    def __init__(self, spec: RenamingSpec) -> None:
+        after = dict(spec.after)
+        pairs: dict[str, str] = {}
+        for role, old in spec.before:
+            new = after.get(role, old)
+            if new == old or not SNAKE.fullmatch(old) or not SNAKE.fullmatch(new):
+                continue
+            for spell in (Word.plural, Word.pascal, Word.upper):
+                pairs[str(spell(Word(old)))] = str(spell(Word(new)))
+            pairs[str(Word(old).plural().pascal())] = str(Word(new).plural().pascal())
+            pairs[str(Word(old).plural().upper())] = str(Word(new).plural().upper())
+            pairs[old] = new
+        object.__setattr__(self, "_pairs", Pairs(tuple(sorted(pairs.items(), key=str, reverse=True))))
+
+    def apply(self, text: str) -> Text:
+        olds = sorted((old for old, _ in self._pairs), key=len, reverse=True)
+        if not olds:
+            return Text(text)
+        pattern = re.compile("|".join(
+            f"(?<![A-Z0-9]){re.escape(old)}(?![A-Z0-9])" if old.isupper()
+            else f"(?<![A-Z]){re.escape(old)}(?![a-z])" if old[:1].isupper()
+            else f"(?<![a-z0-9]){re.escape(old)}(?![a-z0-9])"
+            for old in olds
+        ))
+        pieces: list[str] = []
+        position = 0
+        for match in pattern.finditer(text):
+            pieces.append(text[position : match.start()])
+            pieces.append(str(self._pairs.get(match.group(0))))
+            position = match.end()
+        pieces.append(text[position:])
+        return Text("".join(pieces))
 
 
 class RenderedFileSpec(ts.Spec):
@@ -2513,22 +3656,34 @@ class RenderedTree(ts.AggregateRoot):
         if spec.target == "not_directory":
             found.append(Text("the output directory is a file"))
         rendered: list[RenderedFile] = []
+        issued = ""
         if not found:
             try:
-                model = Model(ModelSpec(
-                    language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts["composition"],
-                    implementations=texts["implementations"], generator=texts["generator"],
-                ))
-                model.messages()
-                model.bodies()
-                model.actions()
-                model.orchestrator()
-                model.publish()
-                model.stub()
-                model.engine()
-                model.routes()
-                model.traced()
-                scope = model.scope()
+                models: list[Model] = []
+                for name in ["composition", *sorted(name for name in texts if name.startswith("composition."))]:
+                    model = Model(ModelSpec(
+                        language=texts["language"], story=texts["story"], infra=texts["infra"], composition=texts[name],
+                        implementations=texts["implementations"], generator=texts["generator"],
+                    ))
+                    if name != "composition" and model.identity != name.removeprefix("composition."):
+                        raise ValueError(f"{name}.toml declares context {model.identity}, and the composition of a further "
+                                         f"context is named composition.<context>.toml")
+                    model.messages()
+                    model.bodies()
+                    model.actions()
+                    model.orchestrator()
+                    model.publish()
+                    model.stub()
+                    model.engine()
+                    model.restate()
+                    model.routes()
+                    model.traced()
+                    models.append(model)
+                for model in models[1:]:
+                    models[0].join(model)
+                models[0].compose()
+                scope = models[0].scope()
+                issued = str(scope.value("issued_routes"))
                 for path, text in spec.pieces:
                     template = Template(path.removesuffix(TEMPLATE_SUFFIX))
                     for placed in template.place(scope):
@@ -2536,7 +3691,8 @@ class RenderedTree(ts.AggregateRoot):
                             path=str(template.unguarded().render(placed)),
                             content=str(Template(text).render(placed)),
                         )))
-                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\n")))
+                named = "\t".join(f"{role}={scope.value(role)}" for role in ("context", "aggregate", "identity"))
+                rendered.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=f"{spec.composition}\nnames\t{named}\n")))
             except KeyError as missing:
                 found.append(Text(f"a spec lacks the key {missing.args[0]}"))
             except (ValueError, TypeError) as problem:
@@ -2550,28 +3706,108 @@ class RenderedTree(ts.AggregateRoot):
                 found.append(Text(f"a piece renders the path {path!r}, which leaves the output directory"))
         self._faults = tuple(found)
         existing = dict(spec.existing)
+        records: dict[str, list[tuple[str, str]]] = {}
+        before: list[tuple[str, str]] = []
+        after: list[tuple[str, str]] = []
+        for source, line in [("existing", line) for line in existing.get(RENDERED_FROM, "").splitlines()[1:]] + [
+            ("rendered", line) for rendered_file in rendered if str(rendered_file.path()) == RENDERED_FROM
+            for line in str(rendered_file.content()).splitlines()[1:]
+        ]:
+            fields = line.split("\t")
+            if fields[0] == "names":
+                (before if source == "existing" else after).extend(
+                    (field.split("=", 1)[0], field.split("=", 1)[1]) for field in fields[1:] if "=" in field
+                )
+            elif len(fields) == 3 and source == "existing":
+                records.setdefault(fields[1], []).append((fields[2], fields[0]))
+        renaming = Renaming(RenamingSpec(before=tuple(before), after=tuple(after)))
+        rendered_paths = {str(rendered_file.path()) for rendered_file in rendered}
+        carried = {
+            str(renaming.apply(path)): path for path in records
+            if path not in rendered_paths and path in existing and str(renaming.apply(path)) in rendered_paths
+            and str(renaming.apply(path)) not in existing
+        }
         written: list[RenderedFile] = []
         kept: list[Text] = []
         drift: list[Text] = []
+        recorded: list[str] = []
+        composed = ""
         for rendered_file in sorted(rendered, key=str):
             path = str(rendered_file.path())
             content = str(rendered_file.content())
-            agents = content.startswith(AGENT_MARKER)
-            if not agents and path not in existing:
-                drift.append(Text(f"{path} is missing"))
-            elif not agents and existing[path] != content:
-                marked = not content.startswith(GENERATED_MARKER) or existing[path].startswith(GENERATED_MARKER)
-                drift.append(Text(f"{path} differs from what the composition renders" if marked else f"{path} has lost its generated mark"))
-            if path not in existing or existing[path] == content:
-                written.append(rendered_file)
-            elif agents:
-                kept.append(Text(path))
-            elif content.startswith(GENERATED_MARKER) and existing[path].startswith(GENERATED_MARKER):
-                written.append(rendered_file)
-            else:
+            if path == RENDERED_FROM:
+                composed = content
+                if path not in existing:
+                    drift.append(Text(f"{path} is missing"))
+                elif existing[path].split("\n", 1)[0] != content.split("\n", 1)[0]:
+                    drift.append(Text(f"{path} differs from what the composition renders"))
+                continue
+            current = existing.get(path)
+            path_records = tuple(records.get(path, []))
+            origin = carried.get(path)
+            if origin is not None:
+                current = str(renaming.apply(existing[origin]))
+                if not path.endswith(".py"):
+                    path_records = ((WHOLE, str(Digest(content))),) if str(Digest(existing[origin])) != dict(records[origin]).get(WHOLE) else (
+                        (WHOLE, str(Digest(current))),)
+                else:
+                    try:
+                        shown = [
+                            [tuple(str(line).split("\t")) for line in Merge(MergeSpec(
+                                path=path, rendered=text, existing=text, records=(), mode=RECORDED,
+                            )).recorded()]
+                            for text in (existing[origin], current, content)
+                        ]
+                    except ValueError as unparsed:
+                        found.append(Text(f"{origin} does not parse ({unparsed}), so the render cannot carry what is written in it by hand"))
+                        continue
+                    last = dict(records[origin])
+                    fresh = {row[2]: row[0] for row in shown[2]}
+                    path_records = tuple(
+                        (moved[2], moved[0]) if last.get(old[2]) == old[0] else (moved[2], fresh[moved[2]])
+                        for old, moved in zip(shown[0], shown[1]) if last.get(old[2]) == old[0] or moved[2] in fresh
+                    )
+                mode = RECORDED
+            elif current is None or path in records:
+                mode = RECORDED
+            elif not current.startswith((GENERATED_MARKER, AGENT_MARKER)) and current != content and not content.startswith(AGENT_MARKER):
                 found.append(Text(f"the output directory already has {path}, which is not marked generated, so the renderer will not replace it"))
+                drift.append(Text(f"{path} has lost its generated mark"))
+                continue
+            elif current.startswith(GENERATED_MARKER) and not records:
+                mode = GENERATED
+            else:
+                mode = OWNED
+            try:
+                merge = Merge(MergeSpec(
+                    path=path, rendered=content, existing=content if current is None else current,
+                    records=path_records, mode=mode,
+                ))
+            except ValueError as unparsed:
+                found.append(Text(f"{path} does not parse ({unparsed}), so the render cannot keep what is written in it by hand"))
+                continue
+            recorded.extend(str(line) for line in merge.recorded())
+            written.append(RenderedFile(RenderedFileSpec(path=path, content=str(merge.text()))))
+            if current is None:
+                drift.append(Text(f"{path} is missing"))
+                continue
+            if content.startswith(GENERATED_MARKER) and not current.startswith(GENERATED_MARKER):
+                drift.append(Text(f"{path} has lost its generated mark"))
+            drift.extend(merge.drift())
+            if merge.kept():
+                kept.append(Text(path if origin is None else f"{path}: what was written by hand in {origin}"))
+            kept.extend(Text(f"{path}: {name}, written by hand, which the composition now renders differently")
+                        for name in merge.conflicts())
+            if issued and path.startswith("tests/") and current.startswith(AGENT_MARKER):
+                kept.extend(RootTest(RootTestSpec(path=path, source=current, issued=issued)).unissued())
+        removed: list[Text] = []
+        for path in sorted(records):
+            if rendered and path not in rendered_paths and path in existing:
+                removed.append(Text(path))
+                drift.append(Text(f"{path} is no longer rendered"))
+        if composed:
+            written.append(RenderedFile(RenderedFileSpec(path=RENDERED_FROM, content=composed + "".join(f"{line}\n" for line in recorded))))
         on_disk = {str(rendered_file.path()): rendered_file for rendered_file in written}
-        on_disk.update({str(path): RenderedFile(RenderedFileSpec(path=str(path), content=existing[str(path)])) for path in kept})
         selected: list[str] = []
         for path in spec.printed:
             if "*" in path:
@@ -2588,6 +3824,7 @@ class RenderedTree(ts.AggregateRoot):
         self._problems = tuple(found)
         self._files = () if found else tuple(written)
         self._kept = () if found else tuple(kept)
+        self._removed = () if found else tuple(removed)
         self._drift = tuple(drift) if rendered else ()
 
     @property
@@ -2605,6 +3842,9 @@ class RenderedTree(ts.AggregateRoot):
 
     def kept(self) -> tuple[Text, ...]:
         return self._kept
+
+    def removed(self) -> tuple[Text, ...]:
+        return self._removed
 
     def printed(self) -> tuple[RenderedFile, ...]:
         return self._printed

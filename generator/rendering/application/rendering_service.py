@@ -67,6 +67,7 @@ class MapToWriteRenderingRequest(ts.Mapper, ports.WriteRenderingRequest):
                 ports.FileRecord(path=str(rendered_file.path()), text=str(rendered_file.content()))
                 for rendered_file in rendered_tree.files()
             ),
+            removed=tuple(str(text) for text in rendered_tree.removed()),
         )
 
 
@@ -79,6 +80,7 @@ class MapToRenderCompositionResponseWhenWritten(ts.Mapper, client.RenderComposit
                 for path in write_rendering_response.refused
             ),
             written=write_rendering_response.paths,
+            removed=write_rendering_response.removed,
             kept=tuple(str(text) for text in rendered_tree.kept()),
             printed=tuple(
                 client.PrintedFile(path=str(rendered_file.path()), text=str(rendered_file.content()))
@@ -90,7 +92,7 @@ class MapToRenderCompositionResponseWhenWritten(ts.Mapper, client.RenderComposit
 class MapToRenderCompositionResponseWithProblems(ts.Mapper, client.RenderCompositionResponse):
 
     def __init__(self, rendered_tree: domain.RenderedTree) -> None:
-        super().__init__(problems=tuple(str(text) for text in rendered_tree.problems()), written=(), kept=(), printed=())
+        super().__init__(problems=tuple(str(text) for text in rendered_tree.problems()), written=(), removed=(), kept=(), printed=())
 
 
 class MapToReadCompositionRequestWhenChecked(ts.Mapper, ports.ReadCompositionRequest):

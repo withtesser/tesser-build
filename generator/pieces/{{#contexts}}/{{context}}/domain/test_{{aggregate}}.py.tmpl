@@ -1,0 +1,39 @@
+# pragma: tesser-agent-owned; rendered as a stub for you to write, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import {{context}}.domain as domain
+
+
+class Test{{Aggregate}}:
+
+    def test_a_{{aggregate}}_constructs_from_its_spec(self) -> None:
+        {{aggregate}}_spec = domain.{{Aggregate}}Spec({{spec_sample}})
+
+        {{aggregate}} = domain.{{Aggregate}}({{aggregate}}_spec)
+
+{{#read_checks}}
+        assert {{actual}} == {{expected}}
+{{/read_checks}}
+{{#commands}}
+
+    def test_a_{{aggregate}}_answers_{{command}}_with_one_of_its_outcomes(self) -> None:
+        {{aggregate}} = domain.{{Aggregate}}(domain.{{Aggregate}}Spec({{spec_sample_bare}}))
+
+        {{command}}_outcome = {{aggregate}}.{{command}}(domain.{{Spec}}({{command_sample}}))
+
+        assert isinstance({{command}}_outcome, domain.{{Outcome}})
+{{/commands}}
+{{#values}}
+
+    def test_{{value_snake}}_holds_the_value_it_is_made_from(self) -> None:
+        {{value_snake}} = domain.{{Value}}({{value_sample}})
+
+        assert {{cast}}({{value_snake}}) == {{value_sample}}
+{{/values}}
+{{#enum_reads}}
+
+    def test_a_{{aggregate}}_reads_its_{{read}}_as_one_of_its_values(self) -> None:
+        {{aggregate}} = domain.{{Aggregate}}(domain.{{Aggregate}}Spec({{spec_sample_bare}}))
+
+        assert str({{aggregate}}.{{read}}) in [{{enum_snake}}.value for {{enum_snake}} in domain.{{Enum}}]
+{{/enum_reads}}

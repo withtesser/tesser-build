@@ -75,3 +75,19 @@ class TestFilesystemCompositionReader:
         )
 
         assert read_composition_response.composition == (tmp_path / "compositions" / "lending").resolve().as_posix()
+
+    def test_the_composition_of_each_further_context_is_read_after_the_six_documents(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "composition").mkdir()
+        (tmp_path / "composition" / "composition.toml").write_text('context = "loans"\n')
+        (tmp_path / "composition" / "composition.catalog.toml").write_text('context = "catalog"\n')
+
+        read_composition_response = repositories.FilesystemCompositionReader(str(tmp_path / "pieces")).read_composition(
+            ports.ReadCompositionRequest(composition_dir=str(tmp_path / "composition"), out_dir=str(tmp_path / "out"))
+        )
+
+        assert [(document.name, document.state) for document in read_composition_response.documents][3:] == [
+            ("composition", ports.DocumentState.READ),
+            ("implementations", ports.DocumentState.MISSING),
+            ("generator", ports.DocumentState.MISSING),
+            ("composition.catalog", ports.DocumentState.READ),
+        ]

@@ -1,0 +1,19 @@
+# 3 INFRA — what the app runs on, and what an operator must provide. See ../README.md.
+#
+# No [engine]: the app answers each request itself. Its service calls the ports
+# in turn, so nothing runs on a durable-execution engine and the tests start none.
+
+app = "library"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+[hosts.http]
+serves = "interfaces.http"
+listen_port_variable = "LIBRARY_PORT"
+
+[storage.memory]
+
+[variables]
+LIBRARY_PORT = "the port the HTTP host listens on"

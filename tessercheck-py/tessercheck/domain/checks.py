@@ -602,6 +602,8 @@ MUTABLE_COLLECTIONS: typing.Final[frozenset[str]] = frozenset(
     }
 )
 
+KEEPING_COLLECTIONS: typing.Final[frozenset[str]] = MUTABLE_COLLECTIONS | frozenset({"deque", "Deque"})
+
 MOCK_MODULES: typing.Final[frozenset[str]] = frozenset({"unittest.mock", "mock"})
 
 PATCHER_FIXTURES: typing.Final[frozenset[str]] = frozenset({"monkeypatch", "mocker"})
@@ -1293,12 +1295,14 @@ class ViolationSpec(ts.Spec):
         code: str,
         message: str,
         rename: tuple[str, str] | None = None,
+        repair: RepairSpec | None = None,
     ) -> None:
         self.path = path
         self.line = line
         self.code = code
         self.message = message
         self.rename = rename
+        self.repair = repair
 
 
 class Violation(ts.ValueObject):
@@ -1308,6 +1312,7 @@ class Violation(ts.ValueObject):
     _code: Code
     _text: Text
     _rename: Rename | None
+    _repair: Repair | None
     _mark: Mark | None
 
     def __init__(self, spec: ViolationSpec) -> None:
@@ -1320,6 +1325,7 @@ class Violation(ts.ValueObject):
             "_rename",
             None if spec.rename is None else Rename(RenameSpec(spec.rename[0], spec.rename[1])),
         )
+        object.__setattr__(self, "_repair", None if spec.repair is None else Repair(spec.repair))
         object.__setattr__(
             self, "_mark", None if spec.code in UNMARKABLE else Mark(spec.code)
         )
@@ -1338,6 +1344,9 @@ class Violation(ts.ValueObject):
 
     def rename(self) -> Rename | None:
         return self._rename
+
+    def repair(self) -> Repair | None:
+        return self._repair
 
     def mark(self) -> Mark | None:
         return self._mark
@@ -1457,6 +1466,10 @@ class Rewrite(ts.ValueObject):
                         )
                 if split:
                     continue
+                if "." in actual and head not in aliased and len(module_sites) < sum(
+                    1 for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == head
+                ):
+                    continue
                 if importing.asname is None:
                     module_sites.append((
                         importing.end_lineno or line,
@@ -1512,16 +1525,16 @@ class RewrittenModuleSpec(ts.Spec):
 class RewrittenModule(ts.ValueObject):
 
     _path: Path
-    _text: Text
+    _text: SourceText
 
     def __init__(self, spec: RewrittenModuleSpec) -> None:
         object.__setattr__(self, "_path", Path(spec.path))
-        object.__setattr__(self, "_text", Text(spec.text))
+        object.__setattr__(self, "_text", SourceText(spec.text))
 
     def path(self) -> Path:
         return self._path
 
-    def text(self) -> Text:
+    def text(self) -> SourceText:
         return self._text
 
 
@@ -1769,13 +1782,14 @@ class ImportEdge(ts.ValueObject):
 class TesserImportSpec(ts.Spec):
 
     def __init__(
-        self, target: str, lineno: int, as_ts: bool, from_form: bool, bare: bool = False
+        self, target: str, lineno: int, as_ts: bool, from_form: bool, bare: bool = False, local: str = ""
     ) -> None:
         self.target = target
         self.lineno = lineno
         self.as_ts = as_ts
         self.from_form = from_form
         self.bare = bare
+        self.local = local
 
 
 class TesserImport(ts.ValueObject):
@@ -1783,10 +1797,12 @@ class TesserImport(ts.ValueObject):
     _target: Target
     _lineno: Line
     _form: ImportForm
+    _local: Text | None
 
     def __init__(self, spec: TesserImportSpec) -> None:
         object.__setattr__(self, "_target", Target(spec.target))
         object.__setattr__(self, "_lineno", Line(spec.lineno))
+        object.__setattr__(self, "_local", Text(spec.local) if spec.local else None)
         object.__setattr__(
             self,
             "_form",
@@ -2282,8 +2298,10 @@ class RegistrySpec(ts.Spec):
         dispatched: tuple[str, ...] = (),
         relay_constants: tuple[tuple[str, str, str], ...] = (),
         constructors: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (),
+        answer_texts: tuple[str, ...] = (),
     ) -> None:
         self.constructors = constructors
+        self.answer_texts = answer_texts
         self.registrations = registrations
         self.dispatched = dispatched
         self.relay_constants = relay_constants
@@ -2347,9 +2365,11 @@ class Registry(ts.ValueObject):
     _dispatched: NameRows
     _relay_constants: ConstantRows
     _constructors: ConstructorRows
+    _answer_texts: NameRows
 
     def __init__(self, spec: RegistrySpec) -> None:
         object.__setattr__(self, "_constructors", ConstructorRows(spec.constructors))
+        object.__setattr__(self, "_answer_texts", NameRows(spec.answer_texts))
         object.__setattr__(self, "_registrations", RegistrationRows(spec.registrations))
         object.__setattr__(self, "_dispatched", NameRows(spec.dispatched))
         object.__setattr__(self, "_relay_constants", ConstantRows(spec.relay_constants))
@@ -2469,6 +2489,9 @@ class Registry(ts.ValueObject):
 
     def constructors(self) -> ConstructorRows:
         return self._constructors
+
+    def answer_texts(self) -> Names:
+        return self._answer_texts.names()
 
     def action_ports(self) -> Symbols:
         return self._action_ports.symbols()
@@ -4472,7 +4495,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns {target_name}, whose constructor the analyzer cannot read; "
+                    f"{where} returns {target_name}, whose constructor the analyzer cannot read — "
+                    "return a spec or DTO declared in the tree; "
                     "a helper mirrors a constructor declared in the tree",
                 )))
             elif kind == "relay":
@@ -4480,7 +4504,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns a relay record; a relay record carries domain objects, "
+                    f"{where} returns a relay record — build the relay record in the test itself; "
+                    "a relay record carries domain objects, "
                     "and a test builds its domain objects itself",
                 )))
             elif kind == "data":
@@ -4488,7 +4513,8 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} returns no construction data; a helper builds a spec or a DTO",
+                    f"{where} returns no construction data — inline it into the tests that call it, "
+                    "or make it build one spec or DTO; a helper builds a spec or a DTO",
                 )))
             elif kind == "through":
                 found.append(Violation(ViolationSpec(
@@ -4503,28 +4529,32 @@ class Helper(ts.ValueObject):
                     path,
                     line,
                     "TB073",
-                    f"{where} is async; a helper or assembly returns its construction, never a coroutine",
+                    f"{where} is async — make it a plain def; "
+                    "a helper or assembly returns its construction, never a coroutine",
                 )))
             elif kind == "assembly_control":
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} has control flow; an assembly puts parts together without branching or looping",
+                    f"{where} has control flow — move the branch or loop into the test, one assembly per shape; "
+                    "an assembly puts parts together without branching or looping",
                 )))
             elif kind == "assembly_call":
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} calls {param} in the code under test; an assembly builds a test input and runs nothing",
+                    f"{where} calls {param} in the code under test — call it in the test and hand the "
+                    "assembly only the parts; an assembly builds a test input and runs nothing",
                 )))
             else:
                 found.append(Violation(ViolationSpec(
                     path,
                     line,
                     "TB073",
-                    f"{where} has control flow; a helper only constructs",
+                    f"{where} has control flow — move the branch into the test, one helper call per shape; "
+                    "a helper only constructs",
                 )))
         object.__setattr__(self, "_found", tuple(found))
 
@@ -4868,7 +4898,8 @@ class Declaration(ts.ValueObject):
                     relative,
                     1,
                     "TB045",
-                    "is a symlinked directory; a declared tree is walked in "
+                    "is a symlinked directory — replace it with the directory it points to; "
+                    "a declared tree is walked in "
                     "full, and a symlink escapes the walk",
                 ))
             )
@@ -7822,6 +7853,7 @@ class TesserImportPolicy(ts.ValueObject):
                             lineno,
                             "TB050",
                             f"{module_name} imports {target} without the ts alias; {once_clause}",
+                            rename=None if imp._local is None else (str(imp._local), "ts"),
                         ))
                     )
         if absent_clause is not None and not seen_any:
@@ -8263,6 +8295,7 @@ class Module(ts.Entity):
                                     alias.asname == "ts",
                                     False,
                                     alias.asname is None,
+                                    alias.asname or alias.name,
                                 ))
                             )
                         else:
@@ -8835,6 +8868,7 @@ class Module(ts.Entity):
                     "unquoted — a quoted type is a string the analyzer cannot read, and "
                     "from __future__ import annotations is what defers a name the module "
                     "has not defined yet",
+                    repair=RepairSpec("unquote"),
                 ))
             )
         return tuple(found)
@@ -9300,8 +9334,9 @@ class Module(ts.Entity):
                                 inner.lineno,
                                 "TB051",
                                 f"{module_name}.{node.name}.{member.name} reaches sibling "
-                                f"{sibling}; a method is for outsiders — a class reaches "
-                                "into itself only for direct recursion",
+                                f"{sibling} — inline what {sibling} does here, or move it "
+                                "onto the object it works on; a method is for outsiders — "
+                                "a class reaches into itself only for direct recursion",
                             ))
                         )
         return tuple(found)
@@ -9625,7 +9660,8 @@ class Module(ts.Entity):
                         self._path,
                         lineno,
                         "TB042",
-                        f"{module_name} re-exports {exported}; a package never exports a "
+                        f"{module_name} re-exports {exported} — rename the class or leave it out of the "
+                        "list; a package never exports a "
                         "class of its own name, because the name derived from the class "
                         "rebinds the package's alias",
                     ))
@@ -9797,6 +9833,7 @@ class Module(ts.Entity):
                         f"{module_name} imports {original} without repeating the name; "
                         "a role __init__ re-exports under the name the module defines — "
                         "from x import Y as Y, the form mypy --strict reads as an export",
+                        repair=RepairSpec("reexport", original),
                     ))
                 )
             elif exported != original:
@@ -9817,7 +9854,8 @@ class Module(ts.Entity):
                         self._path,
                         lineno,
                         "TB042",
-                        f"{module_name} re-exports {exported}; a package never exports a "
+                        f"{module_name} re-exports {exported} — rename the class or leave it out of the "
+                        "list; a package never exports a "
                         "class of its own name, because the name derived from the class "
                         "rebinds the package's alias",
                     ))
@@ -9831,6 +9869,7 @@ class Module(ts.Entity):
                         f"{module_name} re-exports {exported}, which no module outside "
                         "the role reads; a role __init__ re-exports only what a module "
                         "outside its role reads",
+                        repair=RepairSpec("unexport", exported),
                     ))
                 )
         return tuple(found)
@@ -9944,9 +9983,12 @@ class Module(ts.Entity):
                     node.lineno,
                     "TB042",
                     f"{module_name} reads {local}.{read}, a name {package} does not "
-                    "export; a package __init__ is the list of what the outside may "
+                    f"export — where a module of {package} defines {read}, add from "
+                    f"{package}.<module> import {read} as {read} to its __init__, otherwise "
+                    "read a name it already exports; a package __init__ is the list of what the outside may "
                     "name, and importing a package binds its submodules on it, so the "
                     "list holds only where a read is checked against it",
+                    repair=RepairSpec("export", read, package),
                 ))
             )
         return tuple(found)
@@ -10372,6 +10414,8 @@ class Module(ts.Entity):
         tops = frozenset(registry.tops())
         scope = self._scope
         attr_rows = registry.attrs()
+        symbols = registry.enums()
+        names = registry.answer_texts()
         functions: list[
             tuple[ast.FunctionDef | ast.AsyncFunctionDef, str | None, Symbol | None]
         ] = [
@@ -10565,6 +10609,34 @@ class Module(ts.Entity):
                         rename=(actual, derived) if local else None,
                     ))
                 )
+            for node in ast.walk(fn):
+                if (
+                    not isinstance(node, ast.Call)
+                    or len(node.args) != 1
+                    or node.keywords
+                    or not isinstance(node.args[0], ast.Attribute)
+                    or not isinstance(node.args[0].value, ast.Name)
+                ):
+                    continue
+                built_enum = scope.resolve(Text(ast.unparse(node.func)))
+                carrier = typed.get(node.args[0].value.id)
+                if built_enum is None or carrier is None or built_enum not in symbols:
+                    continue
+                carried = node.args[0].attr
+                if f"{carrier.module()}|{carrier.name()}|{carried}" not in names:
+                    continue
+                where = f"{module_name}.{owner.name()}.{fn.name}" if owner is not None else f"{module_name}.{fn.name}"
+                found.append(
+                    Violation(ViolationSpec(
+                        self._path,
+                        node.lineno,
+                        "TB085",
+                        f"{where} builds {built_enum.name()} from {carrier.name()}.{carried}, "
+                        "a str a port answers; a port answer that is an enum is the response's outcome, "
+                        "the field named outcome typed as the enum named for its operation, because a str "
+                        "carrying an enum's value leaves its reader nothing to match exhaustively",
+                    ))
+                )
             for lineno, actual in unread:
                 found.append(
                     Violation(ViolationSpec(
@@ -10572,7 +10644,8 @@ class Module(ts.Entity):
                         lineno,
                         "TB085",
                         f"{module_name}.{fn.name} names {actual} from a call it cannot "
-                        "read; a name is derived from the class it carries, in "
+                        "read — annotate the return of the function or method it calls with "
+                        "the class it hands back; a name is derived from the class it carries, in "
                         "snake_case, read through the annotation of the parameter, the "
                         "constructor, or the field, parameter, or module function a call "
                         "is made on, because a name the analyzer cannot check is a name "
@@ -12181,7 +12254,9 @@ class Module(ts.Entity):
                         self._path,
                         stmt.lineno,
                         "TB071",
-                        f"{where} is neither a test nor a declared helper; a test module holds "
+                        f"{where} is neither a test nor a declared helper — name it test_ if it is a test, "
+                        "declare it @ts.helper, @ts.assembly, or @ts.fake if it is one of those, "
+                        "or inline it into the tests that call it; a test module holds "
                         "tests, @ts.helper builders, @ts.assembly inputs, and @ts.fake doubles",
                     ))
                 )
@@ -12199,7 +12274,9 @@ class Module(ts.Entity):
                                             self._path,
                                             item.lineno,
                                             "TB071",
-                                            f"{where}.{item.name} is not a test method; a test class holds only test methods",
+                                            f"{where}.{item.name} is not a test method — name it test_ if it is a test, "
+                                            "or move it to module level as a @ts.helper or @ts.assembly; "
+                                            "a test class holds only test methods",
                                         ))
                                     )
                             elif isinstance(item, ast.ClassDef):
@@ -12208,7 +12285,8 @@ class Module(ts.Entity):
                                         self._path,
                                         item.lineno,
                                         "TB071",
-                                        f"{where}.{item.name} is a nested class; a test class holds test methods, never nested classes",
+                                        f"{where}.{item.name} is a nested class — move it to module level; "
+                                        "a test class holds test methods, never nested classes",
                                     ))
                                 )
                             else:
@@ -12217,7 +12295,8 @@ class Module(ts.Entity):
                                         self._path,
                                         item.lineno,
                                         "TB071",
-                                        f"{where} carries a loose statement in its body; a test class holds test methods, never loose statements",
+                                        f"{where} carries a loose statement in its body — move it into the test methods that use it; "
+                                        "a test class holds test methods, never loose statements",
                                     ))
                                 )
                         continue
@@ -12226,7 +12305,9 @@ class Module(ts.Entity):
                             self._path,
                             stmt.lineno,
                             "TB072",
-                            f"{where} is an undeclared class; a class in a test module is a Test-prefixed test class or declares itself with @ts.fake",
+                            f"{where} is an undeclared class — prefix it Test if it holds tests, or declare it @ts.fake "
+                            "if it doubles a contract; a class in a test module is a Test-prefixed test class "
+                            "or declares itself with @ts.fake",
                         ))
                     )
                 else:
@@ -12253,7 +12334,8 @@ class Module(ts.Entity):
                                 stmt.lineno,
                                 "TB072",
                                 f"{where} implements no application port, store, relay, protocol "
-                                "port, client, deprecated workflow, or config repository; a fake implements "
+                                "port, client, deprecated workflow, or config repository — subclass the contract it "
+                                "stands in for; a fake implements "
                                 "the contract it doubles",
                             ))
                         )
@@ -12263,7 +12345,8 @@ class Module(ts.Entity):
                         self._path,
                         stmt.lineno,
                         "TB071",
-                        f"{module_name} has a loose module-level statement; "
+                        f"{module_name} has a loose module-level statement — move it into the "
+                        "test, helper, or assembly that uses it; "
                         "a test module holds only imports, tests, helpers, and fakes",
                     ))
                 )
@@ -14114,7 +14197,7 @@ class Module(ts.Entity):
                         self._path,
                         1,
                         "TB074",
-                        f"{module_name} has no sibling test file; an implementation "
+                        f"{module_name} has no sibling test file — add test_{base}.py beside it; an implementation "
                         "module carries exactly one test_<module>.py beside it",
                     ))
                 )
@@ -14126,7 +14209,8 @@ class Module(ts.Entity):
                         self._path,
                         1,
                         "TB074",
-                        f"{module_name} pairs with no implementation module; a sibling "
+                        f"{module_name} pairs with no implementation module — name it test_<module>.py for the "
+                        "module it tests, or move its tests beside that module; a sibling "
                         "test file is named test_<module>.py for the module beside it",
                     ))
                 )
@@ -14158,6 +14242,37 @@ class Module(ts.Entity):
         def resolve(node: ast.expr) -> Symbol | None:  # tesser:debt TB023
             ref = Annotation(node).primary()
             return scope.resolve(ref) if ref is not None else None
+
+        def collection_type(node: ast.expr | None) -> bool:  # tesser:debt TB023
+            if isinstance(node, ast.Subscript):
+                return collection_type(node.value)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                try:
+                    return collection_type(ast.parse(node.value, mode="eval").body)
+                except SyntaxError:
+                    return False
+            if isinstance(node, ast.Name):
+                return node.id in KEEPING_COLLECTIONS
+            if isinstance(node, ast.Attribute):
+                return node.attr in KEEPING_COLLECTIONS
+            return False
+
+        def collection_made(node: ast.expr | None) -> bool:  # tesser:debt TB023
+            if isinstance(node, (ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)):
+                return True
+            return isinstance(node, ast.Call) and collection_type(node.func)
+
+        collections_held: set[str] = set()
+        for node in ast.walk(ast.Module(body=list(self._body), type_ignores=[])):
+            if isinstance(node, ast.AnnAssign) and (collection_type(node.annotation) or collection_made(node.value)):
+                collections_held.add(ast.unparse(node.target))
+            elif isinstance(node, ast.Assign) and collection_made(node.value):
+                collections_held.update(ast.unparse(target) for target in node.targets)
+            elif isinstance(node, ast.arg) and collection_type(node.annotation):
+                collections_held.add(node.arg)
+
+        def collection(node: ast.expr) -> bool:  # tesser:debt TB023
+            return collection_made(node) or ast.unparse(node) in collections_held
 
         def maker(node: ast.expr) -> SpecRef | None:  # tesser:debt TB023
             made = annotation(node)
@@ -14388,7 +14503,7 @@ class Module(ts.Entity):
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and node.func.attr in (
                     "append", "appendleft", "extend", "insert", "setdefault"
-                ):
+                ) and collection(node.func.value):
                     for each in [*node.args, *(k.value for k in node.keywords)]:
                         hit = carried(each, names)
                         if hit is not None:
@@ -15304,6 +15419,37 @@ class Codebase(ts.AggregateRoot):
         self._mapper_target: dict[tuple[str, str], tuple[str, str]] = {}
         self._outcome_methods: frozenset[tuple[str, str, str]] = frozenset()
 
+    def reads(self) -> Symbols:
+        found: set[tuple[str, str]] = set()
+        for module in self._modules:
+            for symbol in module.package_attrs():
+                found.add((str(symbol.module()), str(symbol.name())))
+            for target, original in module._imported.values():
+                found.add((target, original))
+        return Symbols(SymbolsSpec(tuple(SymbolSpec(package, name) for package, name in sorted(found))))
+
+    def definer(self, symbol: Symbol) -> Text | None:
+        package = str(symbol.module())
+        name = str(symbol.name())
+        found: set[str] = set()
+        for module in self._modules:
+            if module.is_package() or module.name().rsplit(".", 1)[0] != package:
+                continue
+            for stmt in module.body():
+                if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                    bound = [stmt.name]
+                elif isinstance(stmt, ast.Assign):
+                    bound = [target.id for target in stmt.targets if isinstance(target, ast.Name)]
+                elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                    bound = [stmt.target.id]
+                else:
+                    continue
+                if name in bound:
+                    found.add(module.name())
+        if len(found) != 1:
+            return None
+        return Text(found.pop())
+
     def governance(self, path: Path) -> Governance:
         if self._tree.violations():
             return Governance.UNDECLARED
@@ -15543,6 +15689,21 @@ class Codebase(ts.AggregateRoot):
             for each in self._modules
             for cls, attr, held_module, held_name in each._declared_attrs()
         )
+        answered_messages = frozenset(
+            (ret_module, ret_name)
+            for module_name, owner, _, ret_module, ret_name in return_rows
+            if blocks.get((module_name, owner)) == "port"
+        )
+        answer_text_rows = tuple(sorted(
+            f"{each.name()}|{cls.name}|{arg.arg}"
+            for each in self._modules
+            for cls in each.class_defs()
+            if (each.name(), cls.name) in answered_messages
+            for item in cls.body
+            if isinstance(item, ast.FunctionDef) and item.name == "__init__"
+            for arg in item.args.args + item.args.kwonlyargs
+            if arg.annotation is not None and str(Annotation(arg.annotation).source()) == "str"
+        ))
         export_package_rows = tuple(sorted(
             each.name()
             for each in self._modules
@@ -15588,6 +15749,7 @@ class Codebase(ts.AggregateRoot):
             registrations=registration_rows,
             dispatched=dispatched_rows,
             relay_constants=relay_constant_rows,
+            answer_texts=answer_text_rows,
         )
 
         def constructed(policy: SignaturePolicy, decl: ClassDecl) -> tuple[Violation, ...]:  # tesser:debt TB023
@@ -15673,6 +15835,7 @@ class Codebase(ts.AggregateRoot):
             registrations=registration_rows,
             dispatched=dispatched_rows,
             relay_constants=relay_constant_rows,
+            answer_texts=answer_text_rows,
             constructors=tuple(sorted(
                 row for module in checked for row in module._constructor_rows(blocks)
             )),
@@ -16102,6 +16265,492 @@ class Codebase(ts.AggregateRoot):
                             "TB090",
                             f"{module.name()} carries a debt marker that suppresses nothing; "
                             "a debt marker suppresses an actual finding",
+                            repair=RepairSpec("undebt") if str(debt._form) == "parsed" else None,
                         ))
                     )
         return tuple(kept)
+
+
+FIX_PASSES: typing.Final[int] = 8
+
+FIXED_RENAMES: typing.Final[frozenset[str]] = frozenset({"TB050", "TB053", "TB085"})
+
+
+class FindingSpec(ts.Spec):
+
+    def __init__(self, path: str, line: int, code: str, message: str) -> None:
+        self.path = path
+        self.line = line
+        self.code = code
+        self.message = message
+
+
+class Finding(ts.ValueObject):
+
+    _path: Path
+    _line: Line
+    _code: Code
+    _text: Text
+
+    def __init__(self, spec: FindingSpec) -> None:
+        object.__setattr__(self, "_path", Path(spec.path))
+        object.__setattr__(self, "_line", Line(spec.line))
+        object.__setattr__(self, "_code", Code(spec.code))
+        object.__setattr__(self, "_text", Text(spec.message))
+
+    def path(self) -> Path:
+        return self._path
+
+    def line(self) -> Line:
+        return self._line
+
+    def code(self) -> Code:
+        return self._code
+
+    def text(self) -> Text:
+        return self._text
+
+
+class FixTallySpec(ts.Spec):
+
+    def __init__(
+        self,
+        cleared: tuple[tuple[str, int, str, str], ...],
+        remaining: tuple[tuple[str, int, str, str], ...],
+    ) -> None:
+        self.cleared = cleared
+        self.remaining = remaining
+
+
+class FixTally(ts.ValueObject):
+
+    _cleared: tuple[Finding, ...]
+    _remaining: tuple[Finding, ...]
+
+    def __init__(self, spec: FixTallySpec) -> None:
+        object.__setattr__(self, "_cleared", tuple(
+            Finding(FindingSpec(path, line, code, message)) for path, line, code, message in spec.cleared
+        ))
+        object.__setattr__(self, "_remaining", tuple(
+            Finding(FindingSpec(path, line, code, message)) for path, line, code, message in spec.remaining
+        ))
+
+    def cleared(self) -> tuple[Finding, ...]:
+        return self._cleared
+
+    def remaining(self) -> tuple[Finding, ...]:
+        return self._remaining
+
+
+class FixingSpec(ts.Spec):
+
+    def __init__(
+        self,
+        sources: tuple[tuple[str, str, str | None, bool], ...],
+        declared: str,
+        nested: tuple[str, ...],
+        symlinked: tuple[str, ...],
+        exports: tuple[str, ...] = (),
+        imports: tuple[str, ...] = (),
+        stdlib: tuple[str, ...] = (),
+        pure_stdlib: tuple[str, ...] = (),
+        pruned: tuple[str, ...] = (),
+        passes: int = FIX_PASSES,
+    ) -> None:
+        self.sources = sources
+        self.declared = declared
+        self.nested = nested
+        self.symlinked = symlinked
+        self.exports = exports
+        self.imports = imports
+        self.stdlib = stdlib
+        self.pure_stdlib = pure_stdlib
+        self.pruned = pruned
+        self.passes = passes
+
+
+class Fixing(ts.ValueObject):
+
+    _found: tuple[Violation, ...]
+    _rewritten: tuple[RewrittenModule, ...]
+
+    def __init__(self, spec: FixingSpec) -> None:
+        read = {path: source for path, _, source, _ in spec.sources}
+        names = {path: name for path, name, _, _ in spec.sources}
+        homes = {name: path for path, name, _, is_package in spec.sources if is_package}
+        held = dict(read)
+        found: tuple[Violation, ...] | None = None
+        for _ in range(spec.passes):
+            codebase = Codebase(CodebaseSpec(
+                sources=tuple(
+                    (path, name, held[path], is_package)
+                    for path, name, _, is_package in spec.sources
+                ),
+                declared=spec.declared,
+                nested=spec.nested,
+                symlinked=spec.symlinked,
+                exports=spec.exports,
+                imports=spec.imports,
+                stdlib=spec.stdlib,
+                pure_stdlib=spec.pure_stdlib,
+                pruned=spec.pruned,
+            ))
+            violations = codebase.violations()
+            if found is None:
+                found = violations
+            renames: dict[str, list[tuple[int, str, str]]] = {}
+            repairs: dict[str, list[tuple[str, int, str, str]]] = {}
+            symbols = codebase.reads()
+            for violation in violations:
+                path = str(violation.path())
+                rename = violation.rename()
+                if rename is not None and str(violation.code()) in FIXED_RENAMES:
+                    renames.setdefault(path, []).append(
+                        (int(violation.line()), str(rename.actual()), str(rename.derived()))
+                    )
+                repair = violation.repair()
+                if repair is None:
+                    continue
+                kind = str(repair.kind())
+                name = str(repair.name() or "")
+                source = str(repair.source() or "")
+                if kind == "export":
+                    home = homes.get(source)
+                    definer = codebase.definer(Symbol(SymbolSpec(source, name)))
+                    if (
+                        home is None
+                        or definer is None
+                        or str(DerivedName(name)) == source.rsplit(".", 1)[-1]
+                    ):
+                        continue
+                    repairs.setdefault(home, []).append((kind, 1, name, str(definer)))
+                    continue
+                if kind == "unexport" and Symbol(SymbolSpec(names[path], name)) in symbols:
+                    continue
+                repairs.setdefault(path, []).append((kind, int(violation.line()), name, source))
+            changed = False
+            for path in sorted(set(renames) | set(repairs)):
+                text = held.get(path)
+                if text is None:
+                    continue
+                revised = text
+                if path in renames:
+                    revised = str(Rewrite(RewriteSpec(text=revised, renames=tuple(renames[path]))))
+                if path in repairs:
+                    revised = str(Repaired(RepairedSpec(text=revised, repairs=tuple(repairs[path]))))
+                if revised == text:
+                    continue
+                try:
+                    ast.parse(revised)
+                except SyntaxError:
+                    continue
+                held[path] = revised
+                changed = True
+            if not changed:
+                break
+        object.__setattr__(self, "_found", found or ())
+        object.__setattr__(self, "_rewritten", tuple(
+            RewrittenModule(RewrittenModuleSpec(path, text))
+            for path, text in sorted(held.items())
+            if text is not None and text != read[path]
+        ))
+
+    def rewritten(self) -> tuple[RewrittenModule, ...]:
+        return self._rewritten
+
+    def tally(self, codebase: Codebase) -> FixTally:
+        remaining = codebase.violations()
+        left: dict[tuple[str, str, str], int] = {}
+        for violation in remaining:
+            key = (str(violation.path()), str(violation.code()), str(violation.text()))
+            left[key] = left.get(key, 0) + 1
+        cleared: list[tuple[str, int, str, str]] = []
+        for violation in self._found:
+            key = (str(violation.path()), str(violation.code()), str(violation.text()))
+            if left.get(key, 0):
+                left[key] -= 1
+                continue
+            cleared.append((key[0], int(violation.line()), key[1], key[2]))
+        return FixTally(FixTallySpec(
+            cleared=tuple(cleared),
+            remaining=tuple(
+                (str(violation.path()), int(violation.line()), str(violation.code()), str(violation.text()))
+                for violation in remaining
+            ),
+        ))
+
+
+REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export", "undebt", "unquote")
+
+TYPE_EXPRESSION_NODES: typing.Final[tuple[type[ast.AST], ...]] = (
+    ast.Name, ast.Attribute, ast.Subscript, ast.Tuple, ast.List, ast.BinOp, ast.BitOr, ast.Constant, ast.Load
+)
+
+RUNTIME_QUALIFIERS: typing.Final[frozenset[str]] = frozenset({"ClassVar", "Final", "InitVar"})
+
+
+class RepairKind(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        if value not in REPAIR_KINDS:
+            raise ValueError(f"repair kind must be one of {', '.join(REPAIR_KINDS)}")
+        object.__setattr__(self, "_value", value)
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class RepairSpec(ts.Spec):
+
+    def __init__(self, kind: str, name: str = "", source: str = "") -> None:
+        self.kind = kind
+        self.name = name
+        self.source = source
+
+
+class Repair(ts.ValueObject):
+
+    _kind: RepairKind
+    _name: Text | None
+    _source: Text | None
+
+    def __init__(self, spec: RepairSpec) -> None:
+        object.__setattr__(self, "_kind", RepairKind(spec.kind))
+        object.__setattr__(self, "_name", Text(spec.name) if spec.name else None)
+        object.__setattr__(self, "_source", Text(spec.source) if spec.source else None)
+
+    def kind(self) -> RepairKind:
+        return self._kind
+
+    def name(self) -> Text | None:
+        return self._name
+
+    def source(self) -> Text | None:
+        return self._source
+
+
+class SourceText(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, value: str) -> None:
+        object.__setattr__(self, "_value", value)
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)
+
+
+class RepairedSpec(ts.Spec):
+
+    def __init__(self, text: str, repairs: tuple[tuple[str, int, str, str], ...]) -> None:
+        self.text = text
+        self.repairs = repairs
+
+
+class Repaired(ts.ValueObject):
+
+    _value: str
+
+    def __init__(self, spec: RepairedSpec) -> None:
+        tree = ast.parse(spec.text)
+        rows = [row.encode("utf-8") for row in spec.text.splitlines(keepends=True)] or [b""]
+        dropped: dict[int, set[str]] = {}
+        reformed: dict[int, set[str]] = {}
+        exported: set[tuple[str, str]] = set()
+        for kind, line, name, source in spec.repairs:
+            if kind == "unexport":
+                dropped.setdefault(line, set()).add(name)
+            elif kind == "reexport":
+                reformed.setdefault(line, set()).add(name)
+            elif kind == "export":
+                exported.add((source, name))
+        edits: list[tuple[int, int, int, int, str]] = []
+        statements: list[ast.ImportFrom] = []
+        for stmt in tree.body:
+            if isinstance(stmt, ast.ImportFrom):
+                statements.append(stmt)
+        for stmt in statements:
+            drops = dropped.get(stmt.lineno, set())
+            reforms = reformed.get(stmt.lineno, set())
+            if not drops and not reforms:
+                continue
+            kept: list[str] = []
+            for alias in stmt.names:
+                if (alias.asname or alias.name) in drops:
+                    continue
+                if alias.asname is None and alias.name in reforms:
+                    kept.append(f"{alias.name} as {alias.name}")
+                elif alias.asname is None:
+                    kept.append(alias.name)
+                else:
+                    kept.append(f"{alias.name} as {alias.asname}")
+            end_line = stmt.end_lineno or stmt.lineno
+            end_col = stmt.end_col_offset or 0
+            before = rows[stmt.lineno - 1][: stmt.col_offset]
+            after = rows[end_line - 1][end_col:]
+            if before.strip():
+                continue
+            if kept and end_line == stmt.lineno:
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col,
+                    f"from {'.' * stmt.level}{stmt.module or ''} import {', '.join(kept)}",
+                ))
+            elif kept:
+                indent = before.decode("utf-8")
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col,
+                    f"from {'.' * stmt.level}{stmt.module or ''} import (\n"
+                    + "".join(f"{indent}    {each},\n" for each in kept)
+                    + f"{indent})",
+                ))
+            elif not after.strip():
+                edits.append((stmt.lineno, 0, end_line, len(rows[end_line - 1]), ""))
+            elif after.strip().startswith(b"#"):
+                edits.append((
+                    stmt.lineno,
+                    stmt.col_offset,
+                    end_line,
+                    end_col + len(after) - len(after.lstrip()),
+                    "",
+                ))
+        if exported and len(statements) == len(tree.body):
+            present = {alias.asname or alias.name for stmt in statements for alias in stmt.names}
+            additions: dict[tuple[int, int], list[str]] = {}
+            for source, name in sorted(exported):
+                if name in present:
+                    continue
+                present.add(name)
+                same = [stmt for stmt in statements if stmt.level == 0 and stmt.module == source]
+                later = [
+                    stmt.lineno
+                    for stmt in same
+                    if stmt.col_offset == 0 and stmt.names[0].name > name
+                ]
+                every = [stmt.end_lineno or stmt.lineno for stmt in statements]
+                if later:
+                    additions.setdefault((min(later), 0), []).append(f"from {source} import {name} as {name}\n")
+                    continue
+                anchor = (
+                    max(stmt.end_lineno or stmt.lineno for stmt in same)
+                    if same
+                    else max(every) if every else 0
+                )
+                if anchor == 0:
+                    additions.setdefault((1, 0), []).append(f"from {source} import {name} as {name}\n")
+                    continue
+                additions.setdefault((anchor, len(rows[anchor - 1])), []).append(
+                    f"from {source} import {name} as {name}\n"
+                )
+            for (line, col), added in sorted(additions.items()):
+                ended = col == 0 or rows[line - 1].endswith(b"\n")
+                edits.append((line, col, line, col, ("" if ended else "\n") + "".join(added)))
+        debts = {line for kind, line, _, _ in spec.repairs if kind == "undebt"}
+        try:
+            tokens = list(tokenize.generate_tokens(io.StringIO(spec.text).readline)) if debts else []
+        except (tokenize.TokenError, IndentationError):
+            tokens = []
+        for token in tokens:
+            if token.type != tokenize.COMMENT or token.start[0] not in debts:
+                continue
+            if not token.string.lstrip("#").strip().startswith(DEBT_MARKER):
+                continue
+            line = token.start[0]
+            decoded = rows[line - 1].decode("utf-8")
+            prefix = decoded[: token.start[1]]
+            if not prefix.strip():
+                edits.append((line, 0, line, len(rows[line - 1]), ""))
+                continue
+            edits.append((
+                line,
+                len(prefix.rstrip().encode("utf-8")),
+                line,
+                len(decoded[: token.end[1]].encode("utf-8")),
+                "",
+            ))
+        quoted = {line for kind, line, _, _ in spec.repairs if kind == "unquote"}
+        deferred = any(
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.module == FUTURE_MODULE
+            and any(alias.name == "annotations" for alias in stmt.names)
+            for stmt in tree.body
+        )
+        sites: list[ast.expr] = []
+        scopes: list[tuple[ast.AST, bool]] = [(tree, False)] if quoted else []
+        while scopes:
+            node, local = scopes.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                arguments = node.args
+                for arg in (
+                    *arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg
+                ):
+                    if deferred and arg is not None and arg.annotation is not None:
+                        sites.append(arg.annotation)
+                if deferred and node.returns is not None:
+                    sites.append(node.returns)
+                scopes.extend((child, True) for child in node.body)
+                continue
+            if isinstance(node, ast.ClassDef):
+                scopes.extend((child, False) for child in node.body)
+                continue
+            if isinstance(node, ast.AnnAssign) and (deferred or local):
+                sites.append(node.annotation)
+            scopes.extend((child, local) for child in ast.iter_child_nodes(node))
+        marks = [site for site in sites if site.lineno in quoted]
+        while marks:
+            mark = marks.pop()
+            if isinstance(mark, ast.Subscript) and (
+                (isinstance(mark.value, ast.Name) and mark.value.id == LITERAL)
+                or (isinstance(mark.value, ast.Attribute) and mark.value.attr == LITERAL)
+            ):
+                continue
+            if not isinstance(mark, ast.Constant) or not isinstance(mark.value, str):
+                marks.extend(child for child in ast.iter_child_nodes(mark) if isinstance(child, ast.expr))
+                continue
+            if mark.end_lineno != mark.lineno or mark.end_col_offset is None:
+                continue
+            segment = rows[mark.lineno - 1][mark.col_offset : mark.end_col_offset].decode("utf-8")
+            if (
+                len(segment) < 2
+                or segment[0] not in "'\""
+                or segment[-1] != segment[0]
+                or segment.startswith(segment[0] * 3)
+                or segment[1:-1] != mark.value
+            ):
+                continue
+            try:
+                inner = ast.parse(mark.value.strip(), mode="eval")
+            except SyntaxError:
+                continue
+            if any(
+                not isinstance(each, TYPE_EXPRESSION_NODES)
+                or (isinstance(each, ast.BinOp) and not isinstance(each.op, ast.BitOr))
+                for each in ast.walk(inner.body)
+            ):
+                continue
+            head = inner.body.value if isinstance(inner.body, ast.Subscript) else inner.body
+            if (isinstance(head, ast.Name) and head.id in RUNTIME_QUALIFIERS) or (
+                isinstance(head, ast.Attribute) and head.attr in RUNTIME_QUALIFIERS
+            ):
+                continue
+            edits.append((mark.lineno, mark.col_offset, mark.lineno, mark.end_col_offset, mark.value.strip()))
+        held = list(rows)
+        floor: tuple[int, int] | None = None
+        for start_line, start_col, end_line, end_col, written in sorted(set(edits), reverse=True):
+            if floor is not None and (end_line, end_col) > floor:
+                continue
+            held[start_line - 1 : end_line] = [
+                held[start_line - 1][:start_col] + written.encode("utf-8") + held[end_line - 1][end_col:]
+            ]
+            floor = (start_line, start_col)
+        object.__setattr__(self, "_value", b"".join(held).decode("utf-8"))
+
+    def __str__(self) -> str:
+        return serialization.canonical_str(self._value)

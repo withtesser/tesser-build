@@ -1,4 +1,4 @@
-# pragma: tesser-generated; regenerate from the composition, never edit by hand
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 import contextlib
 import os
 {{#root_tier}}
@@ -17,7 +17,9 @@ import typing
 import httpx
 {{/root_tier}}
 import pytest
+{{#restate_engine}}
 import restate.harness as restate_harness
+{{/restate_engine}}
 
 _root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _root)
@@ -27,7 +29,9 @@ for _rel in (("..",), ("..", ".."), ("..", "..", "..")):
         sys.path.insert(0, _candidate)
         break
 
+{{#restate_engine}}
 RESTATE_IMAGE: typing.Final[str] = "docker.io/restatedev/restate:1.7"
+{{/restate_engine}}
 {{#root_tier}}
 DEADLINE_SECONDS: typing.Final[float] = 30.0
 
@@ -70,6 +74,7 @@ def host(request: pytest.FixtureRequest{{#located}}, tmp_path_factory: pytest.Te
 {{#located}}
     locations = tmp_path_factory.mktemp("locations")
 {{/located}}
+{{#restate_engine}}
     with private_engine() as host_engine:
         port = unused_port()
         served = subprocess.Popen(
@@ -97,6 +102,39 @@ def host(request: pytest.FixtureRequest{{#located}}, tmp_path_factory: pytest.Te
             finally:
                 os.killpg(served.pid, signal.SIGKILL)
                 served.wait()
+{{/restate_engine}}
+{{^restate_engine}}
+    port = unused_port()
+    served = subprocess.Popen(
+        [sys.executable, "-m", "srv.http.main"],
+        cwd=pathlib.Path(__file__).resolve().parent,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(sys.path),
+{{#locations}}
+            "{{location_variable}}": str(locations / "{{location_attr}}"),
+{{/locations}}
+            "{{listen_port_variable}}": str(port),
+        },
+        start_new_session=True,
+    )
+    with watchdog(["kill", "-KILL", f"-{served.pid}"]):
+        try:
+            answering(served, f"http://127.0.0.1:{port}")
+            yield f"http://127.0.0.1:{port}"
+        finally:
+            os.killpg(served.pid, signal.SIGKILL)
+            served.wait()
+{{/restate_engine}}
+{{#given_helpers}}
+
+
+@pytest.fixture
+def {{helper}}(host: str) -> {{type}}:
+    answer = httpx.{{verb}}(f"{host}{{path}}", json={{helper_json}}, timeout=DEADLINE_SECONDS)
+    answer.raise_for_status()
+    return {{type}}(answer.json()["{{identity}}"])
+{{/given_helpers}}
 {{/root_tier}}
 
 
@@ -110,6 +148,7 @@ def unused_port() -> int:
         probe.bind(("0.0.0.0", 0))
         return int(probe.getsockname()[1])
 {{#root_tier}}
+{{#restate_engine}}
 
 
 def register(served: subprocess.Popen[bytes], admin_url: str, uri: str) -> None:
@@ -128,7 +167,27 @@ def register(served: subprocess.Popen[bytes], admin_url: str, uri: str) -> None:
             answer = registered.text
         time.sleep(0.2)
     pytest.fail(f"could not register {uri} at {admin_url} within {DEADLINE_SECONDS}s: {answer}")
+{{/restate_engine}}
+{{^restate_engine}}
+
+
+def answering(served: subprocess.Popen[bytes], address: str) -> None:
+    deadline = time.monotonic() + DEADLINE_SECONDS
+    answer = ""
+    while time.monotonic() < deadline:
+        if served.poll() is not None:
+            pytest.fail(f"the host exited with {served.returncode} before it answered")
+        try:
+            httpx.get(address, timeout=5.0)
+        except httpx.HTTPError as not_yet:
+            answer = repr(not_yet)
+        else:
+            return
+        time.sleep(0.2)
+    pytest.fail(f"the host at {address} did not answer within {DEADLINE_SECONDS}s: {answer}")
+{{/restate_engine}}
 {{/root_tier}}
+{{#restate_engine}}
 
 
 @contextlib.contextmanager
@@ -136,6 +195,7 @@ def private_engine() -> typing.Iterator[restate_harness.RestateContainer]:
     with restate_harness.create_restate_container(restate_image=RESTATE_IMAGE) as container:
         with watchdog(["docker", "rm", "-f", str(container.get_wrapped_container().id)]):
             yield container
+{{/restate_engine}}
 
 
 @contextlib.contextmanager

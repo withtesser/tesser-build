@@ -5,6 +5,8 @@ from tessercheck.client.client import CheckTreeRequest as CheckTreeRequest
 from tessercheck.client.client import CheckTreeResponse as CheckTreeResponse
 from tessercheck.client.client import CheckWriteRequest as CheckWriteRequest
 from tessercheck.client.client import CheckWriteResponse as CheckWriteResponse
+from tessercheck.client.client import FixTreeRequest as FixTreeRequest
+from tessercheck.client.client import FixTreeResponse as FixTreeResponse
 from tessercheck.client.client import MarkDebtRequest as MarkDebtRequest
 from tessercheck.client.client import MarkDebtResponse as MarkDebtResponse
 from tessercheck.client.client import RulebookNotRendered as RulebookNotRendered

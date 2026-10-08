@@ -19,6 +19,12 @@ class CliRequest(ts.Request):
             return default
         return self.args[index]
 
+    def flag(self, name: str) -> bool:
+        return name in self.args
+
+    def without(self, name: str) -> CliRequest:
+        return CliRequest(args=tuple(arg for arg in self.args if arg != name))
+
     def no_extra_args(self, count: int, usage: str) -> None:
         if len(self.args) > count:
             raise UsageError(f"unexpected extra arguments\n{usage}")

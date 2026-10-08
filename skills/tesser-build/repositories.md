@@ -77,6 +77,13 @@ deciding any domain rule?* Yes → repository.
    unmodeled. Mechanics and the enforced shape: `python.md#ports`; the
    reasoning is `docs/design-asyncpg-repositories.md`.
 
+7. **An unknown identity is a `KeyError`, nothing more.** A load of an
+   identity the store does not hold raises `KeyError`; the repository never
+   raises the context's `Rejected` and never imports `client/` to do it
+   (`TB060`; its sibling test cannot reach `client/` either, `TB070`). The
+   service turns the `KeyError` into the refusal
+   (`application-services.md`, "Where an unknown identity becomes a refusal").
+
 ## The read side — draw the line explicitly
 
 certus's own repository does two things the write path doesn't, and conflating

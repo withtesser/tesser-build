@@ -1,0 +1,38 @@
+# 4 COMPOSITION — the contracts of the catalog context, the second context of
+# this app. See ../README.md ("Several contexts in one app").
+
+context = "catalog"
+
+[aggregate]
+name = "Book"
+identity = "book_id"
+
+[aggregate.spec]
+book_id = "str"
+title = "str"
+
+[aggregate.reads]
+book_id = "str"
+title = "str"
+
+[interfaces.http]
+serves = ["s-2-a-1", "s-2-b-1"]
+
+[client.operations.add_book]
+request = ["title"]
+response = ["book_id"]
+steps = ["identity.issue_book_id", "repository.save_book"]
+serves = ["s-2-a-1"]
+
+[client.operations.get_book]
+request = ["book_id"]
+response = ["book_id", "title"]
+steps = ["repository.load_book"]
+serves = ["s-2-b-1"]
+
+[ports.BookRepository]
+operations.save_book = { request = ["book"], response = [] }
+operations.load_book = { request = ["book_id"], response = ["book"] }
+
+[ports.BookIdentityRepository]
+operations.issue_book_id = { request = [], response = ["book_id"] }

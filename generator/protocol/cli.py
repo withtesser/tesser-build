@@ -37,6 +37,26 @@ class CliRequest(ts.Request):
             values.append(value)
         return CliRequest(args=tuple(rest)), tuple(values)
 
+    def take_listed_option(self, option: str, name: str, usage: str, positionals: int) -> tuple[CliRequest, tuple[str, ...]]:
+        rest: list[str] = []
+        values: list[str] = []
+        listing = False
+        remaining = iter(self.args)
+        for arg in remaining:
+            if arg == option:
+                value = next(remaining, "")
+                if not value or value.startswith("-"):
+                    raise UsageError(f"missing <{name}> after {option}\n{usage}")
+                values.append(value)
+                listing = True
+                continue
+            if listing and not arg.startswith("-") and len(rest) >= positionals:
+                values.append(arg)
+                continue
+            listing = False
+            rest.append(arg)
+        return CliRequest(args=tuple(rest)), tuple(values)
+
     def no_options(self, usage: str) -> None:
         for arg in self.args:
             if arg.startswith("-") and arg != "-":

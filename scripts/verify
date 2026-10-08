@@ -328,12 +328,14 @@ run_layout() {
 # (srv.cli.render --check), and gated: tessercheck zero findings, mypy
 # --strict, and a plain pytest from the rendered tree's root. Nothing is served
 # beforehand and nothing is read from the environment: the rendered root
-# conftest.py starts the engines (Docker) and the HTTP host the tests ask for
+# conftest.py starts the HTTP host the tests ask for and, when the composition
+# declares an engine, the engines (Docker)
 # (docs/design-test-tiers.md, "The tests own their infrastructure"). A
-# rendered root tier is its skeletons, red at each placeholder until their
-# author writes them, so the arm reads pytest's report and passes when every
-# other test passed and every failure is a root-tier skeleton failing at its
-# placeholder (after its host fixture served and registered the host).
+# rendered root test calls its story's route on the served host and asserts its
+# status; a story whose given has to be set up first (a read of something
+# created) answers another status until its author writes the given, so the arm
+# reads pytest's report and passes when every other test passed and every
+# failure is a root test's status assertion (the served host answered).
 run_generator() {
   cd "$ROOT/generator" || return 1
   step "tessercheck (zero findings over the whole tree)"
@@ -376,9 +378,10 @@ run_rendered_tree() {
   local report
   report=$(mktemp) || return 1
   (cd "$out" && PYTHONPATH=".:$ROOT/tesser-py" pytest -q -p no:cacheprovider --junitxml="$report")
-  step "$composition: every failure is a root-tier skeleton red at its placeholder"
+  step "$composition: every failure is a root test whose route answered a status other than its story's"
   local judged=0
   python3 - "$report" <<'PY' || judged=$?
+import re
 import sys
 import xml.etree.ElementTree as element_tree
 
@@ -388,17 +391,17 @@ for case in cases:
     for outcome in ("failure", "error"):
         for found in case.findall(outcome):
             message = found.get("message") or ""
-            skeleton = (
+            answered = (
                 outcome == "failure"
                 and case.get("classname", "").startswith("tests.")
-                and ("write the given of" in message or "write the then of" in message)
+                and re.search(r"\nassert \d+ == \d+$", message) is not None
             )
-            if not skeleton:
+            if not answered:
                 unexpected.append(f"{case.get('classname')}::{case.get('name')} ({outcome}): {message}")
 if not cases:
     unexpected.append("pytest ran no tests")
 for line in unexpected:
-    print(f"  not a skeleton: {line}", file=sys.stderr)
+    print(f"  not a root test's status: {line}", file=sys.stderr)
 sys.exit(1 if unexpected else 0)
 PY
   rm -f "$report"

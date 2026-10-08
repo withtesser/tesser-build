@@ -1,0 +1,49 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import json
+import typing
+
+import tesser.adapters as ts
+
+import {{context}}.client as client
+import protocol
+
+
+class HttpHandler(ts.Handler):
+
+    def __init__(self, {{context}}_client: client.{{ClientClass}}) -> None:
+        self._{{context}}_client = {{context}}_client
+{{#routes}}
+
+    async def {{operation}}(self, http_request: protocol.HttpRequest) -> protocol.HttpResponse:
+        try:
+            {{operation}}_response = await self._{{context}}_client.{{operation}}(
+                client.{{Operation}}Request(
+{{#inputs}}
+                    {{field}}=http_request.{{reader}}("{{field}}"),
+{{/inputs}}
+                )
+            )
+        except client.ERRORS as error:
+            match error:
+                case client.{{Rejected}}():
+                    return protocol.HttpResponse.problem(422, error.message)
+                case _ as never:
+                    typing.assert_never(never)
+        return protocol.HttpResponse(
+            status_code={{status}},
+            body=json.dumps(
+                {
+{{#outputs}}
+{{#scalar}}
+                    "{{field}}": {{operation}}_response.{{field}},
+{{/scalar}}
+{{#array}}
+                    "{{field}}": [{{{#element}}"{{name}}": {{var}}.{{name}}{{sep}}{{/element}}} for {{var}} in {{operation}}_response.{{field}}],
+{{/array}}
+{{/outputs}}
+                }
+            ).encode(),
+        )
+{{/routes}}

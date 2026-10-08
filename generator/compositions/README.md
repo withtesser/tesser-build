@@ -5,15 +5,17 @@ and writes a complete tesser app tree:
 
 ```sh
 cd generator
-PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>]...
+PYTHONPATH=.:../tesser-py python3 -m srv.cli.render <composition-dir> <out-dir> [--print <rendered-path-or-pattern>...]...
 ```
 
-It prints the path of every file it wrote, one per line (then `kept <path>` for
-each agent-owned file it left alone), and exits 0; or it prints every problem
+It prints the path of every file it wrote, one per line (then `removed <path>`
+for each file it removed, and `kept <path>` for each file in which it kept
+something written by hand, below), and exits 0; or it prints every problem
 on stderr as `render: <problem>`, exits 1, and writes nothing. Each `--print`
-(repeatable) names a rendered path, relative to the output directory; after
+(repeatable, and taking every path after it up to the next option:
+`--print a.py b.py`) names a rendered path, relative to the output directory; after
 the list, each one follows as a `--- <path>` line and then the file verbatim,
-as the render leaves it (so a kept agent-owned file prints as it stands). A
+as the render leaves it (so what was written by hand prints as it stands). A
 `--print` path the composition does not render is a problem. A `--print` with
 a `*` is a pattern (`*` matches within one path segment): it prints every
 rendered path it matches, in path order, so `--print 'tests/test_*.py'`
@@ -24,14 +26,89 @@ tree follows its composition:
 
 - a file the renderer does not write (a `README.md`, a `specs/` directory
   holding the composition itself) is left where it is;
-- a file marked generated (below) is overwritten;
-- an agent-owned file that already exists is kept as it is;
-- a file where a generated one goes that is not marked generated, and differs,
-  is a problem.
+- a file it renders is merged definition by definition (below, "Writing by
+  hand in a rendered tree"): what the composition renders follows it, and what
+  was written by hand stays;
+- a file the last render wrote (`.tesser-rendered` records it) that the
+  composition no longer renders is removed, with whatever was written in it by
+  hand (git keeps it), and so is every directory that leaves empty: the store a
+  storage change replaced, the root test of a route no story has any more;
+- a file where a rendered one goes that carries no mark, was not rendered there
+  before, and differs, is a problem;
+- a Python file that does not parse is a problem, since nothing in it can be
+  told apart.
 
 If anything is a problem, nothing is written. Every rendered path stays inside
 the output directory: the renderer refuses a path that resolves outside it,
 symlinks included, and two pieces rendering one path.
+
+## Writing by hand in a rendered tree
+
+The unit is the definition: an import, a module constant, a function, a class,
+and each method or class-level statement of a class. Every render records in
+`.tesser-rendered` what it rendered for each definition of each file, so the
+next render can tell three kinds apart:
+
+- **untouched** — the file still holds what the last render wrote. It follows
+  the composition: a render rewrites it, and removes it when the composition no
+  longer renders it.
+- **edited by hand** — a rendered definition you changed. A render keeps it as
+  you left it. If the composition now renders it differently, the render keeps
+  your version and says so (`kept <path>: <Class.method>, written by hand,
+  which the composition now renders differently`); merge the two by hand.
+- **added by hand** — a definition the composition does not render: a method
+  on a rendered class, a class, a constant, an import. A render keeps it where
+  you put it.
+
+A definition the composition renders and the file lacks is written back, after
+the definition it follows. So the hand-written path is: change the
+composition for what it can say, and write the rest by hand where it is
+needed, in any file, rendered or not. Put hand-written logic in a definition
+of its own when you can (a method beside the rendered ones, a class of your
+own), because an edited rendered definition stops following the composition;
+to hand one back to the composition, delete it and render again.
+
+**What the composition cannot say is written by hand.** For example, "a
+search may leave out the page size, and it is then the size the operator sets
+in `LIBRARY_PAGE_SIZE`, or 20" (no request field is optional, and
+`infra.toml`'s `[variables]` are read by no one):
+
+- `protocol/http.py`: add a method to `HttpRequest` that answers a default when
+  the request leaves the field out (added; kept);
+- `srv/http/main.py`: add a constant for the variable's name and one for its
+  fallback (added; kept), and in `HttpHost.run` read the variable and hand the
+  value to the context's `HttpHandler` (edited; kept);
+- `<context>/adapters/handlers/http.py`: have `HttpHandler.__init__` take and
+  keep the value, and the route's method read the field through the new
+  `HttpRequest` method with it as the default (edited; kept);
+- the tests beside them: add a test for each (added; kept), and describe the
+  variable in `infra.toml`'s `[variables]`.
+
+Every render keeps all of it. The edited definitions (`HttpHost.run`,
+`HttpHandler.__init__`, the route's method) no longer follow the composition,
+so when the composition changes one of them (a route added, the route's fields
+changed) the render keeps your version and names it, and you add the change by
+hand.
+
+**Renaming a term.** `.tesser-rendered` also records the context, the
+aggregate, and its identity (its `names` line). When a render names any of them
+differently, each file the last render wrote whose path, with the old names
+spelled as the new, is a file this render writes and the tree lacks
+(`books/domain/book.py` as `titles/domain/title.py`,
+`tests/test_reading_books_by_book_id.py` as
+`tests/test_reading_titles_by_title_id.py`) hands what was written in it
+by hand to that file, with the old names spelled as the new wherever they are a
+whole word or a whole segment of a name (`Book`, `BookSpec`, `books`,
+`book_id`, `BOOK_ID`, `"book-1"`; never `Booking`), and is removed; the render
+says `kept <new path>: what was written by hand in <old path>`. Nothing else is
+carried by a rename: to rename an agent-owned class (a gateway, a store), move
+its file and rename the class by hand (`git mv`) before rendering, and the
+render merges into the moved file.
+
+A file rendered before the renderer kept records (its `.tesser-rendered` has
+only its first line) is rendered over if it carries the generated mark, and
+keeps every definition that differs if it carries the agent-owned mark; that
+render writes the records, and the next one merges.
 
 **Checking a tree against its composition:**
 
@@ -39,15 +116,23 @@ symlinks included, and two pieces rendering one path.
 PYTHONPATH=.:../tesser-py python3 -m srv.cli.render --check <composition-dir> <tree>
 ```
 
-renders in memory, writes nothing, and exits 1 naming each generator-owned
-file that differs from what the composition renders, is missing, or has lost
-its generated mark (agent-owned files are not checked); otherwise it exits 0.
-Every render writes `.tesser-rendered` (generator-owned, and like
-`.tesser-root` it carries no marker): its one line is the composition
-directory, relative to the root of the git repo the output directory is in
-when the composition is inside that repo, else absolute. A tree's
-`scripts/verify` arm runs the check first when the file is there, so a
-rendered tree is checked against its composition by default.
+renders in memory, writes nothing, and exits 1 naming what a render would
+change or would meet: a rendered file that is missing or has lost its generated
+mark, a file the last render wrote that the composition no longer renders
+(`is no longer rendered`), and per definition (`<path>: <Class.method> ...`) one the file lacks
+(`is missing`), an untouched one the composition now renders differently
+(`differs from what the composition renders`), an untouched one it no longer
+renders (`is no longer rendered`), and one edited by hand that the composition
+has rendered differently since (`was edited by hand, and the composition now
+renders it differently`); otherwise it exits 0. A definition edited or added by
+hand is not a difference, and neither is an import. Every render writes
+`.tesser-rendered` (the renderer's, and like `.tesser-root` it carries no
+marker): its first line is the composition directory, relative to the root of
+the git repo the output directory is in when the composition is inside that
+repo, else absolute, and each further line records one rendered definition
+(`<digest>\t<path>\t<definition>`). A tree's `scripts/verify` arm runs the
+check first when the file is there, so a rendered tree is checked against its
+composition by default.
 
 **Names.** Every name that reaches a path or an identifier is checked: the
 context, app, storages, fields, action keys, and enum members and outcomes are
@@ -62,10 +147,21 @@ names (`adapters`, `app`, `application`, `client`, `component`, `config`,
 
 Every directory in `generator/compositions/` is gated: `scripts/verify
 generator` renders it and runs the rendered tree's tessercheck (zero findings),
-`mypy --strict`, and a plain `pytest` from its root, which starts the engines
-and the host the tests take (Docker required); it passes when every failure is
-a root-test skeleton red at its placeholder. `library/` is the small
-worked example.
+`mypy --strict`, and a plain `pytest` from its root, which starts the host the
+tests take and, when `infra.toml` declares an engine, the engines (Docker
+required); it passes when every failure is a root test's status assertion (the
+served host answered another status). `library/` is the small worked example, `library-direct/` is
+the same app with no engine: its service calls the ports itself,
+`library-catalog/` is that app with a second context its gateway reaches
+(below, "Several contexts in one app"), and `voyages-harbors/` is two contexts
+whose gateway call is rendered and whose client operation refuses on what the
+gateway answers (below, "Refusing on what a step answers" and "What a gateway
+calls"); its voyage starts in a stage and changes it by a command applied to the
+loaded voyage ("A new aggregate's initial values" and "Applying a command to the
+aggregate"), its harbor_id is a whole number issued in turn ("An int
+identity" and "Refusing before an identity is issued"), and planning a voyage
+checks the vessel before it asks the harbor chart ("Checking a request field
+before any step").
 
 ## Which file answers which question
 
@@ -94,7 +190,9 @@ language, the key of a class of actions (below).
 A field's type is one of:
 
 - `"str"` or `"int"`
-- an enum's name (declared in `[enums]`); it crosses every message as its string value
+- an enum's name (declared in `[enums]`); it crosses every message as its string value,
+  except the one place an enum is an answer: a port operation's response field
+  (below, "An enum a port answers is the response's outcome")
 - `"<Shape>[]"`: a list of a shape or message (declared in `[shapes]` or
   `[messages]`). A shape's own fields are `str`, `int`, or enums, never lists.
   A shape is never carried alone, only as a list.
@@ -103,14 +201,18 @@ A field's type is one of:
 
 **Where a field's type comes from.** A field is named by its bare name in
 every list (`request = ["loan_id", "borrower"]`). Its type is looked up, in
-order: the aggregate's `[aggregate.spec]`,
-each command's `takes`, a port annotation (`"story_texts: StoryText[]"` in a
-port operation's list, which types that field of that operation only),
-then `[aggregate.reads]`.
-A client operation's `response` looks in the reads first, so a read that
+order: an annotation (`"story_texts: StoryText[]"` in a port operation's or a
+client operation's list, which types that field of that operation only), the
+aggregate's `[aggregate.spec]`, each command's `takes`, then
+`[aggregate.reads]`, and last, for a client operation's field, an annotation of
+the same field in a port operation its steps call (a gateway answering
+`"name: str"` types a client response's `name`).
+A client operation's `response` looks in the reads before the spec, so a read that
 differs from the spec field of the same name (`stories`: `StorySpec[]` in the
 spec, `StoryView[]` in the reads) answers the read's type.
-Every field named anywhere must get a type this way.
+Every field named anywhere must get a type this way, so a client field the
+aggregate does not hold never needs a read the aggregate does not implement:
+annotate it.
 
 ## 1 `language.toml`
 
@@ -173,15 +275,17 @@ an HTTP route serves carries its `route` — the method (`GET`, `POST`, `PUT`,
 parameters — and its `status`, the 2xx it answers with. The `given`, `when`,
 and `then` stay prose, and the prose must state the route word for word: the
 method and the path are words of the `when` (`I GET /loans/{loan_id}`) and the
-status is a word of the `then` (`I get back 200 ...`). A level-2 story with a
-route that no client operation serves is a problem.
+status is a word of the `then` (`I get back 200 ...`). Punctuation around a
+word is fine (`(GET /loans/{loan_id}).`, `200,`), but a path stated only inside
+a longer one is not stated (`/loans/new` does not state `/loans`). A level-2
+story with a route that no client operation serves is a problem.
 
 A level-2 story's `given` is prose: it says in words how the story is reached
 (`I have created a loan with POST /loans`). The renderer never reads it for
 calls; the root test's author does. A story with a `reached_by` key is a
 problem, because the key is no longer part of the format.
 
-**Root test skeletons.** For each level-2 story with a route, the renderer
+**Root tests.** For each level-2 story with a route, the renderer
 writes an agent-owned `tests/test_<words>.py`, named for its route: the method as a word (`GET` reading, `POST` submitting, `PUT`
 replacing, `PATCH` updating, `DELETE` deleting), then each segment of the path
 in order, a literal segment as it is and a `{field}` segment as `by_<field>`,
@@ -189,22 +293,25 @@ so `POST /jtbds` is `tests/test_submitting_jtbds.py` and
 `GET /jtbds/{jtbd_id}` is `tests/test_reading_jtbds_by_jtbd_id.py` (so `GET
 /jtbds` and `GET /jtbds/{jtbd_id}` are two files). It takes the served host's
 address as the `host` fixture (`def test_<story>(self, host: str)`), calls the
-story's route on it, and asserts its `status`, and holds two placeholders. The first is the given: an assertion whose
-message is the story's `given`, verbatim, with a `<field>: <type> | None = None`
-line above it for each `{field}` the route's path carries; the author writes how
-the host reaches the given (which calls, any waiting) and binds those values in
-its place. A route with no path value has nothing to bind, and the placeholder
-is `assert False, ...`. The second is the then: an assertion whose message is
-the story's `then`, verbatim. So a freshly rendered tree is red at the first
-unwritten placeholder, then at the then, and rendering again keeps the edited
-test.
+story's route on it, and asserts its `status`, with the story's id, `given`,
+and `then`, verbatim, as the assertion's message. It carries only what the
+story and the composition say and nothing that fails on purpose: each
+`{field}` the route's path carries is a `<field>: <type> = <sample>` line bound
+to `generator.toml`'s first sample, and a body carries the samples of the
+operation's request. The author writes how the host reaches the given (which
+calls, any waiting) and what the then asserts. So in a freshly rendered tree a
+story whose given has to be set up first (a read of something created) answers
+another status until its given is written, and rendering again keeps the
+edited test.
 
 Beside the skeletons the renderer writes an empty generated
 `tests/__init__.py`, and the rendered root `conftest.py` holds the session
 `host` fixture the skeletons take: it starts a private Restate engine, serves
 `srv.http.main` with the engine's URL, a fresh temporary path for every storage
 `location_variable`, and a free port in the `listen_port_variable`, registers
-the host's `engine_path` with the engine, and yields the host's address. A
+the host's `engine_path` with the engine, and yields the host's address. With
+no engine it starts none: it serves `srv.http.main` with the same variables
+less the engine's URL, and yields the address once the host answers. A
 runner that already serves a host passes its address instead:
 `pytest tests --host http://127.0.0.1:<port>` (`docs/design-test-tiers.md`,
 "The tests own their infrastructure"). The address is an argument, not a
@@ -223,7 +330,7 @@ app = "story_drafting"                    # required: the app, snake_case
 language = "python"
 version = "3.12"
 
-[engine.restate]                          # required, and the only engine
+[engine.restate]                          # optional, and the only engine
 body = "supported"                        # informational
 engine_path = "/restate"                  # required: where the Restate endpoint is mounted
 engine_url_variable = "RESTATE_URL"       # required: the variable the app reads the engine's URL from
@@ -236,9 +343,19 @@ listen_port_variable = "STORY_DRAFTING_PORT"   # required: the port it listens o
 [storage.sqlite]                          # [storage.<name>]: where stored things live
 location_variable = "JTBD_DB_PATH"        # the variable that names its location (a SQLite file path)
 
-[variables]                               # informational: what each variable is
-JTBD_DB_PATH = "the path of the SQLite database file"
+[variables]                               # informational: what each variable is; one only hand-written code reads
+JTBD_DB_PATH = "the path of the SQLite database file"  # is read by hand ("Writing by hand in a rendered tree")
 ```
+
+**Without an engine.** An `infra.toml` with no `[engine]` table renders a
+request/response app: each client operation's steps call the ports in turn and
+the operation answers when they are done. Nothing runs on an engine, so the
+composition declares no `[orchestrator]`, `[actions]`, or `[signals]`, no step
+is an `orchestrator.` step, and no environment names an `engine`; each of these
+is a problem that says so. The tree has no `activities/`, `workflows/`,
+`dispatchers/`, `relays/`, `orchestrators/`, or `application/client/`, the host
+mounts no engine endpoint, the app reads no engine URL, and the tests take no
+engine fixture and need no Docker (`library-direct/`).
 
 The engine names one variable, the one the app reads its URL from. The tests
 never read the environment: they take the engine's URL, its admin URL and the
@@ -268,7 +385,7 @@ context = "loans"                     # required: the context package, snake_cas
 ```toml
 [aggregate]
 name = "Loan"                         # required, PascalCase
-identity = "loan_id"                  # required: a str field of both the spec and the reads
+identity = "loan_id"                  # required: a str or int field of both the spec and the reads
 
 [aggregate.spec]                      # required: what it is built from, when submitted and when loaded
 loan_id = "str"
@@ -289,13 +406,121 @@ one method per command taking `<Command>Spec` (its `takes`) and answering
 `<Command>Outcome`
 (a command with `takes = {}` gets a `<Command>Spec` whose constructor is a
 single `pass`),
-and one read per `[aggregate.reads]` entry. Everything else in the domain
-(value objects, validation, how a read is computed) is the agent's.
+and one read per `[aggregate.reads]` entry, and a value object for each domain
+value a client operation checks (below, "Checking a request field before any
+step"). Everything else in the domain (value objects, validation, how a read is
+computed, what a command does) is the agent's. `[aggregate]` may also carry
+`draft_identity` (below, "Refusing before an identity is issued"), and
+`[aggregate.initial]` the values a new aggregate starts with (below, "A new
+aggregate's initial values"). The stub keeps each spec field
+whose read has the same type (an enum field as its member, read as its value)
+and answers it from what it keeps.
 
 The aggregate is saved by reading it back: a port record of the aggregate
 holds the spec's fields, filled from the reads of the same name, so every spec
 field needs a read of the same name.
 A list read's shape must hold every field it reads from the spec shape's.
+
+**An int identity.** The identity is a `str` or an `int`, and it is the same
+type everywhere it crosses: the domain's `identity`, the store's records and
+the dict that keys them, the client's requests and responses, the HTTP route
+(an `int` `{harbor_id}` is read with `integer_path_param`, so a path that is
+not a whole number answers 400), the issued fixture of a root test, and every
+sample. A `uuid` implementation issues text, so it cannot issue an `int`
+identity: implement that identity port with `body = "agent"` (a ledger that
+issues each number in turn, say). An identity keys the engine's workflow, so a
+composition with an `[engine]` keeps a `str` identity.
+
+```toml
+# composition.harbors.toml
+[aggregate]
+name = "Harbor"
+identity = "harbor_id"
+
+[aggregate.spec]
+harbor_id = "int"
+place_name = "str"
+
+# implementations.toml
+[implementations.HarborIdentityRepository.ledger]
+class = "LedgerHarborIdentityRepository"
+body = "agent"
+```
+
+### A new aggregate's initial values
+
+A spec field no request carries and no step answers, such as the stage a
+voyage starts in, has nothing to build a new aggregate from. Give it the
+value a new aggregate starts with:
+
+```toml
+[aggregate.spec]
+voyage_id = "str"
+vessel = "str"
+stage = "VoyageStage"
+
+[aggregate.initial]
+stage = "planned"                     # a member of the enum, or a str or an int literal for those types
+
+[enums]
+VoyageStage = ["planned", "departed"]
+```
+
+The mapper that builds a new aggregate fills the field with it
+(`stage=domain.VoyageStage.PLANNED`) when nothing the steps hold has a value of
+that name; one that rebuilds a loaded aggregate takes the stored value
+(`stage=domain.VoyageStage(load_voyage_response.voyage.stage)`), and the port
+record carries it like any other spec field. A field `[aggregate.spec]` does
+not hold, or a value of another type or not among the enum's members, is a
+problem.
+
+### Applying a command to the aggregate
+
+A step `aggregate.<command>` applies a command of `[aggregate.commands]` to
+the aggregate the steps before it built or loaded, so an operation changes a
+loaded aggregate by the domain's rule rather than by rebuilding it from
+different fields:
+
+```toml
+[aggregate.commands.depart_voyage]
+takes = {}
+outcomes = ["departed", "already_departed"]   # the first is the success outcome
+
+[client.operations.depart_voyage]             # POST /voyages/{voyage_id}/departure
+request = ["voyage_id"]
+response = ["voyage_id", "stage"]
+steps = ["repository.load_voyage", "aggregate.depart_voyage", "repository.save_voyage"]
+```
+
+The command's method is the domain's (agent-owned: its stub answers the success
+outcome and changes nothing), so what it does and when it refuses is written
+there: it changes what the aggregate keeps (`self._stage =
+VoyageStage.DEPARTED`) and answers an outcome, or raises `errors.invalid` like
+a constructor. The service renders the plumbing: it builds `<Command>Spec` from
+what the method holds (a mapper `MapTo<Command>Spec`, or `<Command>Spec()` for
+`takes = {}`), and matches the outcome where the command is called:
+
+```python
+        try:
+            match voyage.depart_voyage(domain.DepartVoyageSpec()):
+                case domain.DepartVoyageOutcome.DEPARTED:
+                    pass
+                case domain.DepartVoyageOutcome.ALREADY_DEPARTED:
+                    raise client.VoyageRejected("already_departed", "already departed")
+                case _ as never:
+                    typing.assert_never(never)
+        except errors.DomainError as domain_error:
+            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error
+```
+
+So every outcome but the first refuses with 422, its code the outcome and its
+message the outcome's words, and so does a refusal the command raises (its own
+code and message), before anything is saved. After the step, every read but
+the identity is what the command left, so the steps after it (the save, the
+answer) read the aggregate again, and the service test checks only what the
+command cannot have changed. A step naming no command of `[aggregate.commands]`,
+one with no aggregate built or loaded before it, and a second command step in
+one operation (a service method decides once) are problems.
 
 ### `[shapes.<Name>]`, `[messages.<Name>]`, `[enums]` (optional)
 
@@ -321,7 +546,8 @@ reader can see has to have a story behind it, or it is scope creep, so the
 renderer checks the pieces below against `story.toml` and refuses (writes
 nothing) when one is untraced:
 
-- every value of every enum in `[enums]`;
+- every value of every enum in `[enums]`, unless `language.toml` defines it
+  (see below);
 - every field in each `[client.operations.*]` `request` and `response`;
 - every field in `[aggregate.reads]`;
 - every field in each `[signals.*]` `payload`;
@@ -337,13 +563,31 @@ is prose about non-goals). Case does not matter, and the name's underscores
 may be written as spaces (`awaiting_story_acceptance` is named by "awaiting
 story acceptance"); `loan` is not named by `loan_id`. Ports, port, action,
 and relay fields, `[shapes]`, `[messages]`, and `[aggregate.spec]` fields are
-not checked. Every untraced piece is one problem, all reported together:
+not checked.
+
+An enum value is also traced when `language.toml` defines it: a term's `term`
+or `short` written with underscores for spaces, or one of its `code_names` in
+snake_case. The language is the source of the domain's words, so an enum
+member keeps its domain name instead of being bent to match a story's
+wording. With `charted` and `uncharted` defined in the voyages language,
+
+```toml
+[enums]
+HarborStanding = ["uncharted", "charted"]
+```
+
+needs no story to say either word; a member that is neither in a story nor a
+term is still refused. Only enum values take this route: a field, a read, a
+payload field, or an outcome is traced by a story alone.
+
+Every untraced piece is one problem, all reported together:
 
 ```
-render: enum JtbdStatus value stories_decided is named by no story: write it in a story's given, when, or then, or remove it from the composition
+render: enum HarborStanding value unsurveyed is named by no story and is no term in language.toml: write it in a story's given, when, or then, define it as a term in language.toml, or remove it from the composition
 ```
 
-The fix is to write the piece in a story, or to remove it from the composition.
+The fix is to write the piece in a story, to define an enum value as a term in
+`language.toml`, or to remove the piece from the composition.
 
 ### `[interfaces.http]` (required)
 
@@ -376,13 +620,174 @@ an `int` field answers 400 unless it is an optionally negative run of at most
 18 ASCII digits (`--2`, `+2`, `1_0`, and the empty string are all 400).
 Two operations may call the same port operation; each gets its own mapper.
 
+**A refusal answers 422.** The domain refuses by raising `tesser.errors`'s
+`invalid(code, message)` (or `not_found`, `conflict`) where the aggregate is
+built, in its constructor or a value object it builds. The service builds the
+aggregate inside `try` / `except errors.DomainError` and raises the client's
+`<Aggregate>Rejected(code, message)` from it (declared in `client.py` with
+the `ERRORS` tuple), and the HTTP handler answers it with 422 and
+`{"detail": "<message>"}`, so nothing a refusal crosses needs a hand edit.
+
+**A load of an identity nothing stored is refused too.** The store raises
+`KeyError` for it; the service turns that into
+`<Aggregate>Rejected("unknown_<aggregate>", "no <aggregate> has that <identity>")`,
+so the route answers 422, and the service test checks it
+(`test_<operation>_refuses_an_unknown_<aggregate>`). A gateway that reaches
+this context sees the refusal as the client's `<Aggregate>Rejected`.
+
+**Refusing before an identity is issued.** An operation that issues an
+identity and then builds a new aggregate issues it before the domain can
+refuse, so a refused aggregate uses one up: harmless for a UUID, a gap for an
+identity issued in turn. With `draft_identity` on `[aggregate]`, the operation
+first builds a draft of the aggregate, with that identity, right before the
+step that answers the identity, and refuses there; only an aggregate the
+domain accepts is issued an identity and built again with it:
+
+```toml
+[aggregate]
+name = "Harbor"
+identity = "harbor_id"
+draft_identity = 0                    # an identity of the identity's type that the domain accepts
+```
+
+```python
+    async def chart_harbor(self, chart_harbor_request: client.ChartHarborRequest) -> client.ChartHarborResponse:
+        try:
+            domain.Harbor(MapToDraftHarborSpec(chart_harbor_request))
+        except errors.DomainError as domain_error:
+            raise client.HarborRejected(domain_error.code, domain_error.message) from domain_error
+        issue_harbor_id_response = await self._harbor_identity_repository.issue_harbor_id(ports.IssueHarborIdRequest())
+        ...
+```
+
+The draft is built from what the steps before the identity step hold, so a
+field a later step answers (a gateway's) is a problem until that step comes
+before the identity step. The draft value is the composition's, because only
+the domain knows which identity it accepts (one that refuses an empty
+identity needs a draft that is not empty); without `draft_identity` the
+identity is issued first, as before.
+
+**Checking a request field before any step.** An operation that builds no
+aggregate (a read that asks a gateway, say), or that asks a gateway before it
+builds one, refuses nothing the domain would until the aggregate is built.
+`checks` names, per request field, the domain value it must make:
+
+```toml
+[client.operations.plan_voyage]
+request = ["vessel", "harbor"]
+steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
+checks = { vessel = "Vessel" }        # <request field> = "<domain value>"
+```
+
+The service makes each one first, inside the same `try` that turns a domain
+refusal into 422:
+
+```python
+        try:
+            domain.Vessel(plan_voyage_request.vessel)
+        except errors.DomainError as domain_error:
+            raise client.VoyageRejected(domain_error.code, domain_error.message) from domain_error
+```
+
+and the domain stub gets the value object, holding the field's type (`str` or
+`int`) and exported from the domain package, with a domain test that it holds
+what it is made from. The stub never refuses; the value's rule (and using it
+in the aggregate, if it belongs there too) is the domain's. A field the request
+does not take, a field that is not a `str` or an `int`, a name the domain
+already uses (the aggregate, a spec, an enum, an outcome), and one value
+checked on two types are problems.
+
+**An enum a port answers is the response's outcome.** A port operation's
+response field typed with an enum (`harbor_standing: HarborStanding`, below) is
+that response's answer, the thing its caller matches, so it renders the way
+tessercheck's TB085 wants every port answer: the field is named `outcome`, and
+it is typed as the enum `<Operation>Outcome`, declared in the port's own module
+with the enum's members (a ports module imports nothing from its own tree, so
+it cannot hold the domain's enum):
+
+```python
+class LookUpHarborOutcome(enum.Enum):
+    UNCHARTED = "uncharted"
+    CHARTED = "charted"
+
+
+class LookUpHarborResponse(ts.Response):
+
+    def __init__(self, harbor_name: str, outcome: LookUpHarborOutcome) -> None:
+        self.harbor_name = harbor_name
+        self.outcome = outcome
+```
+
+The composition keeps the domain's words: the field and its enum are named as
+the language names them, and every key that names the field (`refuses`'
+`when`, a gateway's `answers` and `refused`) uses that name. Everything
+rendered from it (the fakes, the gateway's answers, the match below, the
+tests) speaks `outcome` and `ports.<Operation>Outcome`, never the member's
+string. A response answers at most one enum (two are a problem: its caller
+matches one answer), and an enum only ports answer is not rendered in the
+domain; one the aggregate, a command, a shape, or a client message is typed
+with is, as before. An enum inside a list of records a port answers is data,
+not an answer, and crosses as its string value.
+
+**Refusing on what a step answers.** A port that answers an enum (a lookup
+answering whether what it was asked about is known, say) can refuse the
+operation on some of its members. List them on the client operation:
+
+```toml
+[client.operations.plan_voyage]
+request = ["vessel", "harbor"]
+response = ["voyage_id"]
+steps = ["gateway.look_up_harbor", "identity.issue_voyage_id", "repository.save_voyage"]
+refuses = [{ code = "uncharted_harbor", when = "harbor_standing", is = "uncharted", message = "a voyage is planned to a charted harbor", field = "harbor" }]
+
+[enums]
+HarborStanding = ["uncharted", "charted"]
+
+[ports.HarborChart]
+operations.look_up_harbor = { request = ["harbor"], response = ["harbor_name: str", "harbor_standing: HarborStanding"] }
+```
+
+`when` is the enum field a step of the operation answers, named as the port
+operation lists it, `is` the member (or a
+list of members) that refuses, `code` the refusal's code (snake_case), and
+`message` (optional; the code's words otherwise) its message, printable ASCII
+free of quotes and backslashes, and `field` (optional) the request field it
+blames (`errors.invalid`'s `field`). One refusal per field, its `is` listing every
+member it refuses. The renderer writes the match in the mapper that builds the
+aggregate after that step (`MapTo<Aggregate>Spec`, or
+`MapTo<Aggregate>SpecWhenLoaded` after a load), which the service already
+builds inside its `try`, so the refusal reaches the route as 422 like any other:
+
+```python
+        match look_up_harbor_response.outcome:
+            case ports.LookUpHarborOutcome.UNCHARTED:
+                raise errors.invalid("uncharted_harbor", "a voyage is planned to a charted harbor", field="harbor")
+            case ports.LookUpHarborOutcome.CHARTED:
+                pass
+            case _ as never:
+                typing.assert_never(never)
+```
+
+The service test gets a fake of the port answering the refused member
+(`FakeHarborChartAnsweringUncharted`) and a test that the operation raises
+`<Aggregate>Rejected` with the code and saves nothing
+(`test_plan_voyage_refuses_uncharted_harbor`). A refusal on a field no step
+answers, on a field that is not an enum, on a member the enum does not list, or
+whose step no build follows (the aggregate is built, and so refuses, before
+the step answers) is a problem. Put the step before the step that builds or
+loads the aggregate.
+
 **Steps**, in order:
 
-- `identity.<operation>` / `repository.<operation>`: call that port
-  operation (looked up by operation name across `[ports]`). If its request
+- `identity.<operation>` / `repository.<operation>` / `gateway.<operation>`:
+  call that port operation (looked up by operation name across `[ports]`; the
+  prefix is not checked against the port's kind). If its request
   names the aggregate, the aggregate is built first from what the earlier
   steps hold (the request, the answers so far), with any list field empty. If
   its response is the aggregate, the aggregate is rebuilt from it.
+- `aggregate.<command>`: apply that command to the aggregate built or loaded
+  before it, refusing on every outcome but its first (above, "Applying a
+  command to the aggregate").
 - `orchestrator.run_<operation>`: run the orchestrator operation and wait for
   its answer.
 - `orchestrator.start_<operation>`: start it and answer at once; its answer is
@@ -396,9 +801,10 @@ first: the answers of the steps before it, then the aggregate's reads once it
 is built, then the request. An aggregate rebuilt from a load takes the fields
 the earlier steps hold (the request, say) over the loaded ones, so a load then a
 save writes what the operation was given. A field nothing holds is a problem, except a list
-field of the aggregate's spec, which starts empty.
+field of the aggregate's spec, which starts empty, and a field
+`[aggregate.initial]` gives a value, which a new aggregate starts with.
 
-### `[orchestrator.operations.<operation>]` — the workflow (exactly one)
+### `[orchestrator.operations.<operation>]` — the workflow (exactly one with an engine, none without)
 
 ```toml
 [orchestrator.operations.arrange_loan]
@@ -472,7 +878,32 @@ package, so two ports declaring one name is a problem.
 A port whose operations name the aggregate is a **store**: it has exactly one
 save (request `[<aggregate>]`, response `[]`) and one load (request
 `[<identity>]`, response `[<aggregate>]`), its name ends in `Repository`, and
-its store is the same name ending in `Store`.
+its store is the same name ending in `Store`. It may also have any number of
+**lists**: a list answers one field typed `<Aggregate>[]` and takes either
+nothing, for every aggregate stored, or fields of the aggregate's spec, each
+matched by equality:
+
+```toml
+[ports.LoanRepository]
+operations.save_loan = { request = ["loan"], response = [] }
+operations.load_loan = { request = ["loan_id"], response = ["loan"] }
+operations.list_loans = { request = [], response = ["loans: Loan[]"] }
+operations.list_loans_by_borrower = { request = ["borrower"], response = ["loans: Loan[]"] }
+
+[client.operations.list_loans]                       # GET /loans
+request = []
+response = ["loans"]                                 # typed by its step: Loan[], every field
+steps = ["repository.list_loans"]
+
+[client.operations.list_borrowed]                    # GET /borrowers/{borrower}/loans
+request = ["borrower"]
+response = ["loans: LoanView[]"]                     # or a shape holding some of the fields
+steps = ["repository.list_loans_by_borrower"]
+```
+
+The memory store, an agent-owned store's stub, and the service test's fake all
+answer a list from what is saved, in the order it was first saved, and the HTTP
+route answers it as a JSON list.
 
 `serves = [...]` is allowed on any table and read by no one yet.
 
@@ -495,7 +926,7 @@ body = "agent"
 
 [environments.gate]                       # [environments.<name>], at least one
 implementations = { NoticeSender = "printed", LoanRepository = "memory", LoanIdentityRepository = "uuid" }
-engine = "restate"                        # the engine infra.toml declares
+engine = "restate"                        # the engine infra.toml declares; left out when it declares none
 hosts = ["http"]                          # the host infra.toml declares
 ```
 
@@ -510,9 +941,12 @@ The implementation types:
 - `memory`, `body = "supported"`: a store port only, on `[storage.memory]`;
   an in-memory store, rendered in full.
 - `uuid`, `body = "supported"`: a port with one operation that takes nothing
-  and answers one field; issues version-4 UUIDs from a seed, rendered in full.
+  and answers one field; issues version-4 UUIDs from a seed, rendered in full. A UUID is text, so the
+  field it answers is a `str` (an `int` identity is issued by an agent's class).
 - any key with `body = "agent"` and a `class` on a gateway port: a stub gateway
-  of that class, agent-owned (below).
+  of that class, agent-owned (below). With `reaches = "<context>"`, naming
+  another context of the composition, the gateway is handed that context's
+  client (below, "Several contexts in one app").
 - any key with `body = "agent"` and a `class` on a store port (one that carries
   the aggregate): a stub store of that class, agent-owned, in
   `<context>/adapters/repositories/<class>.py` with its sibling test. The class
@@ -530,6 +964,144 @@ The implementation types:
 class = "SqliteJtbdRepository"
 body = "agent"
 ```
+
+## Several contexts in one app
+
+A composition directory holds one context's contracts in `composition.toml`
+and each further context's in `composition.<context>.toml`, in the same format
+(its `context` is the `<context>` of its file name). The other five files are
+the app's, shared by every context: one `language.toml` and `story.toml`, one
+`infra.toml` (the app, its host, its storages), one `implementations.toml`
+naming an implementation for every port of every context (so no two contexts
+declare a port of one name), and one `generator.toml`. Each context's client
+operations serve its own level-2 stories (in its own `[interfaces.http]`), and
+every routed story is served by one context. A composition of several contexts
+renders without an engine.
+
+A context calls another through a gateway port of its own, implemented by an
+agent-owned gateway that `reaches` the other context:
+
+```toml
+# composition.toml (context = "loans")
+[ports.BookRegister]
+operations.check_book = { request = ["book_id"], response = [] }
+
+# implementations.toml
+[implementations.BookRegister.catalog]
+class = "CatalogBookRegister"
+body = "agent"
+reaches = "catalog"                       # a context the directory declares
+```
+
+The gateway's `__init__` takes the peer's client (`catalog_client:
+catalog_client.CatalogClient`) and its stub test hands it a fake of that
+client that answers each of its operations with samples, so the agent writes
+the call to the peer (and the translation of its answer) in the gateway's
+methods, unless `implementations.toml` says what each operation calls (below,
+"What a gateway calls"), and then the call is rendered. The context's component takes the port as a parameter
+(`Loans(config, book_register)`), and the app builds each context after the
+contexts it reaches and hands it the gateway over the peer's client
+(`loans_gateways.CatalogBookRegister(self.catalog.client)`); two contexts that
+reach each other are a problem. The host routes every context's operations,
+`pyproject.toml` collects every context's tests, and the root tests cover every
+context's routes. `library-catalog/` is the worked example.
+
+### What a gateway calls
+
+A gateway that `reaches` a context may say, per port operation, which of the
+peer client's operations it calls and how the fields cross:
+
+```toml
+[implementations.HarborChart.harbors]
+class = "HarborsHarborChart"
+body = "agent"
+reaches = "harbors"
+
+[implementations.HarborChart.harbors.operations.look_up_harbor]
+calls = "get_harbor"                                  # an operation of the harbors client
+sends = { harbor_id = "harbor" }                      # <its request field> = "<our request field>"
+answers = { harbor_name = "place_name", harbor_standing = "charted" }
+refused = { harbor_standing = "uncharted" }           # optional: what it answers when harbors refuses
+```
+
+- `sends`: each request field of the peer's operation is sent from the field
+  of ours it names, or from ours of the same name when it is left out; both
+  are a `str` or an `int` of the same type.
+- `answers`: each response field of ours is the peer's response field it names
+  (or the peer's field of the same name), of the same type; the enum field (the
+  response's outcome, named here as the port operation lists it) is instead the
+  member named here (or the enum's success member, below), answered as
+  `ports.<Operation>Outcome.<MEMBER>`.
+- `refused`: with it, the call is made in a `try` that catches the peer's
+  `<Aggregate>Rejected` (what it raises when it refuses, an unknown identity
+  included) and answers the member named for each enum field (its `answers`
+  member when left out) and an empty value (`""`, `0`, `()`) for every other
+  field. Without it, a refusal is not caught.
+
+```python
+    async def look_up_harbor(self, look_up_harbor_request: ports.LookUpHarborRequest) -> ports.LookUpHarborResponse:
+        try:
+            get_harbor_response = await self._harbors_client.get_harbor(harbors_client.GetHarborRequest(harbor_id=look_up_harbor_request.harbor))
+        except harbors_client.HarborRejected:
+            return ports.LookUpHarborResponse(harbor_name="", outcome=ports.LookUpHarborOutcome.UNCHARTED)
+        return ports.LookUpHarborResponse(harbor_name=get_harbor_response.place_name, outcome=ports.LookUpHarborOutcome.CHARTED)
+```
+
+The gateway stays agent-owned, so a method edited by hand is kept like any
+other; its test checks what the call answers from the fake peer client and,
+with `refused`, what it answers from a `FakeRejecting<Peer>Client`. A peer
+operation the peer's client does not declare, a field that does not cross
+(missing, or of another type), a list field, or a member the enum does not
+list is a problem, and so is an `operations` table on a gateway that reaches
+no context. An operation the table leaves out is stubbed as before.
+
+**The host test and another context.** `srv/http/test_main.py` calls each
+route with a sample body and checks the status it answers. When a step's
+rendered call looks the sample up in the peer by its identity (the peer's
+operation loads its aggregate), the test first submits the peer's sample
+through the peer's own route that issues that identity, and sends the issued
+identity in place of the sample: the probe carries `{"harbor": "harbor_id"}`,
+and the earlier `POST /harbors` answered `harbor_id`. When it cannot (no route
+of the peer's issues it), the test expects the status the unknown sample
+meets: 422 when `refused` answers a member the operation refuses, 500 when the
+call does not catch the refusal.
+
+**Root tests and another context.** The root tests get the same identity the
+same way. For each identity the host test issues, the rendered root
+`conftest.py` holds a fixture named `issued_<identity>` that submits the peer's
+sample through the peer's issuing route and answers the identity it issued
+(one fixture per identity, a new identity per test):
+
+```python
+@pytest.fixture
+def issued_harbor_id(host: str) -> int:
+    answer = httpx.post(f"{host}/harbors", json={"place_name": "Valparaiso"}, timeout=DEADLINE_SECONDS)
+    answer.raise_for_status()
+    return int(answer.json()["harbor_id"])
+```
+
+The skeleton of a route whose step looks that identity up takes the fixture
+and sends it in place of the sample, so it answers its status as rendered:
+
+```python
+    def test_s_1_a_1(self, host: str, issued_harbor_id: int) -> None:
+        request = urllib_request.Request(
+            f"{host}/voyages", data=json.dumps({"vessel": "Endeavour", "harbor": issued_harbor_id}).encode(), ...
+        )
+```
+
+The fixture is generated and the root tests stay agent-owned: a render never
+rewrites a test written by hand, and the given and the then are still the
+author's. A test written by hand before the route reached the other context
+takes the fixture as a parameter and sends it where it sent the sample (a test
+that needs two distinct harbors submits the second one itself). The render
+names every such test it keeps: a function of a root test that calls the
+route (its path and its method written out, as in `f"{host}/voyages"` and
+`"POST"`) and does not name the fixture is listed as `kept <path>: <Class>.<test>,
+written by hand, calls POST /voyages and does not take the issued_harbor_id
+fixture: ...`, so every one can be changed before the gate runs rather than
+found one failing test at a time. A route with a `{field}` in its path is not
+listed this way.
 
 ## 6 `generator.toml`
 
@@ -549,21 +1121,37 @@ or an enum (its members are used). A list field with no sample is built from
 its shape's fields. A field listed with no values (`borrower = []`) is a
 problem, since there is nothing to pick from.
 
+A sample takes the type of the field it fills where it is used, so one sample
+serves a field that is a `str` in one message and an `int` in another (an
+annotation such as `"harbor_id: int"` on a client response): a whole number
+written as text (`"7"`) fills an `int` as `7`, and an `int` fills a `str` as
+its digits (`"7"`). A sample that cannot be the field's type (`"harbor-1"` for
+an `int`) is a problem naming the field, so no rendered test compares an `int`
+with text.
+
 ## What is rendered, and who owns it
 
-Every rendered file says on its first line who owns it:
+Every rendered file says on its first line what it is; both kinds merge the
+same way (above, "Writing by hand in a rendered tree"):
 
-- `# pragma: tesser-generated; ...` — the renderer's. Change the composition
-  and render again, never the file (`--check` catches an edit).
-- `# pragma: tesser-agent-owned; ...` — rendered once as a stub, then the
-  agent's: `<context>/domain/<aggregate>.py` with its `__init__.py` and
+- `# pragma: tesser-generated; ...` — plumbing the composition determines.
+  Change the composition for what it can say; write by hand what it cannot.
+- `# pragma: tesser-agent-owned; ...` — a stub for the agent to write:
+  `<context>/domain/<aggregate>.py` with its `__init__.py` and
   `test_<aggregate>.py`, each `body = "agent"` implementation
   (`<context>/adapters/gateways/<class>.py` and its test, or for a store port
   `<context>/adapters/repositories/<class>.py` and its test), and the root
   test skeletons in `tests/` (above). A stub answers
   placeholders and never raises: a str read answers what the spec holds, a
   command its first outcome (the success outcome), an enum read its first value, a gateway
-  `""`, `0`, or an empty list for each field it answers.
+  `""`, `0`, or an empty list for each field it answers, and an enum field
+  its success member (below).
+
+**The success member of an enum** is its first member no `refuses` of the
+context names (its first member when none does). Every fake that answers an
+enum field the request does not carry (the service test's port fakes, the
+relay fakes) answers it, and so does a gateway stub, so a rendered tree passes
+its own tests whatever order the enum lists its members in.
 
 `.tesser-root` carries no marker: its lines are declarations only.
 
@@ -572,11 +1160,13 @@ The rendered tree: `<context>/domain`, `client`, `application` (the
 snapshots, `client/` application clients, `orchestrators/`), `adapters`
 (Restate `activities/`, `workflows/`, `dispatchers/`, the `handlers/http.py`
 HTTP handler, `repositories/`, `gateways/`), `component/`; then `app/`,
-`protocol/`, `srv/http/main.py` (the HTTP host serving the routes with the
-Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
+`protocol/`, `srv/http/main.py` (the HTTP host serving every context's routes,
+one `<Context>HttpRoutes` class per context, with the Restate endpoint at `engine_path`), `tests/` (the root tier's skeletons, its
 generated `conftest.py` and `__init__.py`),
 `pyproject.toml`, `requirements-dev.txt`, `conftest.py`, and `.tesser-root`.
-Every module has its sibling test.
+Every module has its sibling test. A tree with no engine has the same pieces
+less `relays/`, `client/`, `orchestrators/`, `activities/`, `workflows/`, and
+`dispatchers/`, and its host mounts no engine endpoint.
 
 A gate that serves `srv/http/main.py` for the root tier stops it with SIGINT
 and kills it if it has not exited two seconds later: a Restate endpoint
@@ -587,6 +1177,7 @@ inactivity timeout, about a minute.
 `<Aggregate>Orchestrator` and its `<Aggregate>OrchestratorRelay`,
 `<Aggregate>OrchestratorSignalRelay` and a `<SIGNAL>_PROMISE` constant,
 `<Key>Actions` and its `<Key>ActionsRelay` and `<Key>ApplicationClient`,
+`<Aggregate>Rejected` and `ERRORS` in the client,
 `<Operation>Request` / `<Operation>Response` for every operation, the engine
 containers (one per class of actions, named `<Key>Actions`, and the workflow,
 named `<Aggregate>Orchestrator`), `Restate<Operation>` for each activity and the
@@ -604,18 +1195,22 @@ workflow, `RestateHttp<Aggregate>OrchestratorRelay`, `Memory<Port>` /
    say them word for word; a story whose given needs calls first says in its
    `given`, in words, how it is reached.
 3. `infra.toml`: `app`; `[runtime]`; `[engine.restate]` with its
-   `engine_path` and `engine_url_variable`; `[hosts.http]` with its listen port
+   `engine_path` and `engine_url_variable`, or no `[engine]` for a
+   request/response app; `[hosts.http]` with its listen port
    variable; a `[storage.<name>]` for each storage (every one but `memory`
    with its `location_variable`); `[variables]`.
-4. `composition.toml`: `context`; the aggregate's spec and reads (identity in
+4. `composition.toml` (and a `composition.<context>.toml` for each further
+   context): `context`; the aggregate's spec and reads (identity in
    both, every spec field readable); one client operation per level-2 story,
-   serving it and its steps in order; exactly one orchestrator operation whose request holds
-   the identity; its actions (one port each, each named for the term it acts
-   on, never for its port) and any signal; every port.
+   serving it and its steps in order; with an engine, exactly one
+   orchestrator operation whose request holds the identity, its actions (one
+   port each, each named for the term it acts on, never for its port), and any
+   signal; every port.
 5. `implementations.toml`: an implementation for every port, a store's named
    for a storage `infra.toml` declares; an environment.
 6. `generator.toml`: two sample values for every field.
 7. Render into a fresh directory and run the gate on it (the tests start
-   their own engines and host, and give every storage a fresh location); then
-   write each root test's given and then where its skeleton's placeholders
-   stand.
+   their own host, and engines when there is an engine, and give every storage
+   a fresh location); then
+   write each root test's given before its call and its then after its
+   status assertion.

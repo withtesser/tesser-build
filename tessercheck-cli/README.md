@@ -5,10 +5,15 @@ run outside a tesser-build checkout:
 
 ```
 tessercheck-check <tree>
+tessercheck-check --fix <tree>
 ```
 
 Exit codes are the checkout host's: `0` clean, `1` findings (one per line on
-stdout), `2` usage. An unexpected error raises — a consumer debugging a crash
+stdout), `2` usage. `--fix` applies, in one run, every repair the findings
+carry that is mechanical and safe, then reports each finding it cleared
+(`fixed: <finding>`) and what a check still finds, exiting `1` while anything
+remains; the rules it covers, and why the rest are left for a person, are in
+[`tessercheck-py/README.md`](../tessercheck-py/README.md#fixing-what-is-mechanical---fix). An unexpected error raises — a consumer debugging a crash
 in CI wants the traceback, not a swallowed exit code.
 
 ## Why this is a second distribution and not part of tessercheck-py

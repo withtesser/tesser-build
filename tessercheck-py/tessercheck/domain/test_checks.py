@@ -2954,7 +2954,7 @@ def test_a_read_names_only_what_the_package_exports() -> None:
         ))).violations()
     )
     assert any(
-        "mod.application.service reads domain.vo, a name mod.domain does not export; "
+        "mod.application.service reads domain.vo, a name mod.domain does not export — where a module of mod.domain defines vo, add from mod.domain.<module> import vo as vo to its __init__, otherwise read a name it already exports; "
         "a package __init__ is the list of what the outside may name, and importing "
         "a package binds its submodules on it, so the list holds only where a "
         "read is checked against it" in f
@@ -3000,7 +3000,7 @@ def test_a_sibling_test_reads_only_what_its_own_package_exports() -> None:
         ))).violations()
     )
     assert any(
-        "mod.domain.test_vo reads domain.vo, a name mod.domain does not export; "
+        "mod.domain.test_vo reads domain.vo, a name mod.domain does not export — where a module of mod.domain defines vo, add from mod.domain.<module> import vo as vo to its __init__, otherwise read a name it already exports; "
         "a package __init__ is the list of what the outside may name, and importing "
         "a package binds its submodules on it, so the list holds only where a "
         "read is checked against it" in f
@@ -3312,7 +3312,7 @@ def test_sibling_reference_scoping_and_spoof_resistance() -> None:
     sibling = [f for f in findings if "reaches sibling" in f]
     assert not any("Scoped.outer" in f for f in sibling)
     assert any(
-        "plain.domain.y.Inner.go reaches sibling pick; a method is for outsiders "
+        "plain.domain.y.Inner.go reaches sibling pick — inline what pick does here, or move it onto the object it works on; a method is for outsiders "
         "— a class reaches into itself only for direct recursion" in f
         for f in sibling
     )
@@ -5632,7 +5632,7 @@ def test_helper_rules_are_flagged() -> None:
     )
     assert any(
         "bad_builder" in f
-        and "returns no construction data; a helper builds a spec or a DTO" in f
+        and "returns no construction data — inline it into the tests that call it, or make it build one spec or DTO; a helper builds a spec or a DTO" in f
         for f in findings
     )
     assert any(
@@ -5784,7 +5784,7 @@ def test_a_relay_record_has_no_helper_and_a_default_never_builds_a_domain_object
                )
     helper = [f for f in findings if "test_thing_relay_helpers" in f and "TB073" in f]
     assert any(
-        "keep_thing_request returns a relay record; a relay record carries domain objects, "
+        "keep_thing_request returns a relay record — build the relay record in the test itself; a relay record carries domain objects, "
         "and a test builds its domain objects itself" in f
         for f in helper
     ), helper
@@ -5850,12 +5850,12 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
     assembly = [f for f in findings if "test_assemblies" in f and "TB073" in f]
     assert not any("test_assemblies.joined" in f for f in assembly), assembly
     assert any(
-        "test_assemblies.branching has control flow; an assembly puts parts together without branching or looping"
+        "test_assemblies.branching has control flow — move the branch or loop into the test, one assembly per shape; an assembly puts parts together without branching or looping"
         in f
         for f in assembly
     ), assembly
     assert any(
-        "test_assemblies.running calls thing.Thing in the code under test; "
+        "test_assemblies.running calls thing.Thing in the code under test — call it in the test and hand the assembly only the parts; "
         "an assembly builds a test input and runs nothing" in f
         for f in assembly
     ), assembly
@@ -5863,7 +5863,7 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
         "test_assemblies.undefaulted parameter 'text' has no default" in f for f in assembly
     ), assembly
     assert sum(
-        "test_assemblies.looping has control flow; an assembly puts parts together" in f for f in assembly
+        "test_assemblies.looping has control flow — move the branch or loop into the test, one assembly per shape; an assembly puts parts together" in f for f in assembly
     ) == 2, assembly
     assert any("test_assemblies.through_a_method calls thing.Thing.parse in the code under test" in f for f in assembly), assembly
     assert sum("test_assemblies.guarded has control flow" in f for f in assembly) == 2, assembly
@@ -5871,7 +5871,7 @@ def test_an_assembly_puts_a_test_input_together_without_branching_or_running_the
     assert not any("test_assemblies.from_a_field" in f for f in assembly), assembly
     assert any("test_assemblies.yielding has control flow" in f for f in assembly), assembly
     assert any(
-        "test_assemblies.awaited is async; a helper or assembly returns its construction, never a coroutine" in f
+        "test_assemblies.awaited is async — make it a plain def; a helper or assembly returns its construction, never a coroutine" in f
         for f in assembly
     ), assembly
     assert not any("TB071" in f and "test_assemblies" in f for f in findings), findings
@@ -6001,7 +6001,7 @@ def test_a_helper_whose_constructor_the_analyzer_cannot_read_is_flagged() -> Non
                )
     helper = [f for f in findings if "test_unread_helpers" in f and "TB073" in f]
     assert any(
-        "test_unread_helpers.local_request returns LocalRequest, whose constructor the analyzer cannot read; "
+        "test_unread_helpers.local_request returns LocalRequest, whose constructor the analyzer cannot read — return a spec or DTO declared in the tree; "
         "a helper mirrors a constructor declared in the tree" in f
         for f in helper
     ), helper
@@ -10409,7 +10409,7 @@ def test_an_implementation_module_carries_exactly_one_sibling_test() -> None:
         ))).violations()
                )
     assert any(
-        "shop.domain.money has no sibling test file; an implementation "
+        "shop.domain.money has no sibling test file — add test_money.py beside it; an implementation "
         "module carries exactly one test_<module>.py beside it" in f
         for f in findings
     )
@@ -10450,7 +10450,7 @@ def test_a_sibling_test_names_the_module_beside_it() -> None:
         ))).violations()
                )
     assert any(
-        "shop.domain.test_ghost pairs with no implementation module; a sibling "
+        "shop.domain.test_ghost pairs with no implementation module — name it test_<module>.py for the module it tests, or move its tests beside that module; a sibling "
         "test file is named test_<module>.py for the module beside it" in f
         for f in findings
     )
@@ -10759,7 +10759,7 @@ def test_the_shells_tests_keep_function_totality() -> None:
         )).violations()
     )
     assert any(
-        "is neither a test nor a declared helper; a test module holds "
+        "is neither a test nor a declared helper — name it test_ if it is a test, declare it @ts.helper, @ts.assembly, or @ts.fake if it is one of those, or inline it into the tests that call it; a test module holds "
         "tests, @ts.helper builders, @ts.assembly inputs, and @ts.fake doubles" in f
         for f in findings
     ), findings
@@ -11004,12 +11004,12 @@ def test_a_sibling_method_reference_is_flagged_in_every_module_kind() -> None:
         ))).violations()
                )
     assert any(
-        "plain.domain.thing.Thing.shout reaches sibling spoken; a method is for "
+        "plain.domain.thing.Thing.shout reaches sibling spoken — inline what spoken does here, or move it onto the object it works on; a method is for "
         "outsiders — a class reaches into itself only for direct recursion" in f
         for f in findings
     )
     assert any(
-        "plain.domain.test_thing.FakeThing.poke reaches sibling prod; a method is for "
+        "plain.domain.test_thing.FakeThing.poke reaches sibling prod — inline what prod does here, or move it onto the object it works on; a method is for "
         "outsiders — a class reaches into itself only for direct recursion" in f
         for f in findings
     )
@@ -12173,6 +12173,54 @@ def test_a_spec_is_tracked_at_module_level_through_makers_mutators_and_match() -
         "a spec is only read where it initializes its own object",
         "shop/adapters/top.py:27: TB083 shop.adapters.top.Keeper.copied reads '__dict__' of the spec 'spec'; "
         "a spec is only read where it initializes its own object",
+    )
+
+
+def test_a_spec_handed_to_a_method_named_like_a_list_mutator_is_kept_only_by_a_collection() -> None:
+    findings = tuple(
+        f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
+        for v in domain.Codebase(_spec(sources=(
+            (
+                "shop/domain/tag.py",
+                "shop.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, value: str) -> None:\n"
+                "        self.value = value\n"
+                "class Tag(ts.AggregateRoot):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        self._value = spec.value\n"
+                "    def extend(self, spec: TagSpec) -> Tag:\n"
+                "        return Tag(spec)\n",
+                False,
+            ),
+            (
+                "shop/application/service.py",
+                "shop.application.service",
+                "import collections\n"
+                "import tesser.application as ts\n"
+                "import shop.domain.tag as tag\n"
+                "class Service(ts.ApplicationService):\n"
+                "    def __init__(self, spec: tag.TagSpec, held: list[tag.TagSpec]) -> None:\n"
+                "        self._queue: collections.deque[tag.TagSpec] = collections.deque()\n"
+                "        self._made = tag.Tag(spec).extend(spec)\n"
+                "        self._tag = tag.Tag(spec)\n"
+                "        self._tag.extend(spec)\n"
+                "        held.append(spec)\n"
+                "        self._queue.appendleft(spec)\n"
+                "        [].extend([spec])\n",
+                False,
+            ),
+        ))).violations()
+    )
+    tb083 = tuple(f for f in findings if " TB083 " in f)
+    assert tb083 == (
+        "shop/application/service.py:10: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
+        "shop/application/service.py:11: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
+        "shop/application/service.py:12: TB083 shop.application.service.Service.__init__ keeps the spec 'spec'; "
+        "a spec is never kept, it initializes its own object and is done",
     )
 
 
@@ -17664,12 +17712,12 @@ def test_a_package_never_exports_a_class_of_its_own_name() -> None:
         ))).violations()
     )
     assert any(
-        "mod.client re-exports Client; a package never exports a class of its own "
+        "mod.client re-exports Client — rename the class or leave it out of the list; a package never exports a class of its own "
         "name, because the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings
     assert any(
-        "kernel re-exports Kernel; a package never exports a class of its own name, "
+        "kernel re-exports Kernel — rename the class or leave it out of the list; a package never exports a class of its own name, "
         "because the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings
@@ -17705,7 +17753,7 @@ def test_a_shell_package_never_exports_a_class_of_its_own_name() -> None:
         ))).violations()
     )
     assert any(
-        "app re-exports App; a package never exports a class of its own name, because "
+        "app re-exports App — rename the class or leave it out of the list; a package never exports a class of its own name, because "
         "the name derived from the class rebinds the package's alias" in f
         for f in findings
     ), findings
@@ -18175,6 +18223,34 @@ def test_a_rewrite_refuses_a_module_alias_whose_new_name_is_already_in_use() -> 
         text=text, renames=((1, "client", "two_client"),)
     ))
     assert str(rewrite) == text
+
+
+def test_a_rewrite_keeps_a_bare_import_whose_head_another_read_still_needs() -> None:
+    text = (
+        "import mod.domain\n"
+        "def run() -> object:\n"
+        "    return (mod.domain.Tag, mod.other.Label)\n"
+    )
+    rewrite = domain.Rewrite(domain.RewriteSpec(text=text, renames=((1, "mod.domain", "mod_domain"),)))
+    assert str(rewrite) == text
+
+
+def test_a_rewrite_aliases_a_bare_import_whose_head_another_import_also_binds() -> None:
+    rewrite = domain.Rewrite(domain.RewriteSpec(
+        text=(
+            "import mod.domain\n"
+            "import mod.other\n"
+            "def run() -> object:\n"
+            "    return (mod.domain.Tag, mod.other.Label)\n"
+        ),
+        renames=((1, "mod.domain", "mod_domain"),),
+    ))
+    assert str(rewrite) == (
+        "import mod.domain as mod_domain\n"
+        "import mod.other\n"
+        "def run() -> object:\n"
+        "    return (mod_domain.Tag, mod.other.Label)\n"
+    )
 
 
 def test_a_renaming_rewrites_only_the_modules_a_rename_names() -> None:
@@ -18676,7 +18752,7 @@ def test_a_call_the_analyzer_cannot_read_is_a_finding() -> None:
         ))).violations()
     )
     assert any(
-        "mod.domain.test_tag.test_widen names wider from a call it cannot read; a name "
+        "mod.domain.test_tag.test_widen names wider from a call it cannot read — annotate the return of the function or method it calls with the class it hands back; a name "
         "is derived from the class it carries, in snake_case, read through the "
         "annotation of the parameter, the constructor, or the field, parameter, or "
         "module function a call is made on, because a name the analyzer cannot check "
@@ -19972,6 +20048,99 @@ def test_an_enum_on_an_operations_response_is_its_one_outcome_named_outcome() ->
     assert not any("Sink.grade_item " in f for f in findings), findings
 
 
+def test_an_enum_a_port_answers_as_a_str_is_caught_where_its_reader_builds_the_enum() -> None:
+    findings = tuple(
+        f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
+        for v in domain.Codebase(_spec(sources=(
+            (
+                "shop/domain/__init__.py",
+                "shop.domain",
+                "from shop.domain.member import MemberStanding as MemberStanding\n",
+                True,
+            ),
+            (
+                "shop/domain/member.py",
+                "shop.domain.member",
+                "import enum\n"
+                "class MemberStanding(enum.Enum):\n"
+                "    REGISTERED = 'registered'\n"
+                "    UNREGISTERED = 'unregistered'\n",
+                False,
+            ),
+            (
+                "shop/application/ports/__init__.py",
+                "shop.application.ports",
+                "from shop.application.ports.member_register import Loan as Loan\n"
+                "from shop.application.ports.member_register import LookUpMemberRequest as LookUpMemberRequest\n"
+                "from shop.application.ports.member_register import LookUpMemberResponse as LookUpMemberResponse\n"
+                "from shop.application.ports.member_register import LoadLoanRequest as LoadLoanRequest\n"
+                "from shop.application.ports.member_register import LoadLoanResponse as LoadLoanResponse\n"
+                "from shop.application.ports.member_register import MemberRegister as MemberRegister\n",
+                True,
+            ),
+            (
+                "shop/application/ports/member_register.py",
+                "shop.application.ports.member_register",
+                "import typing\n"
+                "import tesser.application as ts\n"
+                "class LookUpMemberRequest(ts.Request):\n"
+                "    def __init__(self, member: str) -> None:\n"
+                "        self.member = member\n"
+                "class LookUpMemberResponse(ts.Response):\n"
+                "    def __init__(self, member_name: str, member_standing: str) -> None:\n"
+                "        self.member_name = member_name\n"
+                "        self.member_standing = member_standing\n"
+                "class Loan(ts.Response):\n"
+                "    def __init__(self, standing: str) -> None:\n"
+                "        self.standing = standing\n"
+                "class LoadLoanRequest(ts.Request):\n"
+                "    def __init__(self, loan_id: str) -> None:\n"
+                "        self.loan_id = loan_id\n"
+                "class LoadLoanResponse(ts.Response):\n"
+                "    def __init__(self, loan: Loan) -> None:\n"
+                "        self.loan = loan\n"
+                "class MemberRegister(ts.Port, typing.Protocol):\n"
+                "    async def look_up_member(self, look_up_member_request: LookUpMemberRequest) -> LookUpMemberResponse: ...\n"
+                "    async def load_loan(self, load_loan_request: LoadLoanRequest) -> LoadLoanResponse: ...\n",
+                False,
+            ),
+            (
+                "shop/application/standing.py",
+                "shop.application.standing",
+                "import shop.application.ports as ports\n"
+                "import shop.domain as domain\n"
+                "def standing_of(look_up_member_response: ports.LookUpMemberResponse) -> domain.MemberStanding:\n"
+                "    return domain.MemberStanding(look_up_member_response.member_standing)\n"
+                "def standing_kept(loan: ports.Loan) -> domain.MemberStanding:\n"
+                "    return domain.MemberStanding(loan.standing)\n"
+                "def name_of(look_up_member_response: ports.LookUpMemberResponse) -> str:\n"
+                "    return str(look_up_member_response.member_name)\n"
+                "class Lookup:\n"
+                "    def __init__(self, member_register: ports.MemberRegister) -> None:\n"
+                "        self._member_register = member_register\n"
+                "    async def look_up(self, member: str) -> domain.MemberStanding:\n"
+                "        look_up_member_response = await self._member_register.look_up_member(ports.LookUpMemberRequest(member=member))\n"
+                "        return domain.MemberStanding(look_up_member_response.member_standing)\n",
+                False,
+            ),
+        ))).violations()
+    )
+    built = [f for f in findings if "builds MemberStanding from" in f]
+    assert any(
+        f.startswith("shop/application/standing.py:4: TB085 shop.application.standing.standing_of builds MemberStanding "
+                     "from LookUpMemberResponse.member_standing, a str a port answers; a port answer that is an enum is "
+                     "the response's outcome, the field named outcome typed as the enum named for its operation, "
+                     "because a str carrying an enum's value leaves its reader nothing to match exhaustively")
+        for f in built
+    ), findings
+    assert any(
+        f.startswith("shop/application/standing.py:14: TB085 shop.application.standing.Lookup.look_up builds MemberStanding "
+                     "from LookUpMemberResponse.member_standing")
+        for f in built
+    ), findings
+    assert len(built) == 2, built
+
+
 def test_a_relay_is_named_for_the_far_side_its_operations_reach() -> None:
     findings = tuple(
         f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}"
@@ -20856,7 +21025,7 @@ def test_a_fake_of_a_subscripted_workflow_implements_that_workflow() -> None:
     assert not any(f"{where}.FakeFlowWorkflow implements no" in f for f in findings), findings
     assert any(
         f"{where}.FakeCounts implements no application port, store, relay, protocol port, client, "
-        "deprecated workflow, or config repository; a fake implements the contract it doubles" in f
+        "deprecated workflow, or config repository — subclass the contract it stands in for; a fake implements the contract it doubles" in f
         for f in findings
     ), findings
 
@@ -22913,3 +23082,682 @@ def test_a_relays_constant_is_assigned_once() -> None:
         "is assigned once, because the analyzer reads one value and Python keeps the last" in f
         for f in findings
     ), findings
+
+
+@ts.assembly
+def _fixing_spec(
+    sources: tuple[tuple[str, str, str | None, bool], ...] = (),
+    declared: str = "app",
+    passes: int = 8,
+    base: tuple[tuple[str, str, str | None, bool], ...] = (
+        ("mod/__init__.py", "mod", "", True),
+        (
+            "mod/domain/__init__.py",
+            "mod.domain",
+            "from mod.domain.tag import Tag as Tag\n"
+            "from mod.domain.tag import TagSpec as TagSpec\n",
+            True,
+        ),
+        (
+            "mod/domain/tag.py",
+            "mod.domain.tag",
+            "import tesser.domain as ts\n"
+            "class TagSpec(ts.Spec):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        self.text = text\n"
+            "class Tag(ts.ValueObject):\n"
+            "    def __init__(self, spec: TagSpec) -> None:\n"
+            "        object.__setattr__(self, '_text', spec.text)\n",
+            False,
+        ),
+    ),
+) -> domain.FixingSpec:
+    return domain.FixingSpec(
+        sources=base + sources, declared=declared, nested=(), symlinked=(), passes=passes
+    )
+
+
+def test_a_fixing_renames_every_local_a_finding_names_in_its_own_function() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "class TestTag:\n"
+            "    async def test_one(self) -> None:\n"
+            "        made = domain.TagSpec('a')\n"
+            "        assert domain.Tag(made) is not None\n"
+            "    async def test_two(self) -> None:\n"
+            "        made = domain.TagSpec('b')\n"
+            "        assert made.text == 'made'\n",
+            False,
+        ),
+    )))
+    rewritten = fixing.rewritten()
+    assert [str(module.path()) for module in rewritten] == ["mod/domain/test_tag.py"]
+    assert str(rewritten[0].text()) == (
+        "import mod.domain as domain\n"
+        "class TestTag:\n"
+        "    async def test_one(self) -> None:\n"
+        "        tag_spec = domain.TagSpec('a')\n"
+        "        assert domain.Tag(tag_spec) is not None\n"
+        "    async def test_two(self) -> None:\n"
+        "        tag_spec = domain.TagSpec('b')\n"
+        "        assert tag_spec.text == 'made'\n"
+    )
+
+
+def test_a_fixing_settles_a_rename_that_waits_on_another_in_a_later_pass() -> None:
+    sources = (
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_two_names_settle_in_turn() -> None:\n"
+            "    first = domain.TagSpec('a')\n"
+            "    tag_spec = domain.Tag(first)\n"
+            "    assert tag_spec is not None\n",
+            False,
+        ),
+    )
+    settled = domain.Fixing(_fixing_spec(sources=sources)).rewritten()
+    assert "    tag_spec = domain.TagSpec('a')\n    tag = domain.Tag(tag_spec)\n" in str(settled[0].text())
+    one_pass = domain.Fixing(_fixing_spec(sources=sources, passes=1)).rewritten()
+    assert "    first = domain.TagSpec('a')\n    tag = domain.Tag(first)\n" in str(one_pass[0].text())
+
+
+def test_a_fixing_never_renames_a_parameter_because_a_caller_names_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_parameter_keeps_its_name(made: domain.TagSpec) -> None:\n"
+            "    assert domain.Tag(made) is not None\n",
+            False,
+        ),
+    )))
+    assert fixing.rewritten() == ()
+
+
+def test_a_fixing_of_an_undeclared_tree_rewrites_nothing() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        declared="missing",
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_one() -> None:\n"
+                "    made = domain.TagSpec('a')\n"
+                "    assert made is not None\n",
+                False,
+            ),
+        ),
+    ))
+    assert fixing.rewritten() == ()
+
+
+def test_a_tally_names_what_the_fix_cleared_and_what_a_check_still_finds() -> None:
+    fixing_spec = _fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_one() -> None:\n"
+            "    made = domain.TagSpec('a')\n"
+            "    assert domain.Tag(made) is not None\n"
+            "def test_two(made: domain.TagSpec) -> None:\n"
+            "    assert made is not None\n",
+            False,
+        ),
+    ))
+    fixing = domain.Fixing(fixing_spec)
+    fixed_text = str(fixing.rewritten()[0].text())
+    fix_tally = fixing.tally(domain.Codebase(_spec(
+        base=(),
+        sources=(
+            ("mod/__init__.py", "mod", "", True),
+            (
+                "mod/domain/__init__.py",
+                "mod.domain",
+                "from mod.domain.tag import Tag as Tag\n"
+                "from mod.domain.tag import TagSpec as TagSpec\n",
+                True,
+            ),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+            ("mod/domain/test_tag.py", "mod.domain.test_tag", fixed_text, False),
+        ),
+    )))
+    cleared = [f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}" for v in fix_tally.cleared()]
+    remaining = [f"{v.path()}:{int(v.line())}: {v.code()} {v.text()}" for v in fix_tally.remaining()]
+    assert len(cleared) == 1
+    assert cleared[0].startswith("mod/domain/test_tag.py:3: TB085 mod.domain.test_tag.test_one names made for a tag_spec;")
+    assert len(remaining) == 1
+    assert remaining[0].startswith("mod/domain/test_tag.py:5: TB085 mod.domain.test_tag.test_two names made for a tag_spec;")
+
+
+def test_a_fixing_aliases_a_bare_package_import_and_every_read_through_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain\n"
+            "def test_a_tag_is_built() -> None:\n"
+            "    assert mod.domain.Tag(mod.domain.TagSpec('a')) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["tests/test_tags.py"] == (
+        "import mod.domain as mod_domain\n"
+        "def test_a_tag_is_built() -> None:\n"
+        "    assert mod_domain.Tag(mod_domain.TagSpec('a')) is not None\n"
+    )
+
+
+def test_a_fixing_realiases_a_package_imported_under_a_name_the_rule_does_not_derive() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain as dom\n"
+            "def test_a_tag_is_built() -> None:\n"
+            "    assert dom.Tag(dom.TagSpec('a')) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["tests/test_tags.py"] == (
+        "import mod.domain as mod_domain\n"
+        "def test_a_tag_is_built() -> None:\n"
+        "    assert mod_domain.Tag(mod_domain.TagSpec('a')) is not None\n"
+    )
+
+
+def test_a_fixing_leaves_an_alias_whose_derived_name_a_reader_already_binds() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        ("tests/__init__.py", "tests", "", True),
+        (
+            "tests/test_tags.py",
+            "tests.test_tags",
+            "import mod.domain as dom\n"
+            "def test_a_tag_is_built(mod_domain: str) -> None:\n"
+            "    assert dom.Tag(dom.TagSpec(mod_domain)) is not None\n",
+            False,
+        ),
+    )))
+    assert fixing.rewritten() == ()
+
+
+def test_a_repaired_init_drops_the_whole_line_of_a_re_export_nothing_reads() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C\nfrom a.b.d import D as D\n",
+        repairs=(("unexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "from a.b.d import D as D\n"
+
+
+def test_a_repaired_init_drops_one_name_and_keeps_the_others_on_its_line() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C, E as E\n",
+        repairs=(("unexport", 1, "E", ""),),
+    ))
+    assert str(repaired) == "from a.b.c import C as C\n"
+
+
+def test_a_repaired_init_repeats_the_name_a_re_export_left_out() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C\nfrom a.b.c import E as E\n",
+        repairs=(("reexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "from a.b.c import C as C\nfrom a.b.c import E as E\n"
+
+
+def test_a_repaired_init_rewrites_a_parenthesized_re_export_one_name_a_line() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import (\n    C,\n    E as E,\n    F as F,\n)\nfrom a.b.d import D as D\n",
+        repairs=(("reexport", 1, "C", ""), ("unexport", 1, "F", "")),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import (\n    C as C,\n    E as E,\n)\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_adds_an_export_after_the_last_line_from_the_same_module() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C\nfrom a.b.d import D as D\n",
+        repairs=(("export", 1, "E", "a.b.c"),),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import C as C\nfrom a.b.c import E as E\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_adds_an_export_to_an_empty_init() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="", repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == "from a.b.c import E as E\n"
+
+
+def test_a_repaired_init_ends_the_last_line_before_it_adds_an_export() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.d import D as D", repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == "from a.b.d import D as D\nfrom a.b.c import E as E\n"
+
+
+def test_a_repaired_init_adds_nothing_where_the_init_holds_more_than_re_exports() -> None:
+    text = "from a.b.d import D as D\nVALUE = 1\n"
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=(("export", 1, "E", "a.b.c"),)
+    ))
+    assert str(repaired) == text
+
+
+def test_a_repaired_init_keeps_the_comment_a_dropped_re_export_carried() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import C as C  # tesser:debt-file TB040\nfrom a.b.d import D as D\n",
+        repairs=(("unexport", 1, "C", ""),),
+    ))
+    assert str(repaired) == "# tesser:debt-file TB040\nfrom a.b.d import D as D\n"
+
+
+def test_a_repaired_init_leaves_a_re_export_that_shares_its_line_with_another_statement() -> None:
+    text = "from a.b.c import C as C; from a.b.d import D as D\n"
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=(("unexport", 1, "C", ""),)
+    ))
+    assert str(repaired) == text
+
+
+def test_a_fixing_drops_a_re_export_nothing_outside_the_role_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_spec_carries_its_text() -> None:\n"
+            "    assert domain.TagSpec('a').text == 'a'\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {"mod/domain/__init__.py": "from mod.domain.tag import TagSpec as TagSpec\n"}
+
+
+def test_a_fixing_empties_an_init_whose_only_re_export_nothing_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(base=(
+        ("mod/__init__.py", "mod", "", True),
+        ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import Tag as Tag\n", True),
+        (
+            "mod/domain/tag.py",
+            "mod.domain.tag",
+            "import tesser.domain as ts\n"
+            "class Tag(ts.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+        ("mod/domain/test_tag.py", "mod.domain.test_tag", "def test_tag() -> None:\n    assert True\n", False),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {"mod/domain/__init__.py": ""}
+
+
+def test_a_fixing_keeps_a_re_export_a_module_inside_the_package_still_reads() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_spec_carries_its_text() -> None:\n"
+            "    assert domain.TagSpec('a').text == 'a'\n",
+            False,
+        ),
+        (
+            "mod/domain/labels.py",
+            "mod.domain.labels",
+            "import tesser.domain as ts\n"
+            "import mod.domain as domain\n"
+            "class Label(ts.ValueObject):\n"
+            "    def __init__(self, spec: domain.TagSpec) -> None:\n"
+            "        object.__setattr__(self, '_tag', domain.Tag(spec))\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "mod/domain/__init__.py" not in rewritten
+
+
+def test_a_fixing_exports_a_name_a_reader_needs_from_the_one_module_that_defines_it() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_a_tag_is_built_from_its_spec() -> None:\n"
+                "    tag_spec = domain.TagSpec('a')\n"
+                "    assert domain.Tag(tag_spec) is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten == {
+        "mod/domain/__init__.py": (
+            "from mod.domain.tag import Tag as Tag\n"
+            "from mod.domain.tag import TagSpec as TagSpec\n"
+        )
+    }
+
+
+def test_a_fixing_exports_nothing_when_no_one_module_alone_defines_the_name() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+            (
+                "mod/domain/other.py",
+                "mod.domain.other",
+                "import tesser.domain as ts\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_reads() -> None:\n"
+                "    assert domain.Tag is not None\n"
+                "    assert domain.Missing is not None\n"
+                "    assert domain.other is not None\n"
+                "    assert domain.TagSpec is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "mod/domain/__init__.py" not in rewritten
+
+
+def test_a_fixing_never_exports_a_class_named_for_its_own_package() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import Tag as Tag\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n"
+                "class Domain(ts.ValueObject):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        object.__setattr__(self, '_text', text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_reads() -> None:\n"
+                "    assert domain.Tag('a') is not None\n"
+                "    assert domain.Domain('a') is not None\n",
+                False,
+            ),
+        ),
+    ))
+    assert fixing.rewritten() == ()
+
+
+def test_a_repaired_init_adds_an_export_where_it_sorts_among_lines_from_the_same_module() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.c import A as A\nfrom a.b.c import F as F\nfrom a.b.d import D as D\n",
+        repairs=(("export", 1, "E", "a.b.c"), ("export", 1, "B", "a.b.c")),
+    ))
+    assert str(repaired) == (
+        "from a.b.c import A as A\nfrom a.b.c import B as B\nfrom a.b.c import E as E\n"
+        "from a.b.c import F as F\nfrom a.b.d import D as D\n"
+    )
+
+
+def test_a_repaired_init_ends_the_last_line_once_before_two_exports() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="from a.b.d import D as D",
+        repairs=(("export", 1, "E", "a.b.c"), ("export", 1, "F", "a.b.c")),
+    ))
+    assert str(repaired) == "from a.b.d import D as D\nfrom a.b.c import E as E\nfrom a.b.c import F as F\n"
+
+
+def test_a_repaired_line_loses_a_debt_marker_that_suppresses_nothing_and_keeps_its_code() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="import os  # tesser:debt TB050\nx = 1\n",
+        repairs=(("undebt", 1, "", ""),),
+    ))
+    assert str(repaired) == "import os\nx = 1\n"
+
+
+def test_a_repaired_module_loses_the_whole_line_of_a_file_marker_that_suppresses_nothing() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text="import os\n# tesser:debt-file TB040\nx = 'ü'  # tesser:debt TB050\n",
+        repairs=(("undebt", 2, "", ""), ("undebt", 3, "", "")),
+    ))
+    assert str(repaired) == "import os\nx = 'ü'\n"
+
+
+def test_a_repaired_line_keeps_a_marker_spelled_inside_a_string() -> None:
+    text = "x = '# tesser:debt TB050'\n"
+    repaired = domain.Repaired(domain.RepairedSpec(text=text, repairs=(("undebt", 1, "", ""),)))
+    assert str(repaired) == text
+
+
+def test_a_fixing_drops_a_stale_marker_and_keeps_one_that_suppresses_or_is_malformed() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "import mod.domain as domain\n"
+            "def test_a_tag_is_built_from_its_spec() -> None:\n"
+            "    tag_spec = domain.TagSpec('a')  # tesser:debt TB085\n"
+            "    made = domain.Tag(tag_spec)  # tesser:debt TB085\n"
+            "    assert made is not None  # tesser:debt TB85\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["mod/domain/test_tag.py"] == (
+        "import mod.domain as domain\n"
+        "def test_a_tag_is_built_from_its_spec() -> None:\n"
+        "    tag_spec = domain.TagSpec('a')\n"
+        "    made = domain.Tag(tag_spec)  # tesser:debt TB085\n"
+        "    assert made is not None  # tesser:debt TB85\n"
+    )
+
+
+def test_a_fixing_drops_a_marker_an_earlier_pass_of_the_same_run_left_stale() -> None:
+    fixing = domain.Fixing(_fixing_spec(
+        base=(
+            ("mod/__init__.py", "mod", "", True),
+            ("mod/domain/__init__.py", "mod.domain", "from mod.domain.tag import TagSpec as TagSpec\n", True),
+            (
+                "mod/domain/tag.py",
+                "mod.domain.tag",
+                "import tesser.domain as ts\n"
+                "class TagSpec(ts.Spec):\n"
+                "    def __init__(self, text: str) -> None:\n"
+                "        self.text = text\n"
+                "class Tag(ts.ValueObject):\n"
+                "    def __init__(self, spec: TagSpec) -> None:\n"
+                "        object.__setattr__(self, '_text', spec.text)\n",
+                False,
+            ),
+        ),
+        sources=(
+            (
+                "mod/domain/test_tag.py",
+                "mod.domain.test_tag",
+                "import mod.domain as domain\n"
+                "def test_excused() -> None:\n"
+                "    tag_spec = domain.TagSpec('a')\n"
+                "    assert domain.Tag(tag_spec) is not None  # tesser:debt TB042\n"
+                "def test_unexcused() -> None:\n"
+                "    tag_spec = domain.TagSpec('b')\n"
+                "    assert domain.Tag(tag_spec) is not None\n",
+                False,
+            ),
+        ),
+    ))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "from mod.domain.tag import Tag as Tag\n" in rewritten["mod/domain/__init__.py"]
+    assert "tesser:debt" not in rewritten["mod/domain/test_tag.py"]
+
+
+def test_a_repaired_module_with_deferred_annotations_unquotes_every_quoted_type() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=(
+            "from __future__ import annotations\n"
+            "def make(tag: 'Tag', tags: list[\"Tag\"]) -> 'Tag | None':\n"
+            "    return None\n"
+            "class Holder:\n"
+            "    held: 'Tag'\n"
+        ),
+        repairs=(("unquote", 2, "", ""), ("unquote", 5, "", "")),
+    ))
+    assert str(repaired) == (
+        "from __future__ import annotations\n"
+        "def make(tag: Tag, tags: list[Tag]) -> Tag | None:\n"
+        "    return None\n"
+        "class Holder:\n"
+        "    held: Tag\n"
+    )
+
+
+def test_a_repaired_module_without_deferred_annotations_unquotes_only_a_local() -> None:
+    text = (
+        "def make(tag: 'Tag') -> 'Tag':\n"
+        "    made: 'Tag' = tag\n"
+        "    return made\n"
+        "class Holder:\n"
+        "    held: 'Tag'\n"
+    )
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text,
+        repairs=(("unquote", 1, "", ""), ("unquote", 2, "", ""), ("unquote", 5, "", "")),
+    ))
+    assert str(repaired) == text.replace("    made: 'Tag' = tag\n", "    made: Tag = tag\n")
+
+
+def test_a_repaired_annotation_keeps_a_literal_a_runtime_qualifier_and_what_is_not_a_type() -> None:
+    text = (
+        "from __future__ import annotations\n"
+        "import typing\n"
+        "class Holder:\n"
+        "    kind: typing.Literal['a', 'b']\n"
+        "    count: 'typing.ClassVar[int]'\n"
+        "    limit: 'Final[int]'\n"
+        "    odd: 'not a type'\n"
+        "    call: 'make()'\n"
+        "    escaped: 'Ta\\x67'\n"
+    )
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=tuple(("unquote", line, "", "") for line in range(4, 10))
+    ))
+    assert str(repaired) == text
+
+
+def test_a_fixing_unquotes_an_annotation_its_module_already_defers() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "from __future__ import annotations\n"
+            "import mod.domain as domain\n"
+            "def test_a_tag_is_built_from_its_spec() -> None:\n"
+            "    tag_spec: 'domain.TagSpec' = domain.TagSpec('a')\n"
+            "    assert domain.Tag(tag_spec) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "    tag_spec: domain.TagSpec = domain.TagSpec('a')\n" in rewritten["mod/domain/test_tag.py"]
+
+
+def test_a_fixing_aliases_a_module_s_own_tesser_package_as_ts() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/labels.py",
+            "mod.domain.labels",
+            "import tesser.domain as tesser_domain\n"
+            "class Label(tesser_domain.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+        (
+            "mod/domain/stamps.py",
+            "mod.domain.stamps",
+            "import tesser.domain\n"
+            "class Stamp(tesser.domain.ValueObject):\n"
+            "    def __init__(self, text: str) -> None:\n"
+            "        object.__setattr__(self, '_text', text)\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert rewritten["mod/domain/labels.py"].startswith(
+        "import tesser.domain as ts\nclass Label(ts.ValueObject):\n"
+    )
+    assert rewritten["mod/domain/stamps.py"].startswith(
+        "import tesser.domain as ts\nclass Stamp(ts.ValueObject):\n"
+    )

@@ -1,0 +1,67 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import json
+
+import pytest
+import tesser.testing as ts
+
+import {{context}}.adapters.handlers as handlers
+import {{context}}.client as client
+import protocol
+
+
+@ts.fake
+class Fake{{ClientClass}}(client.{{ClientClass}}):
+
+    def __init__(self) -> None:
+{{#routes}}
+        self.{{operation}}_requests: list[client.{{Operation}}Request] = []
+{{/routes}}
+{{#routes}}
+
+    async def {{operation}}(self, {{operation}}_request: client.{{Operation}}Request) -> client.{{Operation}}Response:
+        self.{{operation}}_requests.append({{operation}}_request)
+        return client.{{Operation}}Response({{response_sample}})
+{{/routes}}
+
+
+@ts.fake
+class FakeRejecting{{ClientClass}}(client.{{ClientClass}}):
+{{#routes}}
+
+    async def {{operation}}(self, {{operation}}_request: client.{{Operation}}Request) -> client.{{Operation}}Response:
+        raise client.{{Rejected}}("refused", "the {{aggregate}} is refused")
+{{/routes}}
+
+
+class TestHttpHandler:
+{{#routes}}
+
+    async def test_{{operation}}_passes_what_it_reads_and_answers_{{status}}_with_the_response_fields(self) -> None:
+        fake_{{context}}_client = Fake{{ClientClass}}()
+
+        http_response = await handlers.HttpHandler(fake_{{context}}_client).{{operation}}(
+            protocol.HttpRequest(path_params={{path_params_sample}}, body={{body_sample}})
+        )
+
+        assert (http_response.status_code, json.loads(http_response.body)) == ({{status}}, {{response_json}})
+        assert fake_{{context}}_client.{{operation}}_requests == [client.{{Operation}}Request({{request_sample}})]
+
+    async def test_{{operation}}_answers_422_with_the_message_of_a_refusal(self) -> None:
+        http_response = await handlers.HttpHandler(FakeRejecting{{ClientClass}}()).{{operation}}(
+            protocol.HttpRequest(path_params={{path_params_sample}}, body={{body_sample}})
+        )
+
+        assert (http_response.status_code, json.loads(http_response.body)) == (422, {"detail": "the {{aggregate}} is refused"})
+{{#has_inputs}}
+
+    async def test_{{operation}}_missing_what_it_reads_is_a_bad_request_that_calls_nothing(self) -> None:
+        fake_{{context}}_client = Fake{{ClientClass}}()
+
+        with pytest.raises(protocol.BadRequest):
+            await handlers.HttpHandler(fake_{{context}}_client).{{operation}}(protocol.HttpRequest(path_params={}, body=b"{}"))
+
+        assert fake_{{context}}_client.{{operation}}_requests == []
+{{/has_inputs}}
+{{/routes}}

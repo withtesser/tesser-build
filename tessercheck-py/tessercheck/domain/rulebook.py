@@ -25,6 +25,9 @@ HOLE_NAMES: typing.Final[dict[str, str]] = {
     "orchestrated": "⟨module⟩",
     "context": "⟨context⟩",
     "where": "⟨module.Class.method⟩",
+    "built_enum.name()": "⟨enum⟩",
+    "carrier.name()": "⟨response⟩",
+    "carried": "⟨field⟩",
     "module.name()": "⟨module⟩",
     "cls.name": "⟨class⟩",
     "callee.id": "⟨function⟩",
@@ -44,6 +47,7 @@ HOLE_NAMES: typing.Final[dict[str, str]] = {
     "node.name": "⟨class⟩",
     "member.name": "⟨method⟩",
     "sibling": "⟨method⟩",
+    "base": "⟨module⟩",
     "inner.name": "⟨class⟩",
     "type(node).__name__": "⟨node⟩",
     "target": "⟨import⟩",
@@ -271,7 +275,7 @@ VIOLATION_SPEC: typing.Final[str] = "ViolationSpec"
 
 VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("path", "line", "code", "message")
 
-OPTIONAL_VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("rename",)
+OPTIONAL_VIOLATION_FIELDS: typing.Final[tuple[str, ...]] = ("rename", "repair")
 
 
 class RuleRowSpec(ts.Spec):

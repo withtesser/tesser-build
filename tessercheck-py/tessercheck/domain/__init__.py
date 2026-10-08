@@ -9,6 +9,9 @@ from tessercheck.domain.checks import DECLARED_UNREADABLE as DECLARED_UNREADABLE
 from tessercheck.domain.checks import DECLARED_UNRECOGNIZED as DECLARED_UNRECOGNIZED
 from tessercheck.domain.checks import DEBT_FILE_MARKER as DEBT_FILE_MARKER
 from tessercheck.domain.checks import DEBT_MARKER as DEBT_MARKER
+from tessercheck.domain.checks import FixTally as FixTally
+from tessercheck.domain.checks import Fixing as Fixing
+from tessercheck.domain.checks import FixingSpec as FixingSpec
 from tessercheck.domain.checks import GOVERNANCE_GOVERNED as GOVERNANCE_GOVERNED
 from tessercheck.domain.checks import GOVERNANCE_OUTSIDE as GOVERNANCE_OUTSIDE
 from tessercheck.domain.checks import GOVERNANCE_SKIPPED as GOVERNANCE_SKIPPED
@@ -38,6 +41,8 @@ from tessercheck.domain.checks import PlacementSpec as PlacementSpec
 from tessercheck.domain.checks import ROLES as ROLES
 from tessercheck.domain.checks import RELAY_MESSAGE_BLOCKS as RELAY_MESSAGE_BLOCKS
 from tessercheck.domain.checks import Renaming as Renaming
+from tessercheck.domain.checks import Repaired as Repaired
+from tessercheck.domain.checks import RepairedSpec as RepairedSpec
 from tessercheck.domain.checks import RenamingSpec as RenamingSpec
 from tessercheck.domain.checks import Rewrite as Rewrite
 from tessercheck.domain.checks import RewriteSpec as RewriteSpec

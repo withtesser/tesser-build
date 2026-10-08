@@ -1,5 +1,5 @@
-# pragma: tesser-generated; regenerate from the composition, never edit by hand
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 [tool.pytest.ini_options]
-testpaths = ["app", "{{context}}", "protocol", "srv", "tests"]
+testpaths = ["app", {{#contexts}}"{{context}}", {{/contexts}}"protocol", "srv", "tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -1,0 +1,105 @@
+# 2 STORY — what a harbor master must be able to observe. See ../README.md.
+
+[[jtbds]]
+id = "j-root"
+level = 1
+as = "a harbor master"
+i_want = "every voyage to be planned to a harbor on the chart"
+so_that = "no vessel sails for a harbor nobody knows"
+
+[[jtbds.stories]]
+id = "s-1"
+given = "a vessel and a charted harbor"
+when = "I plan a voyage of the vessel to the harbor"
+then = "the voyage is on record, and reads back with the harbor_name the harbor chart gives it"
+
+[[jtbds.stories.jtbds]]
+id = "j-1-a"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-a-1"
+given = "a vessel and a harbor (the harbor_id of a charted harbor)"
+when = "I POST them as JSON to /voyages"
+then = "I get back 201 with its voyage_id"
+route = "POST /voyages"
+status = 201
+
+[[jtbds.stories.jtbds]]
+id = "j-1-b"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-1-b-1"
+given = "I have planned a voyage with POST /voyages"
+when = "I GET /voyages/{voyage_id}"
+then = "I get back 200 with its voyage_id, vessel, harbor and harbor_name"
+route = "GET /voyages/{voyage_id}"
+status = 200
+
+[[jtbds.stories]]
+id = "s-2"
+given = "a harbor that is uncharted"
+when = "I plan a voyage to it"
+then = "the plan is refused with 422, and nothing is put on record"
+
+[[jtbds.stories]]
+id = "s-4"
+given = "a voyage that is planned"
+when = "its vessel sails and I depart the voyage"
+then = "the voyage stays on record, and its stage is departed from then on"
+
+[[jtbds.stories.jtbds]]
+id = "j-4-a"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-4-a-1"
+given = "I have planned a voyage with POST /voyages"
+when = "I POST to /voyages/{voyage_id}/departure"
+then = "I get back 200 with its voyage_id and stage"
+route = "POST /voyages/{voyage_id}/departure"
+status = 200
+
+[[jtbds.stories]]
+id = "s-5"
+given = "a voyage that has already departed"
+when = "I depart it again"
+then = "the departure is refused with 422, and the voyage is not changed"
+
+[[jtbds]]
+id = "j-chart"
+level = 1
+as = "a harbor master"
+i_want = "every harbor a voyage may be bound for to be on the chart"
+so_that = "a voyage names a harbor everyone can find"
+
+[[jtbds.stories]]
+id = "s-3"
+given = "a harbor"
+when = "I chart it with its place_name"
+then = "it gets a harbor_id, and I can read its place_name back"
+
+[[jtbds.stories.jtbds]]
+id = "j-3-a"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-3-a-1"
+given = "a place_name"
+when = "I POST it as JSON to /harbors"
+then = "I get back 201 with its harbor_id"
+route = "POST /harbors"
+status = 201
+
+[[jtbds.stories.jtbds]]
+id = "j-3-b"
+level = 2
+
+[[jtbds.stories.jtbds.stories]]
+id = "s-3-b-1"
+given = "I have charted a harbor with POST /harbors"
+when = "I GET /harbors/{harbor_id}"
+then = "I get back 200 with its harbor_id and place_name"
+route = "GET /harbors/{harbor_id}"
+status = 200

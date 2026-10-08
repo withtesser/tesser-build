@@ -16,6 +16,7 @@ class TestFilesystemRenderingWriter:
                     ports.FileRecord(path=".tesser-root", text="app\n"),
                     ports.FileRecord(path="lending/domain/loan.py", text="class Loan:\n"),
                 ),
+                removed=(),
             )
         )
 
@@ -39,11 +40,27 @@ class TestFilesystemRenderingWriter:
                     ports.FileRecord(path="../escape.py", text="x\n"),
                     ports.FileRecord(path="linked/escape.py", text="x\n"),
                 ),
+                removed=("../gone.py",),
             )
         )
 
-        assert write_rendering_response.refused == ("../escape.py", "linked/escape.py")
+        assert write_rendering_response.refused == ("../escape.py", "linked/escape.py", "../gone.py")
         assert write_rendering_response.paths == ()
         assert not (tmp_path / "out" / "lending").exists()
         assert not (tmp_path / "escape.py").exists()
         assert not (tmp_path / "elsewhere" / "escape.py").exists()
+
+    def test_a_removed_file_is_deleted_with_every_directory_it_leaves_empty(self, tmp_path: pathlib.Path) -> None:
+        (tmp_path / "out" / "lending" / "old" / "__pycache__").mkdir(parents=True)
+        (tmp_path / "out" / "lending" / "old" / "__pycache__" / "gone.cpython-312.pyc").write_bytes(b"")
+        (tmp_path / "out" / "lending" / "old" / "gone.py").write_text("class Gone:\n")
+        (tmp_path / "out" / "lending" / "kept.py").write_text("class Kept:\n")
+
+        write_rendering_response = repositories.FilesystemRenderingWriter().write_rendering(
+            ports.WriteRenderingRequest(out_dir=str(tmp_path / "out"), files=(), removed=("lending/old/gone.py", "lending/never.py"))
+        )
+
+        assert write_rendering_response.removed == ("lending/old/gone.py",)
+        assert sorted(path.relative_to(tmp_path / "out").as_posix() for path in (tmp_path / "out").rglob("*")) == [
+            "lending", "lending/kept.py",
+        ]

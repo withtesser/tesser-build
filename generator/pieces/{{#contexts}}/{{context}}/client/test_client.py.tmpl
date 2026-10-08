@@ -1,0 +1,22 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import {{context}}.client as client
+
+
+class Test{{Rejected}}:
+
+    def test_a_refused_{{aggregate}}_carries_its_code_and_message(self) -> None:
+        {{rejected}} = client.{{Rejected}}("refused", "the {{aggregate}} is refused")
+
+        assert ({{rejected}}.code, {{rejected}}.message, str({{rejected}})) == (
+            "refused", "the {{aggregate}} is refused", "the {{aggregate}} is refused",
+        )
+
+
+class TestErrors:
+
+    def test_the_declared_set_names_every_error_the_client_raises(self) -> None:
+        raised = {name for name, value in vars(client).items() if isinstance(value, type) and issubclass(value, Exception)}
+
+        assert {error.__name__ for error in client.ERRORS} == raised

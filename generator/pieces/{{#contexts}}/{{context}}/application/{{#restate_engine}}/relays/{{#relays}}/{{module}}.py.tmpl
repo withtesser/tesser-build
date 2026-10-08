@@ -1,0 +1,78 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import json
+import typing
+
+import tesser.application as ts
+
+import tesser.errors as errors
+{{#promises}}
+
+{{PROMISE}}: typing.Final[str] = "{{promise}}"
+{{/promises}}
+{{#records}}
+
+
+class {{Record}}(ts.{{base}}):
+
+    def __init__(self{{#fields}}, {{field}}: {{dto_type}}{{/fields}}) -> None:
+{{#fields}}
+        self.{{field}} = {{field}}
+{{/fields}}
+{{^fields}}
+        return None
+{{/fields}}
+{{#snapshot}}
+
+
+class {{Record}}Snapshot(ts.Serde):
+
+    def serialize(self, {{record}}: {{Record}}) -> bytes:
+        return json.dumps(
+            {
+{{#fields}}
+{{#scalar}}
+                "{{field}}": {{record}}.{{field}},
+{{/scalar}}
+{{#array}}
+                "{{field}}": [{{{#element}}"{{name}}": {{var}}.{{name}}{{sep}}{{/element}}} for {{var}} in {{record}}.{{field}}],
+{{/array}}
+{{/fields}}
+            }
+        ).encode()
+
+    def deserialize(self, buf: bytes) -> {{Record}}:
+        snapshot = json.loads(buf)
+        if not (
+            isinstance(snapshot, dict)
+{{#fields}}
+{{#scalar}}
+            and isinstance(snapshot.get("{{field}}"), {{primitive}})
+{{/scalar}}
+{{#array}}
+            and isinstance(snapshot.get("{{field}}"), list)
+            and all(isinstance({{var}}, dict){{#element}} and isinstance({{var}}.get("{{name}}"), {{primitive}}){{/element}} for {{var}} in snapshot["{{field}}"])
+{{/array}}
+{{/fields}}
+        ):
+            raise errors.invalid("invalid_snapshot", "{{shape_note}}")
+        return {{Record}}(
+{{#fields}}
+{{#scalar}}
+            {{field}}=snapshot["{{field}}"],
+{{/scalar}}
+{{#array}}
+            {{field}}=tuple({{element_record}}({{#element}}{{name}}={{var}}["{{name}}"]{{sep}}{{/element}}) for {{var}} in snapshot["{{field}}"]),
+{{/array}}
+{{/fields}}
+        )
+{{/snapshot}}
+{{/records}}
+
+
+class {{Relay}}(ts.Relay, typing.Protocol):
+{{#operations}}
+
+    async def {{method}}(self, {{param}}: {{Request}}) -> {{Returns}}: ...
+{{/operations}}

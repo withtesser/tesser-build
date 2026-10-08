@@ -14,10 +14,11 @@ class FakeRenderingClient(client.RenderingClient):
 
     def __init__(
         self, problems: tuple[str, ...], written: tuple[str, ...], kept: tuple[str, ...],
-        printed: tuple[client.PrintedFile, ...] = (),
+        printed: tuple[client.PrintedFile, ...] = (), removed: tuple[str, ...] = (),
     ) -> None:
         self._problems = problems
         self._written = written
+        self._removed = removed
         self._kept = kept
         self._printed = printed
         self.asked: list[client.RenderCompositionRequest] = []
@@ -26,7 +27,7 @@ class FakeRenderingClient(client.RenderingClient):
     def render_composition(self, render_composition_request: client.RenderCompositionRequest) -> client.RenderCompositionResponse:
         self.asked.append(render_composition_request)
         return client.RenderCompositionResponse(
-            problems=self._problems, written=self._written, kept=self._kept, printed=self._printed
+            problems=self._problems, written=self._written, removed=self._removed, kept=self._kept, printed=self._printed
         )
 
     def check_composition(self, check_composition_request: client.CheckCompositionRequest) -> client.CheckCompositionResponse:
@@ -53,6 +54,15 @@ class TestHandler:
             ("tests/test_reading_loans.py",),
         )
 
+    def test_one_print_names_every_path_that_follows_it(self) -> None:
+        fake_rendering_client = FakeRenderingClient(problems=(), written=(), kept=())
+
+        handlers.Handler(fake_rendering_client).render(
+            protocol.CliRequest(args=("compositions/lending", "/tmp/lending", "--print", "a.py", "b.py", "--print", "c.py"))
+        )
+
+        assert fake_rendering_client.asked[0].printed == ("a.py", "b.py", "c.py")
+
     def test_a_rendered_tree_exits_zero_and_lists_what_it_wrote_then_what_it_kept(self) -> None:
         fake_rendering_client = FakeRenderingClient(problems=(), written=(".tesser-root", "lending/client/client.py"), kept=("lending/domain/loan.py",))
 
@@ -64,6 +74,20 @@ class TestHandler:
         assert [(asked.composition_dir, asked.out_dir) for asked in fake_rendering_client.asked] == [
             ("compositions/lending", "/tmp/lending")
         ]
+
+    def test_a_rendered_tree_lists_each_file_it_removed_after_what_it_wrote(self) -> None:
+        fake_rendering_client = FakeRenderingClient(
+            problems=(), written=(".tesser-root",), kept=("lending/domain/loan.py",),
+            removed=("lending/adapters/repositories/memory_loan_repository.py",),
+        )
+
+        cli_response = handlers.Handler(fake_rendering_client).render(protocol.CliRequest(args=("compositions/lending", "/tmp/lending")))
+
+        assert cli_response == protocol.CliResponse(
+            0,
+            stdout=".tesser-root\nremoved lending/adapters/repositories/memory_loan_repository.py\nkept lending/domain/loan.py",
+            stderr="",
+        )
 
     def test_problems_exit_one_each_on_its_own_line(self) -> None:
         fake_rendering_client = FakeRenderingClient(problems=("the output directory is a file", "a spec lacks the key app"), written=(), kept=())

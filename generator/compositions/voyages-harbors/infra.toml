@@ -1,0 +1,18 @@
+# 3 INFRA — what the app runs on, and what an operator must provide. See ../README.md.
+#
+# No [engine]: two contexts in one app render without one.
+
+app = "harbor_office"
+
+[runtime]
+language = "python"
+version = "3.12"
+
+[hosts.http]
+serves = "interfaces.http"
+listen_port_variable = "HARBOR_OFFICE_PORT"
+
+[storage.memory]
+
+[variables]
+HARBOR_OFFICE_PORT = "the port the HTTP host listens on"

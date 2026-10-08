@@ -1,0 +1,43 @@
+# 4 COMPOSITION — the contracts of the harbors context, the harbor chart. See ../README.md.
+#
+# A harbor_id is a whole number, which the chart's ledger issues in turn
+# (implementations.toml), so chart_harbor builds a draft harbor with
+# draft_identity before it issues one: a harbor the domain refuses takes no
+# number.
+
+context = "harbors"
+
+[aggregate]
+name = "Harbor"
+identity = "harbor_id"
+draft_identity = 0
+
+[aggregate.spec]
+harbor_id = "int"
+place_name = "str"
+
+[aggregate.reads]
+harbor_id = "int"
+place_name = "str"
+
+[interfaces.http]
+serves = ["s-3-a-1", "s-3-b-1"]
+
+[client.operations.chart_harbor]
+request = ["place_name"]
+response = ["harbor_id"]
+steps = ["identity.issue_harbor_id", "repository.save_harbor"]
+serves = ["s-3-a-1"]
+
+[client.operations.get_harbor]
+request = ["harbor_id"]
+response = ["harbor_id", "place_name"]
+steps = ["repository.load_harbor"]
+serves = ["s-3-b-1"]
+
+[ports.HarborRepository]
+operations.save_harbor = { request = ["harbor"], response = [] }
+operations.load_harbor = { request = ["harbor_id"], response = ["harbor"] }
+
+[ports.HarborIdentityRepository]
+operations.issue_harbor_id = { request = [], response = ["harbor_id"] }

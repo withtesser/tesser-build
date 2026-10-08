@@ -9,7 +9,7 @@ import app
 import protocol
 import tessercheck.adapters.handlers as tessercheck_handlers
 
-_USAGE: typing.Final[str] = "usage: python -m srv.cli.main [tree]"
+_USAGE: typing.Final[str] = "usage: python -m srv.cli.main [--fix] [tree]"
 
 
 class MainHost(ts.Host):

@@ -220,7 +220,7 @@ def test_a_symlinked_directory_is_a_finding(tmp_path: pathlib.Path) -> None:
     findings = conftest.check_tree(tmp_path)
     assert len(findings) == 1, findings
     assert any(
-        "vendored:1: TB045 is a symlinked directory; a declared tree is walked in "
+        "vendored:1: TB045 is a symlinked directory — replace it with the directory it points to; a declared tree is walked in "
         "full, and a symlink escapes the walk" in f
         for f in findings
     ), f"a symlinked directory escaped the walk silently: {findings}"

@@ -1,0 +1,69 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+{{#commanded}}
+
+import typing
+{{/commanded}}
+
+import tesser.application as ts
+
+import {{context}}.application.ports as ports
+import {{context}}.application.relays as relays
+{{#builds}}
+import {{context}}.domain as domain
+{{/builds}}
+{{#mappers}}
+
+
+class {{Mapper}}(ts.Mapper, {{target}}):
+
+    def __init__(self{{#params}}, {{param}}: {{param_type}}{{/params}}) -> None:
+        super().__init__(
+{{#args}}
+            {{field}}={{expr}},
+{{/args}}
+        )
+{{/mappers}}
+
+
+class {{Actions}}(ts.Actions):
+
+    def __init__(self, {{dependency}}: ports.{{dependency_class}}) -> None:
+        self._{{dependency}} = {{dependency}}
+{{#operations}}
+
+    async def {{operation}}(self, {{operation}}_request: relays.{{Operation}}Request) -> relays.{{Operation}}Response:
+{{#statements}}
+{{#build}}
+        {{aggregate}} = domain.{{Aggregate}}({{argument}})
+{{/build}}
+{{#port_call}}
+        {{assign}}await self._{{holder}}.{{call}}({{argument}})
+{{/port_call}}
+{{#store_call}}
+        async with self._{{holder}}.transaction() as {{repository}}:
+            {{assign}}await {{repository}}.{{call}}({{argument}})
+{{/store_call}}
+{{/statements}}
+{{#command}}
+        match {{aggregate}}.{{command}}({{command_argument}}):
+{{#arms}}
+            case domain.{{Outcome}}.{{MEMBER}}:
+{{#calls}}
+{{#store_call}}
+                async with self._{{holder}}.transaction() as {{repository}}:
+                    {{assign}}await {{repository}}.{{call}}({{argument}})
+{{/store_call}}
+{{#port_call}}
+                {{assign}}await self._{{holder}}.{{call}}({{argument}})
+{{/port_call}}
+{{/calls}}
+                return {{answer}}
+{{/arms}}
+            case _ as never:
+                typing.assert_never(never)
+{{/command}}
+{{^command}}
+        return {{answer}}
+{{/command}}
+{{/operations}}

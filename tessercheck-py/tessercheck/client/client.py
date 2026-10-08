@@ -95,6 +95,20 @@ class ApplyRenamesResponse(ts.Response):
         self.remaining = remaining
 
 
+class FixTreeRequest(ts.Request):
+
+    def __init__(self, tree: str) -> None:
+        self.tree = tree
+
+
+class FixTreeResponse(ts.Response):
+
+    def __init__(self, files: int, fixed: tuple[str, ...], remaining: tuple[str, ...]) -> None:
+        self.files = files
+        self.fixed = fixed
+        self.remaining = remaining
+
+
 class RulebookNotRendered(ts.Error):
 
     def __init__(self, code: str, message: str) -> None:
@@ -117,5 +131,7 @@ class TessercheckClient(ts.Client, typing.Protocol):
     def mark_debt(self, mark_debt_request: MarkDebtRequest) -> MarkDebtResponse: ...
 
     def apply_renames(self, apply_renames_request: ApplyRenamesRequest) -> ApplyRenamesResponse: ...
+
+    def fix_tree(self, fix_tree_request: FixTreeRequest) -> FixTreeResponse: ...
 
     def render_rulebook(self, render_rulebook_request: RenderRulebookRequest) -> RenderRulebookResponse: ...

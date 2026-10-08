@@ -1,17 +1,19 @@
-# pragma: tesser-agent-owned; generated once as a skeleton, the agent owns it from here
+# pragma: tesser-agent-owned; rendered as a skeleton for you to write, and a render keeps each definition written here by hand
 from __future__ import annotations
 
+{{#issues_any}}
+import json
+{{/issues_any}}
 import urllib.error as urllib_error
 import urllib.request as urllib_request
 
 
 class Test{{Words}}:
 
-    def test_{{story}}(self, host: str) -> None:
+    def test_{{story}}(self, host: str{{given_params}}) -> None:
 {{#path_values}}
-        {{name}}: {{type}} | None = None
+        {{name}}: {{type}} = {{sample}}
 {{/path_values}}
-        assert {{given_check}}, {{given}}
         request = urllib_request.Request(
             f"{host}{{path}}", data={{body}}, headers={"Content-Type": "application/json"}, method="{{method}}"
         )
@@ -22,5 +24,4 @@ class Test{{Words}}:
         except urllib_error.HTTPError as error:
             status, answered_body = error.code, error.read()
 
-        assert status == {{status}}
-        assert False, {{then}} + f" (answered {answered_body!r})"
+        assert status == {{status}}, {{story_text}} + f" (answered {answered_body!r})"

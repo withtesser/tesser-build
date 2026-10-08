@@ -7,7 +7,9 @@ import tesser.adapters as ts
 import protocol
 import tessercheck.client as client
 
-_CHECK_USAGE: typing.Final[str] = "usage: check [tree]"
+_CHECK_USAGE: typing.Final[str] = "usage: check [--fix] [tree]"
+
+_FIX_FLAG: typing.Final[str] = "--fix"
 
 _RULES_USAGE: typing.Final[str] = "usage: rules [tree]"
 
@@ -24,13 +26,27 @@ class Handler(ts.Handler):
         self._tessercheck_client = tessercheck_client
 
     def check(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:
-        root = cli_request.arg(0, _HERE)
-        cli_request.no_extra_args(1, _CHECK_USAGE)
-        check_tree_response = self._tessercheck_client.check_tree(client.CheckTreeRequest(tree=root))
+        operands = cli_request.without(_FIX_FLAG)
+        root = operands.arg(0, _HERE)
+        operands.no_extra_args(1, _CHECK_USAGE)
+        if not cli_request.flag(_FIX_FLAG):
+            check_tree_response = self._tessercheck_client.check_tree(client.CheckTreeRequest(tree=root))
+            return protocol.CliResponse(
+                1 if check_tree_response.findings else 0,
+                stdout="\n".join(check_tree_response.findings),
+                stderr="",
+            )
+        fix_tree_response = self._tessercheck_client.fix_tree(client.FixTreeRequest(tree=root))
+        told = [
+            f"fixed {len(fix_tree_response.fixed)} finding(s), "
+            f"rewriting {fix_tree_response.files} file(s)"
+        ]
+        told.extend(f"fixed: {finding}" for finding in fix_tree_response.fixed)
+        if fix_tree_response.remaining:
+            told.append(f"{len(fix_tree_response.remaining)} finding(s) remain:")
+            told.extend(fix_tree_response.remaining)
         return protocol.CliResponse(
-            1 if check_tree_response.findings else 0,
-            stdout="\n".join(check_tree_response.findings),
-            stderr="",
+            1 if fix_tree_response.remaining else 0, stdout="\n".join(told), stderr=""
         )
 
     def mark(self, cli_request: protocol.CliRequest) -> protocol.CliResponse:

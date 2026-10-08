@@ -1,0 +1,37 @@
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
+from __future__ import annotations
+
+import typing
+
+import tesser.context as ts
+{{#client_records}}
+
+
+class {{Record}}(ts.{{base}}):
+
+    def __init__(self{{#fields}}, {{field}}: {{dto_type}}{{/fields}}) -> None:
+{{#fields}}
+        self.{{field}} = {{field}}
+{{/fields}}
+{{^fields}}
+        return None
+{{/fields}}
+{{/client_records}}
+
+
+class {{Rejected}}(ts.Error):
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+ERRORS: typing.Final[tuple[type[{{Rejected}}]]] = ({{Rejected}},)
+
+
+class {{ClientClass}}(ts.Client, typing.Protocol):
+{{#client_operations}}
+
+    async def {{operation}}(self, {{operation}}_request: {{Operation}}Request) -> {{Operation}}Response: ...
+{{/client_operations}}

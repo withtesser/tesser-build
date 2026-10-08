@@ -20,7 +20,8 @@ class FilesystemCompositionReader(ts.Repository):
     def read_composition(self, read_composition_request: ports.ReadCompositionRequest) -> ports.ReadCompositionResponse:
         composition_dir = pathlib.Path(read_composition_request.composition_dir)
         documents: list[ports.DocumentRecord] = []
-        for name in DOCUMENTS:
+        further = sorted(found.name.removesuffix(".toml") for found in composition_dir.glob("composition.*.toml")) if composition_dir.is_dir() else []
+        for name in [*DOCUMENTS, *further]:
             document_path = composition_dir / f"{name}.toml"
             try:
                 text = document_path.read_text(encoding="utf-8")

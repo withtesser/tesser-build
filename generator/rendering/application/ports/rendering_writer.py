@@ -14,15 +14,17 @@ class FileRecord(ts.Request):
 
 class WriteRenderingRequest(ts.Request):
 
-    def __init__(self, out_dir: str, files: tuple[FileRecord, ...]) -> None:
+    def __init__(self, out_dir: str, files: tuple[FileRecord, ...], removed: tuple[str, ...]) -> None:
         self.out_dir = out_dir
         self.files = files
+        self.removed = removed
 
 
 class WriteRenderingResponse(ts.Response):
 
-    def __init__(self, paths: tuple[str, ...], refused: tuple[str, ...]) -> None:
+    def __init__(self, paths: tuple[str, ...], removed: tuple[str, ...], refused: tuple[str, ...]) -> None:
         self.paths = paths
+        self.removed = removed
         self.refused = refused
 
 

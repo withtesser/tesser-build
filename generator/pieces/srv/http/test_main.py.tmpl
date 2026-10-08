@@ -1,4 +1,4 @@
-# pragma: tesser-generated; regenerate from the composition, never edit by hand
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 from __future__ import annotations
 
 import json
@@ -7,7 +7,9 @@ import os
 import pathlib
 {{/located}}
 import signal
+{{#restate_engine}}
 import socket
+{{/restate_engine}}
 import subprocess
 import sys
 import time
@@ -16,6 +18,7 @@ import urllib.request as urllib_request
 
 
 class TestHttpHost:
+{{#restate_engine}}
 
     def test_the_mounted_restate_endpoint_discovers_the_actions_services_and_the_orchestrator_workflow(
         self, free_port: int{{#located}}, tmp_path: pathlib.Path{{/located}}
@@ -59,15 +62,20 @@ class TestHttpHost:
             "{{container}}": [{{handler_names}}],
 {{/containers}}
         }
+{{/restate_engine}}
 
     def test_the_routes_answer_by_the_failure_they_meet(self, free_port: int{{#located}}, tmp_path: pathlib.Path{{/located}}) -> None:
         port = free_port
+{{#restate_engine}}
         with socket.socket() as closed:
             closed.bind(("127.0.0.1", 0))
             unreachable = closed.getsockname()[1]
+{{/restate_engine}}
         env = dict(
             os.environ,
+{{#restate_engine}}
             {{engine_url_variable}}=f"http://127.0.0.1:{unreachable}",
+{{/restate_engine}}
 {{#locations}}
             {{location_variable}}=str(tmp_path / "{{location_attr}}"),
 {{/locations}}
@@ -75,16 +83,19 @@ class TestHttpHost:
         )
         host = subprocess.Popen([sys.executable, "-m", "srv.http.main", f"127.0.0.1:{port}"], env=env)
         answers: list[int] = []
+        issued: dict[str, object] = {}
+        probes: list[tuple[str, str, bytes | None, dict[str, str]]] = [
+{{#route_probes}}
+            ("{{method}}", "{{path}}", {{body}}, {{fills}}),
+{{/route_probes}}
+        ]
 
         try:
-            for method, path, body in (
-{{#route_probes}}
-                ("{{method}}", "{{path}}", {{body}}),
-{{/route_probes}}
-            ):
+            for method, path, body, fills in probes:
+                sent = json.dumps({**json.loads(body or b"{}"), **{field: issued[name] for field, name in fills.items()}}).encode() if fills else body
                 request = urllib_request.Request(
                     f"http://127.0.0.1:{port}{path}",
-                    data=body,
+                    data=sent,
                     method=method,
                     headers={"Content-Type": "application/json"},
                 )
@@ -92,6 +103,8 @@ class TestHttpHost:
                     try:
                         with urllib_request.urlopen(request, timeout=5) as answer:
                             answers.append(answer.status)
+                            answered = json.loads(answer.read() or b"null")
+                        issued.update(answered if isinstance(answered, dict) else {})
                         break
                     except urllib_error.HTTPError as error:
                         answers.append(error.code)

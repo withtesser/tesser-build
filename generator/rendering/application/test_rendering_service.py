@@ -34,7 +34,8 @@ class FakeRenderingWriter(ports.RenderingWriter):
     def write_rendering(self, write_rendering_request: ports.WriteRenderingRequest) -> ports.WriteRenderingResponse:
         self.written.append(write_rendering_request)
         return ports.WriteRenderingResponse(
-            paths=tuple(file_record.path for file_record in write_rendering_request.files), refused=()
+            paths=tuple(file_record.path for file_record in write_rendering_request.files),
+            removed=write_rendering_request.removed, refused=(),
         )
 
 

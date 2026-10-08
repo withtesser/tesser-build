@@ -275,6 +275,72 @@ class MapToApplyRenamesResponse(ts.Mapper, client.ApplyRenamesResponse):
         )
 
 
+class MapToFixingSpec(ts.Mapper, domain.FixingSpec):
+
+    def __init__(self, read_sources_response: ports.ReadSourcesResponse) -> None:
+        rows: list[tuple[str, str, str | None, bool]] = []
+        for source in read_sources_response.sources:
+            match source.state:
+                case ports.SourceState.READ:
+                    text: str | None = source.text
+                case ports.SourceState.UNREADABLE:
+                    text = None
+                case _ as unreachable:
+                    typing.assert_never(unreachable)
+            match source.form:
+                case ports.ModuleForm.PACKAGE:
+                    is_package = True
+                case ports.ModuleForm.MODULE:
+                    is_package = False
+                case _ as unreachable_form:
+                    typing.assert_never(unreachable_form)
+            rows.append((source.path, source.name, text, is_package))
+        match read_sources_response.outcome:
+            case ports.ReadSourcesOutcome.APP:
+                declared = domain.DECLARED_APP
+            case ports.ReadSourcesOutcome.MISSING:
+                declared = domain.DECLARED_MISSING
+            case ports.ReadSourcesOutcome.UNREADABLE:
+                declared = domain.DECLARED_UNREADABLE
+            case ports.ReadSourcesOutcome.UNRECOGNIZED:
+                declared = domain.DECLARED_UNRECOGNIZED
+            case _ as unreachable_root:
+                typing.assert_never(unreachable_root)
+        super().__init__(
+            sources=tuple(rows),
+            declared=declared,
+            nested=read_sources_response.nested,
+            symlinked=read_sources_response.symlinked,
+            exports=read_sources_response.exports,
+            imports=read_sources_response.imports,
+            stdlib=read_sources_response.stdlib,
+            pure_stdlib=read_sources_response.pure_stdlib,
+            pruned=read_sources_response.pruned,
+        )
+
+
+class MapToFixTreeResponse(ts.Mapper, client.FixTreeResponse):
+
+    def __init__(
+        self,
+        fix_tally: domain.FixTally,
+        write_sources_response: ports.WriteSourcesResponse,
+    ) -> None:
+        super().__init__(
+            files=write_sources_response.written,
+            fixed=tuple(
+                f"{violation.path()}:{int(violation.line())}: "
+                f"{violation.code()} {violation.text()}"
+                for violation in fix_tally.cleared()
+            ),
+            remaining=tuple(
+                f"{violation.path()}:{int(violation.line())}: "
+                f"{violation.code()} {violation.text()}"
+                for violation in fix_tally.remaining()
+            ),
+        )
+
+
 class TessercheckService(ts.ApplicationService):
 
     def __init__(
@@ -332,6 +398,19 @@ class TessercheckService(ts.ApplicationService):
         write_sources_response = self._source_writer.write_sources(write_sources_request)
         read_sources_response = self._source_reader.read_sources(read_sources_request)
         return MapToApplyRenamesResponse(write_sources_response, read_sources_response)
+
+    def fix_tree(self, fix_tree_request: client.FixTreeRequest) -> client.FixTreeResponse:
+        tree_root = domain.TreeRoot(fix_tree_request.tree)
+        read_sources_request = MapToReadSourcesRequest(tree_root)
+        read_sources_response = self._source_reader.read_sources(read_sources_request)
+        fixing = domain.Fixing(MapToFixingSpec(read_sources_response))
+        rewritten_modules = fixing.rewritten()
+        write_sources_request = MapToWriteSourcesRequest(tree_root, rewritten_modules)
+        write_sources_response = self._source_writer.write_sources(write_sources_request)
+        read_sources_response = self._source_reader.read_sources(read_sources_request)
+        codebase = domain.Codebase(MapToCodebaseSpec(read_sources_response))
+        fix_tally = fixing.tally(codebase)
+        return MapToFixTreeResponse(fix_tally, write_sources_response)
 
     def render_rulebook(self, render_rulebook_request: client.RenderRulebookRequest) -> client.RenderRulebookResponse:
         tree_root = domain.TreeRoot(render_rulebook_request.tree)

@@ -1,45 +1,67 @@
-# pragma: tesser-generated; regenerate from the composition, never edit by hand
+# pragma: tesser-generated; rendered from the composition, and a render keeps each definition written here by hand
 from __future__ import annotations
 
 import collections.abc as collections_abc
 import os
-{{#identity_seeded}}
+{{#identity_seeded_any}}
 import secrets
-{{/identity_seeded}}
+{{/identity_seeded_any}}
 import typing
 
 import tesser.app as ts
 
+{{#contexts}}
+{{#peers_reached}}
+import {{context}}.adapters.gateways as {{context}}_gateways
+{{/peers_reached}}
 import {{context}}.component as {{context}}_component
+{{/contexts}}
+{{#reads_environment_any}}
 import tesser.errors as errors
-{{#identity_seeded}}
+{{/reads_environment_any}}
+{{#identity_seeded_any}}
 
 _IDENTITY_SEED_BITS: typing.Final[int] = 128
-{{/identity_seeded}}
+{{/identity_seeded_any}}
 
 
 class Spec(ts.Spec):
 
-    def __init__(self, {{context}}: {{context}}_component.Config) -> None:
+    def __init__(self{{#contexts}}, {{context}}: {{context}}_component.Config{{/contexts}}) -> None:
+{{#contexts}}
         self.{{context}} = {{context}}
+{{/contexts}}
 
 
 class AppConfig(ts.Config):
 
     def __init__(self, spec: Spec) -> None:
+{{#contexts}}
         self.{{context}} = spec.{{context}}
+{{/contexts}}
 
 
 class {{App}}App(ts.App):
 
     def __init__(self, app_config: AppConfig) -> None:
-        self.{{context}} = {{context}}_component.{{Context}}(app_config.{{context}})
+{{#contexts}}
+        self.{{context}} = {{context}}_component.{{Context}}(
+            app_config.{{context}},
+{{#peer_gateways}}
+{{#reaches}}
+            {{context}}_gateways.{{Gateway}}(self.{{peer}}.client),
+{{/reaches}}
+{{/peer_gateways}}
+        )
+{{/contexts}}
 
     async def open(self) -> None:
         return None
 
     async def close(self) -> None:
+{{#contexts_reversed}}
         await self.{{context}}.close()
+{{/contexts_reversed}}
 
 
 class AppConfigRepository(ts.ConfigRepository, typing.Protocol):
@@ -53,9 +75,11 @@ class EnvConfigRepository(AppConfigRepository):
         self._environ = environ
 
     def get(self) -> AppConfig:
+{{#restate_engine}}
         engine_url = self._environ.get("{{engine_url_variable}}")
         if engine_url is None:
             raise errors.invalid("missing_env", "{{engine_url_variable}} is required")
+{{/restate_engine}}
 {{#locations}}
         {{location_attr}} = self._environ.get("{{location_variable}}")
         if {{location_attr}} is None:
@@ -63,9 +87,12 @@ class EnvConfigRepository(AppConfigRepository):
 {{/locations}}
         return AppConfig(
             Spec(
+{{#contexts}}
                 {{context}}={{context}}_component.Config(
                     {{context}}_component.Spec(
+{{#restate_engine}}
                         engine_url=engine_url,
+{{/restate_engine}}
 {{#identity_seeded}}
                         identity_seed=secrets.randbits(_IDENTITY_SEED_BITS),
 {{/identity_seeded}}
@@ -73,7 +100,8 @@ class EnvConfigRepository(AppConfigRepository):
                         {{location_attr}}={{location_attr}},
 {{/locations}}
                     )
-                )
+                ),
+{{/contexts}}
             )
         )
 

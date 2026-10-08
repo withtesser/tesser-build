@@ -1,0 +1,37 @@
+# 1 LANGUAGE — the words of the loans and catalog contexts. See ../README.md.
+
+context = "loans"
+
+[[terms]]
+term = "loan"
+means = "A book lent to a borrower, from lending until it is returned."
+code_names = ["Loan", "loan_id", "loans"]
+
+[[terms]]
+term = "borrower"
+means = "The person a book is lent to."
+code_names = ["borrower"]
+
+[[terms]]
+term = "book"
+means = "A work the library holds, which can be lent."
+code_names = ["Book", "book_id"]
+
+[[terms]]
+term = "title"
+means = "The title of a book in the catalog."
+code_names = ["title"]
+
+[[terms]]
+term = "lend"
+means = "Hand a book to a borrower, which opens a loan."
+code_names = ["lend_book"]
+
+[[terms]]
+term = "notice"
+means = "The note the borrower gets when a loan is opened."
+code_names = ["Notice", "send_notice", "NoticeSender"]
+
+[[terms]]
+term = "catalog"
+means = "The catalog context's record of every book the library holds, by book_id and title."
