@@ -23492,3 +23492,73 @@ def test_a_fixing_drops_a_marker_an_earlier_pass_of_the_same_run_left_stale() ->
     rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
     assert "from mod.domain.tag import Tag as Tag\n" in rewritten["mod/domain/__init__.py"]
     assert "tesser:debt" not in rewritten["mod/domain/test_tag.py"]
+
+
+def test_a_repaired_module_with_deferred_annotations_unquotes_every_quoted_type() -> None:
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=(
+            "from __future__ import annotations\n"
+            "def make(tag: 'Tag', tags: list[\"Tag\"]) -> 'Tag | None':\n"
+            "    return None\n"
+            "class Holder:\n"
+            "    held: 'Tag'\n"
+        ),
+        repairs=(("unquote", 2, "", ""), ("unquote", 5, "", "")),
+    ))
+    assert str(repaired) == (
+        "from __future__ import annotations\n"
+        "def make(tag: Tag, tags: list[Tag]) -> Tag | None:\n"
+        "    return None\n"
+        "class Holder:\n"
+        "    held: Tag\n"
+    )
+
+
+def test_a_repaired_module_without_deferred_annotations_unquotes_only_a_local() -> None:
+    text = (
+        "def make(tag: 'Tag') -> 'Tag':\n"
+        "    made: 'Tag' = tag\n"
+        "    return made\n"
+        "class Holder:\n"
+        "    held: 'Tag'\n"
+    )
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text,
+        repairs=(("unquote", 1, "", ""), ("unquote", 2, "", ""), ("unquote", 5, "", "")),
+    ))
+    assert str(repaired) == text.replace("    made: 'Tag' = tag\n", "    made: Tag = tag\n")
+
+
+def test_a_repaired_annotation_keeps_a_literal_a_runtime_qualifier_and_what_is_not_a_type() -> None:
+    text = (
+        "from __future__ import annotations\n"
+        "import typing\n"
+        "class Holder:\n"
+        "    kind: typing.Literal['a', 'b']\n"
+        "    count: 'typing.ClassVar[int]'\n"
+        "    limit: 'Final[int]'\n"
+        "    odd: 'not a type'\n"
+        "    call: 'make()'\n"
+        "    escaped: 'Ta\\x67'\n"
+    )
+    repaired = domain.Repaired(domain.RepairedSpec(
+        text=text, repairs=tuple(("unquote", line, "", "") for line in range(4, 10))
+    ))
+    assert str(repaired) == text
+
+
+def test_a_fixing_unquotes_an_annotation_its_module_already_defers() -> None:
+    fixing = domain.Fixing(_fixing_spec(sources=(
+        (
+            "mod/domain/test_tag.py",
+            "mod.domain.test_tag",
+            "from __future__ import annotations\n"
+            "import mod.domain as domain\n"
+            "def test_a_tag_is_built_from_its_spec() -> None:\n"
+            "    tag_spec: 'domain.TagSpec' = domain.TagSpec('a')\n"
+            "    assert domain.Tag(tag_spec) is not None\n",
+            False,
+        ),
+    )))
+    rewritten = {str(module.path()): str(module.text()) for module in fixing.rewritten()}
+    assert "    tag_spec: domain.TagSpec = domain.TagSpec('a')\n" in rewritten["mod/domain/test_tag.py"]

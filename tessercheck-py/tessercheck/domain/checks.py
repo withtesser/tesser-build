@@ -8842,6 +8842,7 @@ class Module(ts.Entity):
                     "unquoted — a quoted type is a string the analyzer cannot read, and "
                     "from __future__ import annotations is what defers a name the module "
                     "has not defined yet",
+                    repair=RepairSpec("unquote"),
                 ))
             )
         return tuple(found)
@@ -16358,7 +16359,13 @@ class Fixing(ts.ValueObject):
         ))
 
 
-REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export", "undebt")
+REPAIR_KINDS: typing.Final[tuple[str, ...]] = ("unexport", "reexport", "export", "undebt", "unquote")
+
+TYPE_EXPRESSION_NODES: typing.Final[tuple[type[ast.AST], ...]] = (
+    ast.Name, ast.Attribute, ast.Subscript, ast.Tuple, ast.List, ast.BinOp, ast.BitOr, ast.Constant, ast.Load
+)
+
+RUNTIME_QUALIFIERS: typing.Final[frozenset[str]] = frozenset({"ClassVar", "Final", "InitVar"})
 
 
 class RepairKind(ts.ValueObject):
@@ -16547,6 +16554,72 @@ class Repaired(ts.ValueObject):
                 len(decoded[: token.end[1]].encode("utf-8")),
                 "",
             ))
+        quoted = {line for kind, line, _, _ in spec.repairs if kind == "unquote"}
+        deferred = any(
+            isinstance(stmt, ast.ImportFrom)
+            and stmt.module == FUTURE_MODULE
+            and any(alias.name == "annotations" for alias in stmt.names)
+            for stmt in tree.body
+        )
+        sites: list[ast.expr] = []
+        scopes: list[tuple[ast.AST, bool]] = [(tree, False)] if quoted else []
+        while scopes:
+            node, local = scopes.pop()
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                arguments = node.args
+                for arg in (
+                    *arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg
+                ):
+                    if deferred and arg is not None and arg.annotation is not None:
+                        sites.append(arg.annotation)
+                if deferred and node.returns is not None:
+                    sites.append(node.returns)
+                scopes.extend((child, True) for child in node.body)
+                continue
+            if isinstance(node, ast.ClassDef):
+                scopes.extend((child, False) for child in node.body)
+                continue
+            if isinstance(node, ast.AnnAssign) and (deferred or local):
+                sites.append(node.annotation)
+            scopes.extend((child, local) for child in ast.iter_child_nodes(node))
+        marks = [site for site in sites if site.lineno in quoted]
+        while marks:
+            mark = marks.pop()
+            if isinstance(mark, ast.Subscript) and (
+                (isinstance(mark.value, ast.Name) and mark.value.id == LITERAL)
+                or (isinstance(mark.value, ast.Attribute) and mark.value.attr == LITERAL)
+            ):
+                continue
+            if not isinstance(mark, ast.Constant) or not isinstance(mark.value, str):
+                marks.extend(child for child in ast.iter_child_nodes(mark) if isinstance(child, ast.expr))
+                continue
+            if mark.end_lineno != mark.lineno or mark.end_col_offset is None:
+                continue
+            segment = rows[mark.lineno - 1][mark.col_offset : mark.end_col_offset].decode("utf-8")
+            if (
+                len(segment) < 2
+                or segment[0] not in "'\""
+                or segment[-1] != segment[0]
+                or segment.startswith(segment[0] * 3)
+                or segment[1:-1] != mark.value
+            ):
+                continue
+            try:
+                inner = ast.parse(mark.value.strip(), mode="eval")
+            except SyntaxError:
+                continue
+            if any(
+                not isinstance(each, TYPE_EXPRESSION_NODES)
+                or (isinstance(each, ast.BinOp) and not isinstance(each.op, ast.BitOr))
+                for each in ast.walk(inner.body)
+            ):
+                continue
+            head = inner.body.value if isinstance(inner.body, ast.Subscript) else inner.body
+            if (isinstance(head, ast.Name) and head.id in RUNTIME_QUALIFIERS) or (
+                isinstance(head, ast.Attribute) and head.attr in RUNTIME_QUALIFIERS
+            ):
+                continue
+            edits.append((mark.lineno, mark.col_offset, mark.lineno, mark.end_col_offset, mark.value.strip()))
         held = list(rows)
         floor: tuple[int, int] | None = None
         for start_line, start_col, end_line, end_col, written in sorted(set(edits), reverse=True):
