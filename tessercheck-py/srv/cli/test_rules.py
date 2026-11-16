@@ -89,7 +89,7 @@ def test_a_tree_renders_the_rulebook_into_the_output(
     assert cli.RulesHost().run([str(tmp_path)]) == 0
     assert "wrote " in capsys.readouterr().out
     rendered = (tmp_path / "RULES.md").read_text()
-    assert rendered.startswith("# Rules implemented in the spike")
+    assert rendered.startswith("# Rules implemented by tessercheck")
     assert "| TB020 | the rendered tail | every module | a shape |" in rendered
 
 

@@ -623,7 +623,7 @@ class Rulebook(ts.ValueObject):
                         if call.lineno not in linenos[clause]:
                             linenos[clause].append(call.lineno)
         lines = [
-            "# Rules implemented in the spike",
+            "# Rules implemented by tessercheck",
             "",
             "Generated from the implementation by the rulebook — never hand-edit.",
             "`python3 -m srv.cli.rules --check` fails when this file drifts from the",

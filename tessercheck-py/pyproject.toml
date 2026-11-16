@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tessercheck-py"
 version = "0.4.0"
+license = "MIT"
 description = "The tesser-build construction analyzer for Python: declare-then-verify over the tesser shell classes"
 requires-python = ">=3.12"
 dependencies = ["tesser==0.1.0"]

@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tessercheck-cli"
 version = "0.2.0"
+license = "MIT"
 description = "Console entry points for the tessercheck analyzer: a check over a tree, the repairs it carries, and the Claude Code post-write hook"
 requires-python = ">=3.12"
 dependencies = ["tessercheck-py==0.4.0"]

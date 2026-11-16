@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tesser"
 version = "0.1.0"
+license = "MIT"
 description = "Runtime library for the tesser-build domain-construction conventions (Python)"
 # PEP 695 type parameters (the generic serdes an engine binds, and the trees
 # that use them) are a SyntaxError before 3.12, so 3.11 could never import this

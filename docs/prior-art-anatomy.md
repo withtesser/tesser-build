@@ -207,14 +207,13 @@ excavation + Codex found these to be bugs:
 ## Provenance
 
 - Cross-repo anatomy + lineage: five parallel subagents over
-  `~/workspace/{flow, ridedar, rev, meters, vero/certus, vero/metron, vero/quanta}`
-  and worktrees, 2026-07-17.
+  the repos listed below and their worktrees, 2026-07-17.
 - Composition-root evaluation + red-team of the `srv`/`config`/`bootstrap` design:
   two Codex (`gpt-5`-class) passes, read-only over the same repos.
 - Repos inspected: `flow` (`rheadwest.com/flow`), `ridedar`
   (`gitlab.com/chrismconley/ridedar`), `rev` (`rheadwest.rev`), `meters`,
-  `certus`/`meters-credits` (`github.com/chrisconley/stunning-octo-lamp`),
+  `certus` (also called `meters-credits`),
   `metron`/`metering-spec` (`github.com/chrisconley/metron`), `quanta`.
-- The only two real composition-root implementations in the whole workspace are
+- The only two real composition-root implementations in the repos inspected are
   **flow** and **ridedar**; the current generation (certus/metron/quanta/meters)
   are domain libraries that deliberately have no composition root.
